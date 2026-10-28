@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -202,7 +205,7 @@ func NewX402FetchTool(permissions permission.Service, questions question.Service
 			if err != nil {
 				msg := err.Error()
 				switch {
-				case strings.Contains(msg, "fund it"):
+				case isUnknownAddress(err):
 					msg += " (https://faucet.gno.land funds the test networks)"
 					if master.IsZero() {
 						// A session key has no account of its own: without
@@ -250,11 +253,12 @@ func NewX402FetchTool(permissions permission.Service, questions question.Service
 				return fantasy.ToolResponse{}, err
 			}
 
-			paid, body, err := x402Get(ctx, client, params.URL, paymentHeaders)
+			hash := x402TxHash(payload.Payload)
+			paid, body, err := x402Get(ctx, x402PaidClient(client), params.URL, paymentHeaders)
 			if err != nil {
-				return fantasy.NewTextErrorResponse("The payment was signed but the paid request failed: " + err.Error() + ". Nothing was settled; the signed payment stays valid until the paying account sends another transaction"), nil
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("The payment was signed, but the paid request failed: %s. The payment may have settled: a seller settles before it answers. Its transaction is %s; look it up before paying again. If no block executed it, it stays valid until the paying account sends another transaction", err, hash)), nil
 			}
-			return x402Outcome(codec, paid, body, format, payment), nil
+			return x402Outcome(codec, paid, body, format, payment, hash), nil
 		},
 	)
 }
@@ -507,14 +511,55 @@ type x402Codec interface {
 	GetPaymentRequiredResponse(headers map[string]string, body []byte) (x402.PaymentRequired, error)
 }
 
+// x402PaidClient is client for the paid request. It opens a connection of its
+// own: Go sends a GET again when a reused connection drops before any answer,
+// and a copy of a payment the seller may have settled comes back refused as a
+// duplicate, which reads as not paid. It does not follow a redirect, which
+// would hand the signed payment to another host.
+func x402PaidClient(client *http.Client) *http.Client {
+	paid := *client
+	transport := client.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	if t, ok := transport.(*http.Transport); ok {
+		t = t.Clone()
+		t.DisableKeepAlives = true
+		paid.Transport = t
+	}
+	paid.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &paid
+}
+
+// x402TxHash is the hash the chain names the payment's transaction by, read
+// from the scheme payload carrying it: what a settlement receipt reports, and
+// what to look up when none came back.
+func x402TxHash(payload map[string]any) string {
+	encoded, ok := payload["transaction"].(string)
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if !ok || err != nil {
+		return "unknown"
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// isUnknownAddress reports whether err is the chain holding no account for an
+// address, which a payer funds to pay from.
+func isUnknownAddress(err error) bool {
+	_, unknown := errors.AsType[std.UnknownAddressError](err)
+	return unknown
+}
+
 // x402Outcome reports what the paid request came back with: the resource and
 // the settlement that paid for it, or why nothing was paid.
-func x402Outcome(codec x402Codec, resp *http.Response, body []byte, format string, payment *exact.Payment) fantasy.ToolResponse {
+func x402Outcome(codec x402Codec, resp *http.Response, body []byte, format string, payment *exact.Payment, hash string) fantasy.ToolResponse {
 	headers := headerMap(resp.Header)
 	settled, _ := codec.GetPaymentSettleResponse(headers)
 	send := payment.Tx.Msgs[0].(bank.MsgSend)
 
-	if resp.StatusCode == http.StatusOK {
+	// A seller settles whatever it answers below 400, a redirect included.
+	if resp.StatusCode < 400 {
 		content, err := formatFetched(body, resp.Header.Get("Content-Type"), format)
 		if err != nil {
 			content = "(the content could not be shown: " + err.Error() + ")"
@@ -524,6 +569,9 @@ func x402Outcome(codec x402Codec, resp *http.Response, body []byte, format strin
 			receipt += fmt.Sprintf(" Transaction %s, payer %s.", settled.Transaction, settled.Payer)
 		} else {
 			receipt += " The seller sent no settlement receipt."
+		}
+		if location := resp.Header.Get("Location"); location != "" {
+			receipt += " The seller points to " + location + "."
 		}
 		return fantasy.NewTextResponse(receipt + "\n\n" + content)
 	}
@@ -550,6 +598,6 @@ func x402Outcome(codec x402Codec, resp *http.Response, body []byte, format strin
 		}
 		return fantasy.NewTextErrorResponse(msg + ".")
 	default:
-		return fantasy.NewTextErrorResponse(fmt.Sprintf("The seller answered %d %s to the paid request. A seller settles only after it serves, so nothing should have been taken, but the signed payment stays valid until the paying account sends another transaction.", resp.StatusCode, http.StatusText(resp.StatusCode)))
+		return fantasy.NewTextErrorResponse(fmt.Sprintf("The seller answered %d %s to the paid request. A seller settles only after it serves, so nothing should have been taken, but the signed payment, transaction %s, stays valid until the paying account sends another transaction.", resp.StatusCode, http.StatusText(resp.StatusCode), hash))
 	}
 }

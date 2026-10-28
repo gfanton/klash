@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -572,6 +575,126 @@ func TestX402Fetch_AKeyMissingFromTheDefaultKeybaseAsksForHome(t *testing.T) {
 	require.Contains(t, resp.Content, "call again with that home")
 	require.Equal(t, [][]string{{"list"}}, gnokey.runs(t))
 	require.Zero(t, seller.requests)
+}
+
+// payAndAnswer pays the stub seller as buyer, typing the password at the
+// prompt, with paid answering the paid request, and returns what the agent got
+// and the seller.
+func payAndAnswer(t *testing.T, paid func(w http.ResponseWriter, tx std.Tx)) (fantasy.ToolResponse, *stubSeller) {
+	t.Helper()
+	buyer := newX402Key(t, x402Mnemonic)
+	fakeX402Gnokey(t, buyer.listLine("buyer"))
+	chain := stubX402Chain(t)
+	t.Setenv("GNOKEY_FAKE_SIGNATURE", signedFor(t, chain, buyer, crypto.Address{}, x402Offer()))
+	seller := newStubSeller(t, x402Offer(), buyer.pub, 12, 7, paid)
+	questions := question.NewService()
+	tool := NewX402FetchTool(allowingPermissions(), questions, t.TempDir(), nil)
+
+	done := make(chan fantasy.ToolResponse, 1)
+	go func() {
+		done <- runX402Fetch(t, tool, X402FetchParams{URL: seller.URL, Key: "buyer", Remote: chain.URL})
+	}()
+	q := pendingQuestion(t, questions)
+	require.True(t, questions.Answer([]question.Answer{{QuestionID: q.ID, FillInText: "pw"}}))
+	return <-done, seller
+}
+
+// txHash is the hash the chain names tx by.
+func txHash(t *testing.T, tx std.Tx) string {
+	t.Helper()
+	raw, err := amino.Marshal(tx)
+	require.NoError(t, err)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// TestX402Fetch_APaidRequestThatFailsMayHaveSettled: the seller settles before
+// it answers, so a paid request that fails after it left, here a connection
+// dropped once the seller had the payment, may have paid. The payment is sent
+// once: a copy would come back refused as a duplicate and read as not paid. The
+// agent gets the transaction's hash to look up, never a claim that nothing was
+// settled.
+func TestX402Fetch_APaidRequestThatFailsMayHaveSettled(t *testing.T) {
+	var copies atomic.Int32
+	resp, seller := payAndAnswer(t, func(w http.ResponseWriter, _ std.Tx) {
+		if copies.Add(1) > 1 {
+			challenge, _ := json.Marshal(types.PaymentRequired{X402Version: 2, Error: "duplicate_settlement", Accepts: []types.PaymentRequirements{x402Offer()}})
+			w.Header().Set("PAYMENT-REQUIRED", base64.StdEncoding.EncodeToString(challenge))
+			w.WriteHeader(http.StatusPaymentRequired)
+			return
+		}
+		conn, _, err := w.(http.Hijacker).Hijack()
+		require.NoError(t, err)
+		conn.Close()
+	})
+
+	require.True(t, resp.IsError)
+	require.Len(t, seller.payments, 1)
+	require.NotContains(t, resp.Content, "Nothing was settled")
+	require.Contains(t, resp.Content, "may have settled")
+	require.Contains(t, resp.Content, txHash(t, seller.payments[0]))
+}
+
+// TestX402Fetch_AnyServedStatusIsPaid: a seller settles whenever it serves,
+// including with a status other than 200, so a 204 carrying a settlement
+// receipt is a payment made.
+func TestX402Fetch_AnyServedStatusIsPaid(t *testing.T) {
+	resp, _ := payAndAnswer(t, func(w http.ResponseWriter, tx std.Tx) {
+		receipt, _ := json.Marshal(map[string]any{
+			"success": true, "transaction": "A1B2C3", "network": "gno:dev",
+			"payer": tx.Msgs[0].(bank.MsgSend).FromAddress.String(),
+		})
+		w.Header().Set("PAYMENT-RESPONSE", base64.StdEncoding.EncodeToString(receipt))
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	require.False(t, resp.IsError, resp.Content)
+	require.Contains(t, resp.Content, "Paid 0.25 GNOT (250000ugnot) to "+x402PayTo)
+	require.Contains(t, resp.Content, "Transaction A1B2C3")
+}
+
+// TestX402Fetch_ARedirectAfterSettlingIsPaidAndNotFollowed: a seller settles
+// whatever it answers below 400, a redirect included. The agent hears it paid
+// and where the seller points, and the signed payment never reaches the other
+// host.
+func TestX402Fetch_ARedirectAfterSettlingIsPaidAndNotFollowed(t *testing.T) {
+	var forwarded atomic.Int32
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("PAYMENT-SIGNATURE") != "" {
+			forwarded.Add(1)
+		}
+		fmt.Fprint(w, "elsewhere")
+	}))
+	t.Cleanup(elsewhere.Close)
+	resp, _ := payAndAnswer(t, func(w http.ResponseWriter, tx std.Tx) {
+		receipt, _ := json.Marshal(map[string]any{
+			"success": true, "transaction": "A1B2C3", "network": "gno:dev",
+			"payer": tx.Msgs[0].(bank.MsgSend).FromAddress.String(),
+		})
+		w.Header().Set("PAYMENT-RESPONSE", base64.StdEncoding.EncodeToString(receipt))
+		w.Header().Set("Location", elsewhere.URL+"/weather")
+		w.WriteHeader(http.StatusFound)
+	})
+
+	require.False(t, resp.IsError, resp.Content)
+	require.Contains(t, resp.Content, "Paid 0.25 GNOT (250000ugnot) to "+x402PayTo)
+	require.Contains(t, resp.Content, "Transaction A1B2C3")
+	require.Contains(t, resp.Content, elsewhere.URL+"/weather")
+	require.Zero(t, forwarded.Load(), "the signed payment reached the redirect's host")
+}
+
+// TestX402Fetch_AFailedResourceNamesTheUnsettledTransaction: a seller does not
+// settle a resource it failed to serve, and the agent gets the hash of the
+// signed transaction, which stays valid, so the user can check it.
+func TestX402Fetch_AFailedResourceNamesTheUnsettledTransaction(t *testing.T) {
+	resp, seller := payAndAnswer(t, func(w http.ResponseWriter, _ std.Tx) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	require.True(t, resp.IsError)
+	require.Len(t, seller.payments, 1)
+	require.Contains(t, resp.Content, "nothing should have been taken")
+	require.Contains(t, resp.Content, "transaction "+txHash(t, seller.payments[0]))
 }
 
 // TestX402Fetch_ASessionKeyWithoutMasterIsToldToPassIt: a session key has no
