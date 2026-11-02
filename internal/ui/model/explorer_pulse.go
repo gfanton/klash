@@ -151,8 +151,7 @@ func (m *UI) stackLook() stackLook {
 // pulseRenderer draws the session's frames for the Pulse tab, as the
 // Tree tab does.
 func (m *UI) pulseRenderer() *stackRenderer {
-	r := &stackRenderer{t: m.com.Styles, look: m.stackLook()}
-	r.freedOf = func(n *frameNode) int64 { return m.sessionFrames.tokensOf(m.sessionFrames.heldRows(n)) }
+	r := &stackRenderer{t: m.com.Styles, look: m.stackLook(), frames: m.sessionFrames}
 	if _, stack := m.sessionFrames.tree(); len(stack) > 0 {
 		r.top = stack[len(stack)-1]
 	}
