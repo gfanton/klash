@@ -265,7 +265,7 @@ func (m *UI) pulseTab(inner, height int) []string {
 	}
 	r := m.pulseRenderer()
 	lanes := m.pulseLanes(r)
-	room := max(height-len(lines)-2, 3)
+	room := max(height-len(lines)-2, laneMinRows)
 	if inner >= listBesideWidth {
 		lines = append(lines, m.lanesBeside(lanes, inner, room)...)
 	} else {
@@ -286,6 +286,7 @@ func (m *UI) pulseTab(inner, height int) []string {
 	if at := m.memPulse.At; at > 0 {
 		summary += " · updated " + updatedAgo(time.Now().Sub(time.Unix(at, 0)))
 	}
+	lines = lines[:min(len(lines), max(height-1, 0))]
 	for len(lines) < height-1 {
 		lines = append(lines, "")
 	}
@@ -300,8 +301,13 @@ func updatedAgo(d time.Duration) string {
 	return runningFor(d) + " ago"
 }
 
-// laneGap is the room between lanes side by side.
-const laneGap = 3
+const (
+	// laneGap is the room between lanes side by side.
+	laneGap = 3
+	// laneMinRows is the fewest rows a lane is given: its name, and an
+	// entry with a line under it.
+	laneMinRows = 3
+)
 
 // lanesBeside draws the lanes side by side, inner wide, at most rows
 // tall.
@@ -347,7 +353,7 @@ func (m *UI) lanesUnder(lanes [laneCount][]pulseItem, inner, rows int) []string 
 	left := rows
 	for i, items := range lanes {
 		need[i] = 1 + max(itemRows(items)*len(items), 1)
-		got[i] = min(need[i], max(rows/laneCount, 3))
+		got[i] = min(need[i], max(rows/laneCount, laneMinRows))
 		left -= got[i]
 	}
 	for i := range lanes {
