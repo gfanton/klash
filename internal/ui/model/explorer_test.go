@@ -996,7 +996,7 @@ func TestExplorer_PulseShimmersTheFrameAtWork(t *testing.T) {
 	u := pulseUI(t, 200, 50)
 	at := time.Unix(1_700_000_100, 0)
 	head := func(after time.Duration) string {
-		r := u.pulseRenderer()
+		r := u.explorerRenderer()
 		r.look = stackLook{now: at.Add(after), busy: true}
 		return u.pulseLanes(r)[laneNow][0].head
 	}
@@ -1049,7 +1049,7 @@ func TestExplorer_PulseOffersEnterOnAFrameBeforeTheTabsKeys(t *testing.T) {
 func TestExplorer_PulseGivesAPopWithoutResultOneRow(t *testing.T) {
 	u := explorerUI(t, 200, 50)
 	observeRows(u, toolRow("f6", 1_700_000_060, memResult(t, "fc6", popWith("fix-flaky-test/find-cause/try-free-port", ""))))
-	done := u.pulseLanes(u.pulseRenderer())[laneDone]
+	done := u.pulseLanes(u.explorerRenderer())[laneDone]
 	require.Equal(t, 1, itemRows(slices.DeleteFunc(done, func(it pulseItem) bool { return it.frame.id != "fix-flaky-test/find-cause/try-free-port" })))
 }
 

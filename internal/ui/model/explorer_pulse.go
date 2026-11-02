@@ -148,9 +148,8 @@ func (m *UI) stackLook() stackLook {
 	return stackLook{now: time.Now(), busy: m.isAgentBusy(), still: still}
 }
 
-// pulseRenderer draws the session's frames for the Pulse tab, as the
-// Tree tab does.
-func (m *UI) pulseRenderer() *stackRenderer {
+// explorerRenderer draws the session's frames for the explorer's tabs.
+func (m *UI) explorerRenderer() *stackRenderer {
 	r := &stackRenderer{t: m.com.Styles, look: m.stackLook(), frames: m.sessionFrames}
 	if _, stack := m.sessionFrames.tree(); len(stack) > 0 {
 		r.top = stack[len(stack)-1]
@@ -267,7 +266,7 @@ func (m *UI) pulseTab(inner, height int) []string {
 		}
 		lines = append(lines, "")
 	}
-	r := m.pulseRenderer()
+	r := m.explorerRenderer()
 	lanes := m.pulseLanes(r)
 	room := max(height-len(lines)-2, laneMinRows)
 	if inner >= listBesideWidth {
@@ -437,7 +436,7 @@ func (m *UI) movePulse(delta int) {
 	case to < 0 && waits > 0:
 		e.onWaits, e.pulse = true, waits-1
 	default:
-		items := m.pulseLanes(m.pulseRenderer())[e.lane]
+		items := m.pulseLanes(m.explorerRenderer())[e.lane]
 		e.pulse = min(max(to, 0), max(len(items)-1, 0))
 	}
 }
@@ -476,7 +475,7 @@ func (m *UI) pulseFrame() *frameNode {
 	if m.selectedWait() >= 0 {
 		return nil
 	}
-	items := m.pulseLanes(m.pulseRenderer())[m.explorer.lane]
+	items := m.pulseLanes(m.explorerRenderer())[m.explorer.lane]
 	if len(items) == 0 {
 		return nil
 	}
