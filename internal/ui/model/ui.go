@@ -1485,9 +1485,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.upsertArtifactsFromMessage(msg.Payload)
 			m.sessionFrames.observe(m.session.ID, msg.Payload, time.Now())
 			m.chat.MarkPopped(msg.Payload)
-			if callsMem(msg.Payload) {
-				cmds = append(cmds, m.loadMemPulse())
-			}
 		case pubsub.DeletedEvent:
 			m.chat.RemoveMessage(msg.Payload.ID)
 			m.sessionFrames.forget(msg.Payload.ID)
