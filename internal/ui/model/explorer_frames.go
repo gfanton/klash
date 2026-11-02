@@ -83,6 +83,32 @@ func frameEdits(rows []message.Message, workingDir string) []string {
 	return agent.EditedFiles(rows, calls, workingDir)
 }
 
+// frameWorkCache is a frame entry's work and edits, and what they were
+// worked out from: its key and how many rows, calls and results it held.
+type frameWorkCache struct {
+	key                  string
+	rows, calls, results int
+	work                 []toolUse
+	edits                []string
+}
+
+// frameWorkOf is the tools rows, frame n's, called and the files they
+// changed. They are worked out again only once n's rows, calls or results
+// change: reading what an edit changed decodes the whole file it held.
+func (m *UI) frameWorkOf(n *frameNode, rows []message.Message) ([]toolUse, []string) {
+	calls, results := 0, 0
+	for _, r := range rows {
+		calls += len(r.ToolCalls())
+		results += len(r.ToolResults())
+	}
+	c := &m.explorer.work
+	if c.key != n.key || c.rows != len(rows) || c.calls != calls || c.results != results {
+		*c = frameWorkCache{key: n.key, rows: len(rows), calls: calls, results: results,
+			work: frameWork(rows), edits: frameEdits(rows, m.com.Workspace.WorkingDir())}
+	}
+	return c.work, c.edits
+}
+
 // contextPoint is about how many tokens the model was sent once the row
 // of Unix second at came.
 type contextPoint struct {
