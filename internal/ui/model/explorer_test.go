@@ -1132,6 +1132,27 @@ func TestSidebarSaysWhatWaitsOnTheUser(t *testing.T) {
 	require.Equal(t, -1, at(drawn(u), u.layout.sidebar, "waits on you").Y, "nothing waits")
 }
 
+// forgettingWorkspace is pulseWorkspace whose /mem forgets what waits,
+// writing mem's status again, as /mem forget, redact and undo can.
+type forgettingWorkspace struct{ pulseWorkspace }
+
+func (w *forgettingWorkspace) MemCommand(context.Context, string, string) (string, error) {
+	w.pulse = gnovm.MemPulse{At: time.Now().Unix()}
+	return "mem: forgot `release-v2/ci-green/which-runner`", nil
+}
+
+func TestSidebar_WhatWaitsIsReadAgainAfterMem(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	u.com.Workspace = &forgettingWorkspace{pulseWorkspace{u.com.Workspace.(*exportWorkspace), u.memPulse}}
+
+	for _, msg := range messagesOf(u.sendMessage("/mem forget release-v2/ci-green/which-runner")) {
+		_, _ = u.Update(msg)
+	}
+	press(u, esc)
+	require.False(t, u.dialog.HasDialogs(), "the report is closed")
+	require.Equal(t, -1, at(drawn(u), u.layout.sidebar, "waits on you").Y)
+}
+
 func TestSidebarShowsHowMuchTheModelSees(t *testing.T) {
 	u := contextUI(t, 200, 50)
 	line := at(drawn(u), u.layout.sidebar, "model sees")
