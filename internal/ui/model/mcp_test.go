@@ -39,6 +39,7 @@ func (mcpWorkspace) Config() *config.Config {
 // An MCP with more capabilities than the sidebar has room for keeps its
 // name, on one row.
 func TestSidebar_AnMCPKeepsItsNameBesideCountsTooWideForIt(t *testing.T) {
+	t.Parallel()
 	u, _ := sidebarUI(t, 60)
 	u.com.Workspace = mcpWorkspace{u.com.Workspace.(*exportWorkspace)}
 	counts := mcp.Counts{Tools: 41, Prompts: 2, Resources: 12}
