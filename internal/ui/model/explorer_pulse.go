@@ -293,9 +293,12 @@ func (m *UI) pulseTab(inner, height int) []string {
 	return append(lines, muted.Render(summary))
 }
 
+// justNow is how long after a change updatedAgo says just now.
+const justNow = 5 * time.Second
+
 // updatedAgo says how long ago something changed: just now, 30s ago.
 func updatedAgo(d time.Duration) string {
-	if d < 5*time.Second {
+	if d < justNow {
 		return "just now"
 	}
 	return runningFor(d) + " ago"

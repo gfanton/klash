@@ -159,6 +159,10 @@ const (
 	minNowBar = 24
 	// maxBiggest is how many of the biggest rows the tab lists at most.
 	maxBiggest = 6
+	// biggestAround is the rows the biggest rows' list takes beyond those
+	// it lists: its heading, a line of what it hides, its hint, and the
+	// blank under it.
+	biggestAround = 4
 	// chartLabel is the width of the chart's labels.
 	chartLabel = 18
 	// minContextChart is the fewest rows of the chart worth drawing.
@@ -182,12 +186,12 @@ func (m *UI) contextTab(inner, height int) []string {
 	rows := m.sessionFrames.biggest(c.sent)
 	if inner >= listsBesideWidth {
 		width := (inner - laneGap) / 2
-		shown := min(len(rows), maxBiggest, max(height-len(lines)-len(foot)-4, 1))
+		shown := min(len(rows), maxBiggest, max(height-len(lines)-len(foot)-biggestAround, 1))
 		lines = append(lines, beside([][]string{m.contextPopLines(c, width), m.biggestLines(c, rows, shown, width)}, width)...)
 	} else {
 		lines = append(lines, m.contextPopLines(c, inner)...)
 		lines = append(lines, "")
-		shown := min(len(rows), maxBiggest, max(height-len(lines)-len(foot)-4, 1))
+		shown := min(len(rows), maxBiggest, max(height-len(lines)-len(foot)-biggestAround, 1))
 		lines = append(lines, m.biggestLines(c, rows, shown, inner)...)
 	}
 	lines = append(lines, "")
@@ -356,6 +360,10 @@ const (
 	maxPopName = 48
 )
 
+// sincePushGauge is the width of the gauge, under the pop table, of what
+// the frame at work took in since its push.
+const sincePushGauge = 20
+
 // contextPopLines is what a pop of each open frame now would take out of
 // the model's context and leave it, the frame at work first; the rows no
 // pop takes; and how much the frame at work took in against the point at
@@ -388,7 +396,7 @@ func (m *UI) contextPopLines(c contextNow, inner int) []string {
 	}
 	top, large := len(c.stack)-1, agent.LargeStepAt(c.slideAt)
 	took := c.frames[top].tokens
-	lines = append(lines, "  "+muted.Render("since its push")+"  "+gauge(lipgloss.NewStyle().Foreground(m.frameColors(len(c.stack))[top]), t.Files.TruncationHint, took, large, 20)+" "+
+	lines = append(lines, "  "+muted.Render("since its push")+"  "+gauge(lipgloss.NewStyle().Foreground(m.frameColors(len(c.stack))[top]), t.Files.TruncationHint, took, large, sincePushGauge)+" "+
 		value.Render(shortTokens(took))+muted.Render(" of "+shortTokens(large)))
 	said := fmt.Sprintf("%s has taken in %s since its push. At %s, half the slide point, gnosh tells the model the step is large.",
 		c.frameName(top), shortTokens(took), shortTokens(large))
