@@ -140,12 +140,6 @@ func itemRows(items []pulseItem) int {
 	return 1
 }
 
-// shortSession is a session's id as the user reads it: its first 8
-// bytes.
-func shortSession(id string) string {
-	return id[:min(len(id), 8)]
-}
-
 // stackLook is what the frames are drawn for now, still where the TUI's
 // reduce_motion option says so.
 func (m *UI) stackLook() stackLook {
@@ -199,7 +193,7 @@ func (m *UI) pulseLanes(r *stackRenderer) [laneCount][]pulseItem {
 		peers[name] = true
 		lanes[laneNow] = append(lanes[laneNow], pulseItem{
 			head: t.Files.Path.Render("●") + " " + value.Render(name),
-			sub:  muted.Render("session " + shortSession(doing) + " · " + title),
+			sub:  muted.Render("session " + gnovm.MemShortID(doing) + " · " + title),
 		})
 	}
 	for _, g := range m.memPulse.Goals {
