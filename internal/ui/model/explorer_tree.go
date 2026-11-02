@@ -311,7 +311,7 @@ func (m *UI) axisRows(axis timeAxis, roots []*frameNode, slides []frameSlide) (m
 // contextOverTime is contextSeries with what is always sent added to each
 // point, and that figure.
 func (m *UI) contextOverTime() (series []contextPoint, always int64) {
-	series = m.sessionFrames.contextSeries()
+	series = slices.Clone(m.sessionFrames.contextSeries())
 	always = m.alwaysSent(series)
 	for i := range series {
 		series[i].tokens += always

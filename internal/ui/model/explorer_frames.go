@@ -54,12 +54,13 @@ func (f sessionFrames) heldRows(n *frameNode) []message.Message {
 // comes or goes: the sidebar asks it of each popped frame it shows at
 // every draw.
 func (f sessionFrames) freedBy(n *frameNode) int64 {
-	if tokens, ok := f.popFreed[n.key]; ok {
-		return tokens
+	if f.worked == nil {
+		return f.tokensOf(f.heldRows(n))
 	}
-	tokens := f.tokensOf(f.heldRows(n))
-	if f.popFreed != nil {
-		f.popFreed[n.key] = tokens
+	tokens, ok := f.worked.freed[n.key]
+	if !ok {
+		tokens = f.tokensOf(f.heldRows(n))
+		f.worked.freed[n.key] = tokens
 	}
 	return tokens
 }
@@ -157,8 +158,13 @@ type contextPoint struct {
 // the session's rows, rebuilt from the rows alone: a row adds what it
 // holds; a pop takes out what its frame held as its row comes; a slide
 // takes out its rows as the row after the last of them comes, since its
-// mark says what left and not when; a summary leaves only itself.
+// mark says what left and not when; a summary leaves only itself. It is
+// kept until a row comes or goes, for every caller to share: none changes
+// it.
 func (f sessionFrames) contextSeries() []contextPoint {
+	if f.worked != nil && f.worked.series != nil {
+		return f.worked.series
+	}
 	roots, _ := f.tree()
 	popped := map[string][]*frameNode{}
 	eachFrame(roots, func(n *frameNode) {
@@ -200,6 +206,9 @@ func (f sessionFrames) contextSeries() []contextPoint {
 			}
 		}
 		series = append(series, contextPoint{at: r.CreatedAt, tokens: total})
+	}
+	if f.worked != nil {
+		f.worked.series = series
 	}
 	return series
 }
