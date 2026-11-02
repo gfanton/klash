@@ -717,6 +717,15 @@ type pulseWorkspace struct {
 
 func (w pulseWorkspace) MemPulse(context.Context) (gnovm.MemPulse, error) { return w.pulse, nil }
 
+func TestExplorer_AFoldedTaskShowsADotAStep(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	observeRows(u, toolRow("f6", 1_700_000_060, memResult(t, "fc6",
+		popWith("fix-flaky-test/find-cause/try-free-port", "port 0"), popWith("fix-flaky-test/find-cause", "a shared port"), popWith("fix-flaky-test", "fixed"))))
+	press(u, ctrlX, typed('+'))
+
+	require.Contains(t, lineWith(treeOf(u), "fix-flaky-test"), "✓ fix-flaky-test ●●", "two steps, folded")
+}
+
 func TestExplorer_DetailComesUnderAShortTree(t *testing.T) {
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('+'))

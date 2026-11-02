@@ -183,6 +183,8 @@ type explorerRow struct {
 	// lead is the tree's branches drawn before the entry.
 	lead  string
 	depth int
+	// folded is whether the entry hides the frames entered from it.
+	folded bool
 }
 
 // name is what the row says after its marker.
@@ -242,8 +244,10 @@ func (e explorer) rows(roots []*frameNode, slides []frameSlide) []explorerRow {
 				}
 			}
 			item.parent, item.lead, item.depth = parent, lead, depth
+			n := item.node
+			item.folded = n != nil && len(n.children) > 0 && e.folds(n, depth)
 			rows = append(rows, item)
-			if n := item.node; n != nil && !e.folds(n, depth) {
+			if n != nil && !e.folds(n, depth) {
 				walk(n.children, owned[n], n.id, next, depth+1)
 			}
 		}

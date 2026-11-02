@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/session"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/stretchr/testify/require"
 )
@@ -202,18 +203,18 @@ func releaseRows(t *testing.T) []message.Message {
 	}
 }
 
-func TestStackSection_ShowsFinishedFramesWithTheirResults(t *testing.T) {
+func TestStackSection_ShowsFinishedFramesAndTheLastResult(t *testing.T) {
 	got := stripANSI(stackSection(minimalFileStyles(), releaseFrames(t), 30, stackLook{}))
 
 	lines := []string{
 		"▸ release-v2",
 		"├ ✓ bump-version",
-		"│   VERSION says 2.0.0",
 		"├ ✓ tag-release",
 		"│   tagged v2.0.0",
 		"└ ▸ ci-green",
 		`"CI is green"`,
 	}
+	require.NotContains(t, got, "VERSION says 2.0.0", "only the last pop says its result")
 	at := 0
 	for _, want := range lines {
 		i := strings.Index(got[at:], want)
@@ -233,11 +234,39 @@ func TestStackSection_AFinishedTaskFoldsItsSteps(t *testing.T) {
 
 	got := stripANSI(stackSection(minimalFileStyles(), f, 30, stackLook{}))
 
-	require.Contains(t, got, "✓ release-v2")
+	require.Contains(t, got, "✓ release-v2 ●●●", "a dot a step")
 	require.Contains(t, got, "released 2.0.0")
 	require.Contains(t, got, "−1.1K tok", "the task's figure holds its steps'")
 	require.NotContains(t, got, "bump-version")
 	require.NotContains(t, got, "▸")
+}
+
+func TestStackSection_MarksTheFrameAtWork(t *testing.T) {
+	got := strings.Split(stripANSI(stackSection(minimalFileStyles(), releaseFrames(t), 30, stackLook{})), "\n")
+
+	for _, line := range got[2:] {
+		if strings.Contains(line, "ci-green") {
+			require.True(t, strings.HasPrefix(line, "›└ ▸ ci-green"), line)
+		} else {
+			require.False(t, strings.HasPrefix(line, "›"), line)
+		}
+	}
+}
+
+func TestStackSection_CountsTheTodosAndSaysWhatComesNext(t *testing.T) {
+	todos := []session.Todo{
+		{Content: "bump the version", Status: session.TodoStatusCompleted},
+		{Content: "tag the release", Status: session.TodoStatusInProgress},
+		{Content: "notes", Status: session.TodoStatusPending},
+		{Content: "publish", Status: session.TodoStatusPending},
+	}
+
+	view, keys := stackSectionLines(minimalFileStyles(), releaseFrames(t), todos, 30, stackLook{})
+	got := strings.Split(stripANSI(view), "\n")
+
+	require.Contains(t, got[0], "Stack · 1/4")
+	require.Contains(t, got[len(got)-1], "○ notes · ○ publish")
+	require.Len(t, keys, len(got), "a key a line, for clicks")
 }
 
 func TestStackSection_TheHeadingSaysWhatLeftTheContextInAll(t *testing.T) {
@@ -484,17 +513,13 @@ func TestStackColumn_DropsTheLeastNeededFirstToFitItsHeight(t *testing.T) {
 		return stripANSI(got)
 	}
 	everything := strings.Count(stackSection(minimalFileStyles(), f, 30, stackLook{}), "\n") + 1
-	require.Equal(t, 18, everything, "the tasks with their results, release-v2's tree, what slid out")
+	require.Equal(t, 14, everything, "the tasks, release-v2's tree with the last result, what slid out")
 
 	got := column(everything)
-	require.Contains(t, got, "VERSION says 2.0.0", "all of it while it fits")
-	require.Contains(t, got, "done task-1")
-
-	got = column(everything - 1)
-	require.NotContains(t, got, "VERSION says 2.0.0", "older results go first")
-	require.NotContains(t, got, "done task-1")
-	require.Contains(t, got, "task-1")
+	require.Contains(t, got, "task-1", "all of it while it fits")
 	require.Contains(t, got, "tagged v2.0.0", "the last pop keeps its result")
+	require.NotContains(t, got, "VERSION says 2.0.0", "the others do not")
+	require.NotContains(t, got, "done task-1")
 
 	got = column(12)
 	require.Contains(t, got, "…3 earlier", "then the earlier tasks fold")

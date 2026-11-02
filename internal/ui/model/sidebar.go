@@ -99,7 +99,7 @@ func (m *UI) updateSidebarScrollState() {
 		"",
 	}
 	m.sidebarStack = stackLines{}
-	if stack, keys := stackSectionLines(t, m.sessionFrames, contentWidth, stackLook{now: time.Now(), busy: m.isAgentBusy()}); stack != "" {
+	if stack, keys := stackSectionLines(t, m.sessionFrames, m.session.Todos, contentWidth, stackLook{now: time.Now(), busy: m.isAgentBusy()}); stack != "" {
 		// Where each line of the Stack lands in the content, for a click to
 		// find.
 		m.sidebarStack = stackLines{first: lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, parts...)), keys: keys}

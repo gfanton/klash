@@ -36,7 +36,11 @@ const (
 func treeColumnsFor(rows []explorerRow, inner int) treeColumns {
 	widest := 0
 	for _, r := range rows {
-		widest = max(widest, lipgloss.Width(r.lead)+2+lipgloss.Width(r.name()))
+		label := lipgloss.Width(r.lead) + 2 + lipgloss.Width(r.name())
+		if r.folded {
+			label += 1 + len(r.node.children)
+		}
+		widest = max(widest, label)
 	}
 	label := min(max(widest+1, minTreeLabel), maxTreeLabel)
 	bars := inner - treeGutter - label - 1 - treeRight
@@ -314,10 +318,14 @@ func (r *stackRenderer) treeLine(row explorerRow, cols treeColumns, axis timeAxi
 		return fitLeft(label, cols.label) + bar + " " + fitRight(freed, cols.right)
 	}
 	n := row.node
-	if cols.bars == 0 {
-		return r.entry(n, row.name(), row.lead, width)
+	tail := ""
+	if row.folded {
+		tail = r.stepDots(n)
 	}
-	return fitLeft(r.entryHead(n, row.name(), row.lead, cols.label-1), cols.label) + r.bar(n, axis) + " " + fitRight(r.entryRight(n), cols.right)
+	if cols.bars == 0 {
+		return r.entry(n, row.name(), tail, row.lead, width)
+	}
+	return fitLeft(r.entryHead(n, row.name(), tail, row.lead, cols.label-1), cols.label) + r.bar(n, axis) + " " + fitRight(r.entryRight(n), cols.right)
 }
 
 // bar is n's span on axis: from its push to its pop, green, once it is
