@@ -123,9 +123,14 @@ func (m *UI) frameEntries() int {
 
 // openExplorer opens the explorer on the entry key, in the Tree tab, or
 // following the agent in the tab last open for "", and gives it the keys.
+// The entry of the frame the agent is in opens following, in the Tree
+// tab.
 func (m *UI) openExplorer(key string) {
 	if key != "" {
 		m.explorer.tab = explorerTree
+		if _, stack := m.sessionFrames.tree(); len(stack) > 0 && stack[len(stack)-1].key == key {
+			key = ""
+		}
 	}
 	m.explorer.open = true
 	m.explorer.searching = false
