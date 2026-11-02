@@ -199,8 +199,9 @@ func (m *UI) drawSidebar(scr uv.Screen, area uv.Rectangle) {
 	}
 }
 
-// sidebarAnimating reports whether anything in the sidebar moves at now,
-// which keeps the shared animation clock running.
+// sidebarAnimating reports whether anything in the sidebar, or in the
+// Stack's trail and column that stand in for it in compact mode, moves at
+// now, which keeps the shared animation clock running.
 func (m *UI) sidebarAnimating(now time.Time) bool {
 	return m.hasPendingArtifact() || m.session != nil && m.sessionFrames.animating(now, m.isAgentBusy())
 }

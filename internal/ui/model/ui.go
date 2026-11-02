@@ -4123,6 +4123,16 @@ func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
 	)
 }
 
+// drawStackTrail draws the Stack's trail, where the agent is, on the row
+// under the compact header: compact mode has no sidebar.
+func (m *UI) drawStackTrail(scr uv.Screen, area uv.Rectangle) {
+	// Under the header's wordmark, past the space that leads it.
+	area.Min.X += leftPadding + 1
+	area.Max.X -= rightPadding + 1
+	trail := stackTrail(m.com.Styles, m.sessionFrames, area.Dx(), stackLook{now: time.Now(), busy: m.isAgentBusy()})
+	uv.NewStyledString(trail).Draw(scr, area)
+}
+
 // Draw implements [uv.Drawable] and draws the UI model.
 func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	layout := m.generateLayout(area.Dx(), area.Dy())
@@ -4175,6 +4185,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	case uiChat:
 		if m.isCompact {
 			m.drawHeader(scr, layout.header)
+			m.drawStackTrail(scr, layout.stackTrail)
 		} else {
 			m.drawSidebar(scr, layout.sidebar)
 		}
@@ -4980,6 +4991,7 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 			).Split(appRect).Assign(&sessionDetailsArea, new(image.Rectangle))
 			uiLayout.sessionDetails = sessionDetailsArea
 			uiLayout.sessionDetails.Min.Y += compactHeaderHeight // adjust for header
+			uiLayout.stackTrail = image.Rect(mainRect.Min.X, mainRect.Min.Y, mainRect.Max.X, mainRect.Min.Y+1).Intersect(appRect)
 			// Add one line gap between header and main content
 			mainRect.Min.Y += 1
 			var editorRect image.Rectangle
@@ -5079,6 +5091,10 @@ type uiLayout struct {
 
 	// session details is the area for the session details overlay in compact mode.
 	sessionDetails uv.Rectangle
+
+	// stackTrail is the row under the compact header, which shows the
+	// Stack's trail.
+	stackTrail uv.Rectangle
 }
 
 func (m *UI) openEditor(value string) tea.Cmd {
@@ -7244,11 +7260,25 @@ func (m *UI) drawSessionDetails(scr uv.Screen, area uv.Rectangle) {
 	sectionWidth := max(1, min(maxSectionWidth, width/4-2)) // account for spacing between sections
 	maxItemsPerSection := remainingHeight - 3               // Account for section title and spacing
 
+	// The Stack, which compact mode has no sidebar for, comes first.
+	stackWidth := min(width/3, stackColumnWidth)
+	stack := stackColumn(s, m.sessionFrames, stackWidth, maxItemsPerSection+2, stackLook{now: time.Now(), busy: m.isAgentBusy()})
+	if stack != "" {
+		// The four sections share what it leaves, a space between columns.
+		sectionWidth = max(1, min(maxSectionWidth, (width-stackWidth-4)/4))
+	}
+
 	lspSection := m.lspInfo(sectionWidth, maxItemsPerSection, false)
 	mcpSection := m.mcpInfo(sectionWidth, maxItemsPerSection, false)
 	skillsSection := m.skillsInfo(sectionWidth, maxItemsPerSection, false)
 	filesSection := m.filesInfo(m.com.Workspace.WorkingDir(), sectionWidth, maxItemsPerSection, false)
 	sections := lipgloss.JoinHorizontal(lipgloss.Top, filesSection, " ", lspSection, " ", mcpSection, " ", skillsSection)
+	if stack != "" {
+		sections = lipgloss.JoinHorizontal(lipgloss.Top, stack, " ", sections)
+	}
+	// A column over its rows, as a title wrapped in a narrow one makes it,
+	// would push the panel's frame off its area.
+	sections = lipgloss.NewStyle().MaxHeight(maxItemsPerSection + 2).Render(sections)
 	uv.NewStyledString(
 		s.CompactDetails.View.
 			Width(area.Dx()).
