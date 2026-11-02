@@ -838,6 +838,22 @@ func TestExplorer_ContextChartsTheSessionWhenTall(t *testing.T) {
 	require.Empty(t, lineWith(bodyOf(short), "the model's context over the session"))
 }
 
+// A rewind that took every push leaves the rows a slide took; the chart
+// spans their minute, not the time since 1970.
+func TestExplorer_ContextChartSpansTheRowsOnceEveryPushIsGone(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	observeRows(u, slidRows(t)[len(explorerRows(t)):]...)
+	press(u, ctrlX, typed('+'), typed('3'))
+	for _, id := range []string{"f1", "f2", "f4", "f5"} {
+		_, _ = u.Update(pubsub.Event[message.Message]{Type: pubsub.DeletedEvent, Payload: message.Message{ID: id, SessionID: "s1"}})
+	}
+	require.Zero(t, u.frameEntries())
+
+	body := bodyOf(u)
+	require.NotEmpty(t, lineWith(body, "the model's context over the session"))
+	require.NotEmpty(t, lineWith(body, "30s"), "the axis runs from the first row")
+}
+
 func TestExplorer_ContextWithoutAWindow(t *testing.T) {
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('3'))

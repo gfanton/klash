@@ -64,12 +64,16 @@ type timeAxis struct {
 	width    int
 }
 
-// treeAxis is the time axis of the frames under roots: from the first push
-// to the last row, or to now while the agent works.
+// treeAxis is the time axis of the frames under roots: from the first push,
+// or the first row without one, to the last row, or to now while the agent
+// works.
 func (f sessionFrames) treeAxis(roots []*frameNode, look stackLook, width int) timeAxis {
 	a := timeAxis{width: width}
-	if len(roots) > 0 {
+	switch {
+	case len(roots) > 0:
 		a.from = roots[0].since
+	case len(f.rows) > 0:
+		a.from = f.rows[0].CreatedAt
 	}
 	a.to = a.from
 	eachFrame(roots, func(n *frameNode) { a.to = max(a.to, n.since, n.until) })
