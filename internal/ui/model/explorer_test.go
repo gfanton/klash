@@ -726,6 +726,30 @@ func TestExplorer_AFoldedTaskShowsADotAStep(t *testing.T) {
 	require.Contains(t, lineWith(treeOf(u), "fix-flaky-test"), "✓ fix-flaky-test ●●", "two steps, folded")
 }
 
+func TestSidebarSaysWhatWaitsOnTheUser(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	rows := drawn(u)
+
+	waits := at(rows, u.layout.sidebar, "▲ 1 waits on you")
+	require.GreaterOrEqual(t, waits.Y, 0)
+	require.Equal(t, waits.Y+1, at(rows, u.layout.sidebar, "which CI runner").Y, "the question under it")
+	require.Less(t, waits.Y, at(rows, u.layout.sidebar, "Stack").Y, "above the Stack")
+
+	u.memPulse.Asks = nil
+	require.Equal(t, -1, at(drawn(u), u.layout.sidebar, "waits on you").Y, "nothing waits")
+}
+
+func TestSidebarShowsHowMuchTheModelSees(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	line := at(drawn(u), u.layout.sidebar, "model sees")
+	require.GreaterOrEqual(t, line.Y, 0)
+	require.Contains(t, drawn(u)[line.Y], "▕██")
+	require.Contains(t, drawn(u)[line.Y], "6K")
+
+	unknown := explorerUI(t, 200, 50)
+	require.Equal(t, -1, at(drawn(unknown), unknown.layout.sidebar, "model sees").Y, "no window known, no gauge")
+}
+
 func TestExplorer_DetailComesUnderAShortTree(t *testing.T) {
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('+'))

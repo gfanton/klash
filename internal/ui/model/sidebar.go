@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"image"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/logo"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/ultraviolet/layout"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // modelInfo renders the current model information including reasoning
@@ -47,6 +49,45 @@ func (m *UI) modelInfo(width int) string {
 		modelName = model.CatwalkCfg.Name
 	}
 	return common.ModelInfo(m.com.Styles, modelName, providerName, reasoningInfo, modelContext, width, m.hyperCredits)
+}
+
+// modelSees is how much of its window the model was sent at the last
+// request, as a gauge width wide, in the warning's color past the slide
+// point; "" where the window or the count is unknown.
+func (m *UI) modelSees(width int) string {
+	window, slideAt := m.contextLimits()
+	counted := m.countedTokens()
+	if window <= 0 || counted <= 0 {
+		return ""
+	}
+	t := m.com.Styles
+	fill := t.Files.Path
+	if slideAt > 0 && counted >= slideAt {
+		fill = t.LSP.WarningDiagnostic
+	}
+	label, count := "  model sees ", " "+shortTokens(counted)
+	cells := max(width-len(label)-len(count)-2, 4)
+	return t.Files.EmptyMessage.Render(label) + gauge(fill, t.Files.TruncationHint, counted, window, cells) + t.Files.ArtifactLabel.Render(count)
+}
+
+// waitsLines is, for the sidebar width wide, how many things in mem wait
+// on the user and the first one, in two lines at most; nil when nothing
+// does.
+func (m *UI) waitsLines(width int) []string {
+	waits := m.waitsOnUser()
+	if len(waits) == 0 {
+		return nil
+	}
+	t := m.com.Styles
+	lines := []string{t.LSP.WarningDiagnostic.Render(fmt.Sprintf("▲ %d waits on you", len(waits)))}
+	said := wrapText(t.Files.EmptyMessage, waits[0].Title, width-2)
+	if len(said) > 2 {
+		said = []string{said[0], ansi.Truncate(said[1]+" "+said[2], width-2, "…")}
+	}
+	for _, line := range said {
+		lines = append(lines, "  "+line)
+	}
+	return lines
 }
 
 // updateSidebarScrollState renders the sidebar content and computes scroll
@@ -96,7 +137,13 @@ func (m *UI) updateSidebarScrollState() {
 		cwd,
 		"",
 		m.modelInfo(contentWidth),
-		"",
+	}
+	if sees := m.modelSees(contentWidth); sees != "" {
+		parts = append(parts, sees)
+	}
+	parts = append(parts, "")
+	if waits := m.waitsLines(contentWidth); len(waits) > 0 {
+		parts = append(append(parts, waits...), "")
 	}
 	m.sidebarStack = stackLines{}
 	if stack, keys := stackSectionLines(t, m.sessionFrames, m.session.Todos, contentWidth, stackLook{now: time.Now(), busy: m.isAgentBusy()}); stack != "" {
