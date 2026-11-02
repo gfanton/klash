@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/lipgloss/v2"
@@ -1154,6 +1155,23 @@ func TestExplorer_PulseOffersAnAnswerOnlyForWhatThisSessionAsked(t *testing.T) {
 	for _, b := range u.ShortHelp() {
 		require.NotEqual(t, "answer", b.Help().Desc, "no call of this session asked it")
 	}
+}
+
+// The answer is offered once the call that asked comes, and no longer
+// once a rewind takes it.
+func TestExplorer_PulseOffersAnAnswerOnceThisSessionAsks(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('2'), typed('k'))
+	answers := func() bool {
+		return slices.ContainsFunc(u.ShortHelp(), func(b key.Binding) bool { return b.Help().Desc == "answer" })
+	}
+	require.False(t, answers())
+
+	askedHere(t, u)
+	require.True(t, answers(), "the call that asked came")
+
+	_, _ = u.Update(pubsub.Event[message.Message]{Type: pubsub.DeletedEvent, Payload: message.Message{ID: "f9", SessionID: "s1"}})
+	require.False(t, answers(), "a rewind took it")
 }
 
 func TestExplorer_PulseOpensTheFrameAtWorkFollowing(t *testing.T) {
