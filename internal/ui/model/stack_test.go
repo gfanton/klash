@@ -204,7 +204,7 @@ func TestFrameTree_EachFrameKeepsWhatItsPopFreed(t *testing.T) {
 	require.Greater(t, freed(roots[0]), int64(103), "a frame's figure holds its children's")
 }
 
-// release-v2 as a session works it: two steps done, the third under way.
+// A session working release-v2: two steps done, the third under way.
 func releaseFrames(t *testing.T) sessionFrames {
 	t.Helper()
 	return deriveFrames("s1", releaseRows(t))
@@ -538,7 +538,7 @@ func TestSidebarShowsTheStackLive(t *testing.T) {
 	require.True(t, u.sidebarAnimating(time.Now()))
 }
 
-// fix-flaky-test three frames deep, after a step that freed 2K tokens.
+// Three frames deep in fix-flaky-test, after a step that freed 2K tokens.
 func flakyRows(t *testing.T) []message.Message {
 	t.Helper()
 	return []message.Message{
@@ -714,7 +714,7 @@ func TestCompactModeShowsTheStackUnderTheHeader(t *testing.T) {
 	require.Equal(t, u.layout.header.Max.Y+1, u.layout.main.Min.Y, "the chat starts under it")
 }
 
-// ctrl+d opens the session's details in compact mode: the Stack comes
+// Ctrl+d opens the session's details in compact mode: the Stack comes
 // first, and keeps the frame the agent is in within the panel's height.
 func TestCompactDetailsShowTheStackFirst(t *testing.T) {
 	u := compactUI(t)

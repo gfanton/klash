@@ -131,7 +131,7 @@ func TestExplorer_CtrlXClosesItOrTakesFocusBack(t *testing.T) {
 	require.False(t, u.explorer.open, "and closes it once it has them")
 }
 
-// esc cancels a working agent; with the explorer open, esc closes the
+// Esc cancels a working agent; with the explorer open, esc closes the
 // explorer and leaves the agent alone.
 func TestExplorer_EscClosesItWithoutCancellingTheAgent(t *testing.T) {
 	u := explorerUI(t, 200, 50)
