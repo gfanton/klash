@@ -344,17 +344,6 @@ func freedLabel(t *styles.Styles, f sessionFrames) string {
 	return ""
 }
 
-// stackSection renders the sidebar's Stack section: the frames the session
-// entered as a tree, a finished one with its result and about how many
-// tokens its pop took out of the model's context, the frame the agent is
-// in with its purpose; a finished top-level frame folds its children, and
-// only the last few are listed. Then what slides took out. "" for a
-// session with neither.
-func stackSection(t *styles.Styles, f sessionFrames, width int, look stackLook) string {
-	view, _ := stackSectionLines(t, f, nil, width, look)
-	return view
-}
-
 // notStarted is what todos holds not started: the steps of the goal at
 // work after the one in progress, since mem writes a session's todos.
 func notStarted(todos []session.Todo) []string {
@@ -367,8 +356,14 @@ func notStarted(todos []session.Todo) []string {
 	return steps
 }
 
-// stackSectionLines is stackSection with, for each of its lines, the key
-// of the frame entry it shows, "" for a line that shows none.
+// stackSectionLines renders the sidebar's Stack section: the frames the
+// session entered as a tree, a finished one with its result and about how
+// many tokens its pop took out of the model's context, the frame the agent
+// is in with its purpose; a finished top-level frame folds its children,
+// and only the last few are listed. Then what slides took out, and the
+// todos not started; the heading counts those done. With it, for each of
+// its lines, the key of the frame entry it shows, "" for a line that
+// shows none. "" for a session with neither frames nor slides.
 func stackSectionLines(t *styles.Styles, f sessionFrames, todos []session.Todo, width int, look stackLook) (string, []string) {
 	body, keys := stackBody(t, f, width, stackFits()[0], look)
 	if body == nil {
@@ -405,18 +400,12 @@ func stackSectionLines(t *styles.Styles, f sessionFrames, todos []session.Todo, 
 	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n")), keys
 }
 
-// stackColumn renders the Stack in a column width wide and at most height
-// rows tall, as compact mode's details show it: the fullest of stackFits
-// that fits, else the leanest with its first lines cut, since the frames
-// the agent is in come last. "" for a session with neither frames nor
-// slides.
-func stackColumn(t *styles.Styles, f sessionFrames, width, height int, look stackLook) string {
-	view, _ := stackColumnLines(t, f, width, height, look)
-	return view
-}
-
-// stackColumnLines is stackColumn with, for each of its lines, the key of
-// the frame entry it shows, "" for a line that shows none.
+// stackColumnLines renders the Stack in a column width wide and at most
+// height rows tall, as compact mode's details show it: the fullest of
+// stackFits that fits, else the leanest with its first lines cut, since
+// the frames the agent is in come last. With it, for each of its lines,
+// the key of the frame entry it shows, "" for a line that shows none. ""
+// for a session with neither frames nor slides.
 func stackColumnLines(t *styles.Styles, f sessionFrames, width, height int, look stackLook) (string, []string) {
 	if height <= 0 {
 		return "", nil

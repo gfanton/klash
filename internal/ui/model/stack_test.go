@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/ui/styles"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/stretchr/testify/require"
 )
@@ -70,6 +71,18 @@ func stackIDs(f sessionFrames) []string {
 		ids = append(ids, fr.id)
 	}
 	return ids
+}
+
+// stackSection is the sidebar's Stack section of a session without todos.
+func stackSection(t *styles.Styles, f sessionFrames, width int, look stackLook) string {
+	view, _ := stackSectionLines(t, f, nil, width, look)
+	return view
+}
+
+// stackColumn is compact mode's Stack column without its keys.
+func stackColumn(t *styles.Styles, f sessionFrames, width, height int, look stackLook) string {
+	view, _ := stackColumnLines(t, f, width, height, look)
+	return view
 }
 
 func TestDeriveFrames_TheStackIsThePushesNotYetPopped(t *testing.T) {
