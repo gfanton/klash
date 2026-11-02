@@ -1368,3 +1368,21 @@ func TestExplorer_TheWheelMovesOneEntryANotch(t *testing.T) {
 	wheelAt(u, on.X, on.Y, 3)
 	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id)
 }
+
+func TestExplorer_BesideTheChatItLeavesTheSidebarNoFocus(t *testing.T) {
+	u := explorerUI(t, 200, 30)
+	drawn(u)
+	require.True(t, u.sidebarScrollable, "the sidebar is long enough to take the keys")
+
+	press(u, ctrlX, tab)
+	drawn(u)
+	press(u, tab)
+	drawn(u)
+	require.True(t, u.explorerBeside())
+	require.Equal(t, uiFocusMain, u.focus)
+
+	press(u, typed('l'))
+	require.Equal(t, uiFocusMain, u.focus, "l finds no sidebar to go to")
+	press(u, tab)
+	require.Equal(t, uiFocusEditor, u.focus, "tab goes round to the editor")
+}
