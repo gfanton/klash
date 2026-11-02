@@ -556,13 +556,13 @@ func TestPopClauses(t *testing.T) {
 
 	ev := gnovm.MemFrame{Kind: "pop", Id: "fix-flaky/find-cause", Result: "races", Session: "s"}
 	require.Equal(t, "Everything since you entered `fix-flaky/find-cause` was removed from your context: this result stays; the user still sees all of it.",
-		popClauses(ev, nil, nil, "/w", false, false))
+		popClauses(ev, nil, "/w", false, false))
 
 	require.Equal(t, "Everything since you entered `fix-flaky/find-cause` was removed from your context, but for what the user said in this turn: this result stays; the user still sees all of it.",
-		popClauses(ev, nil, nil, "/w", false, true))
+		popClauses(ev, nil, "/w", false, true))
 
 	ev.Thoughts = 1
-	require.Contains(t, popClauses(ev, nil, nil, "/w", true, false), "this result stays, and so does its thought, listed above and kept in mem; the user still sees all of it. Your reads inside it are forgotten: view a file before you edit it.")
+	require.Contains(t, popClauses(ev, nil, "/w", true, false), "this result stays, and so does its thought, listed above and kept in mem; the user still sees all of it. Your reads inside it are forgotten: view a file before you edit it.")
 
 	ev.Thoughts = 2
 	rows := []message.Message{
@@ -582,11 +582,7 @@ func TestPopClauses(t *testing.T) {
 			message.ToolResult{ToolCallID: "m2", Name: "gnovm_run", Content: "ERROR — nothing from this call was kept: `fix-flaky` has open todos\nfailed · mem · ran 1ms · nothing kept\n"},
 		),
 	}
-	calls := map[string]message.ToolCall{}
-	for _, call := range rows[0].ToolCalls() {
-		calls[call.ID] = call
-	}
-	got := popClauses(ev, rows, calls, "/w", false, false)
+	got := popClauses(ev, rows, "/w", false, false)
 	require.Contains(t, got, "and so do its 2 thoughts, listed above and kept in mem")
 	require.Contains(t, got, " In it you edited internal/net/listen_test.go.")
 	require.Contains(t, got, " In it you also changed mem: Fact `port`, Todo `a`, Note `fix-flaky`, Rule `r` and 1 more.")

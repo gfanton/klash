@@ -748,15 +748,9 @@ func closePrompt(cl gnovm.MemClose, w closeWindow, workingDir string) string {
 	if w.prompt != "" {
 		fmt.Fprintf(&b, "What the user asked in this turn: %s\n\n", clip(w.prompt, 2_000))
 	}
-	calls := map[string]message.ToolCall{}
-	for _, row := range w.rows {
-		for _, c := range row.ToolCalls() {
-			calls[c.ID] = c
-		}
-	}
-	edited := EditedFiles(w.rows, calls, workingDir)
+	edited := EditedFiles(w.rows, workingDir)
 	fmt.Fprintf(&b, "Files the agent's edits and writes changed in the todo: %s\n", cmp.Or(strings.Join(edited, ", "), "none"))
-	if ran := commandsRun(w.rows, calls); len(ran) > 0 {
+	if ran := commandsRun(w.rows, callsOf(w.rows)); len(ran) > 0 {
 		fmt.Fprintf(&b, "Commands it ran in the todo: %s\n", strings.Join(ran, "; "))
 	} else {
 		b.WriteString("Commands it ran in the todo: none\n")
