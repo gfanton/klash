@@ -192,20 +192,24 @@ const (
 // treeLayoutFor lays the Tree tab out for rows in an explorer inner wide
 // and height tall: the marks and the axis come with the bars, the chart
 // only when the explorer is tall, each only while the tree keeps
-// minTreeInView rows.
+// minTreeInView rows; the detail pane takes the rows the tree does not
+// need.
 func treeLayoutFor(rows []explorerRow, inner, height int) treeLayout {
 	l := treeLayout{cols: treeColumnsFor(rows, inner)}
 	l.tree, l.detail = explorerTreeHeights(height)
-	if l.cols.bars == 0 {
-		return l
+	if l.cols.bars > 0 {
+		switch {
+		case height >= tallExplorer && l.tree-contextRows-2 >= minTreeInView:
+			l.chart, l.head = contextRows, contextRows+2
+		case l.tree-2 >= minTreeInView:
+			l.head = 2
+		}
+		l.tree -= l.head
 	}
-	switch {
-	case height >= tallExplorer && l.tree-contextRows-2 >= minTreeInView:
-		l.chart, l.head = contextRows, contextRows+2
-	case l.tree-2 >= minTreeInView:
-		l.head = 2
+	if spare := l.tree - max(len(rows), minTreeInView); l.detail > 0 && spare > 0 {
+		l.tree -= spare
+		l.detail += spare
 	}
-	l.tree -= l.head
 	return l
 }
 

@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/message"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -812,8 +813,89 @@ func (m *UI) explorerTree(inner, height int) ([]string, int) {
 		lines = append(lines, "")
 	}
 	lines = append(lines, t.Files.TruncationHint.Render(strings.Repeat("─", inner)))
-	d := m.frameDetail(rows[sel].node, &r)
-	return append(lines, d[:min(l.detail, len(d))]...), lit
+	return append(lines, m.detailPane(rows[sel].node, &r, inner, l.detail)...), lit
+}
+
+// listBesideWidth is the narrowest explorer content that lists what a
+// frame held beside its detail.
+const listBesideWidth = 120
+
+// detailPane is the detail pane's lines for n, inner wide and at most
+// height tall: its detail, and where there is room, beside it, what it
+// held.
+func (m *UI) detailPane(n *frameNode, r *stackRenderer, inner, height int) []string {
+	detail := m.frameDetail(n, r)
+	if inner < listBesideWidth {
+		return detail[:min(height, len(detail))]
+	}
+	left := inner / 2
+	held := m.heldList(n, inner-left-2, height)
+	lines := make([]string, min(height, max(len(detail), len(held))))
+	for i := range lines {
+		d, h := "", ""
+		if i < len(detail) {
+			d = detail[i]
+		}
+		if i < len(held) {
+			h = held[i]
+		}
+		lines[i] = fitLeft(d, left) + "  " + h
+	}
+	return lines
+}
+
+// heldList is, width wide and at most height lines, what the model no
+// longer has from n once it is popped, or what it holds from it while it
+// is open: a line per chat item showing those rows, the first the chat
+// draws for it.
+func (m *UI) heldList(n *frameNode, width, height int) []string {
+	t := m.com.Styles
+	held := m.sessionFrames.heldRows(n)
+	title := "what the model no longer has · "
+	if !n.popped {
+		title = "what the model holds · "
+	}
+	lines := []string{t.Files.TruncationHint.Render(title + plural(len(held), "row"))}
+	var items []string
+	for _, row := range held {
+		if row.Role == message.Tool {
+			continue
+		}
+		ids := []string{row.ID}
+		for _, c := range row.ToolCalls() {
+			ids = append(ids, c.ID)
+		}
+		for _, id := range ids {
+			if line := m.chatLine(id); line != "" {
+				items = append(items, line)
+			}
+		}
+	}
+	if room := max(height-2, 1); len(items) > room {
+		items = append(items[:room-1], fmt.Sprintf("… %d more", len(items)-room+1))
+	}
+	for _, item := range items {
+		lines = append(lines, "  "+t.Files.EmptyMessage.Render(ansi.Truncate(item, width-2, "…")))
+	}
+	if len(held) > 0 {
+		lines = append(lines, t.Files.TruncationHint.Render("enter: show these rows in the chat"))
+	}
+	return lines
+}
+
+// chatLine is the first line the chat draws for its item id, without its
+// colors; "" where the chat has no such item or it draws nothing.
+func (m *UI) chatLine(id string) string {
+	item := m.chat.MessageItem(id)
+	if item == nil {
+		return ""
+	}
+	for line := range strings.SplitSeq(item.Render(max(m.chat.list.Width(), 1)), "\n") {
+		if s := strings.TrimSpace(ansi.Strip(line)); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // frameDetail is the detail pane's lines for n, the most needed first:
