@@ -742,6 +742,9 @@ func explorerTabAt(x int) explorerTab {
 	return -1
 }
 
+// frameDetailRows is the most lines frameDetail draws.
+const frameDetailRows = 10
+
 // explorerTreeHeights is how many rows the Tree tab gives its tree and its
 // detail pane in an explorer height rows tall. A short one trims the
 // detail; a very short one has none.
@@ -749,7 +752,7 @@ func explorerTreeHeights(height int) (tree, detail int) {
 	body := height - explorerBodyRow
 	switch {
 	case body >= 24:
-		detail = 9
+		detail = frameDetailRows
 	case body >= 10:
 		detail = 4
 	}
