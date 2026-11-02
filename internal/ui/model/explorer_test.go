@@ -17,7 +17,10 @@ import (
 	"github.com/charmbracelet/crush/internal/gnovm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/question"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/ui/common"
+	"github.com/charmbracelet/crush/internal/ui/dialog"
 	"github.com/charmbracelet/crush/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/stretchr/testify/require"
@@ -1021,8 +1024,10 @@ func TestExplorer_AFoldedTaskSaysWhatItEndedWith(t *testing.T) {
 func askedHere(t *testing.T, u *UI) {
 	t.Helper()
 	asked := toolRow("f9", 1_700_000_090, memResult(t, "fc9"))
-	asked.Parts[0] = message.ToolResult{ToolCallID: "fc9", Name: "gnovm_run",
-		Content: "asked `release-v2/ci-green/which-runner` \"which CI runner is the release one?\" (for the user)"}
+	asked.Parts[0] = message.ToolResult{
+		ToolCallID: "fc9", Name: "gnovm_run",
+		Content: "asked `release-v2/ci-green/which-runner` \"which CI runner is the release one?\" (for the user)",
+	}
 	observeRows(u, callRow("e9", 1_700_000_090, memCall("fc9")), asked)
 }
 
@@ -1298,4 +1303,56 @@ func TestExplorer_DetailComesUnderAShortTree(t *testing.T) {
 
 	tree := treeOf(u)
 	require.NotEmpty(t, strings.TrimSpace(tree[len(tree)-1]), "no blank rows between the tree and its detail")
+}
+
+// askYesNo has the agent ask text through the UI, and is what the user
+// answered: empty while the question waits.
+func askYesNo(t *testing.T, u *UI, text string) *[]question.Answer {
+	t.Helper()
+	_, _ = u.Update(pubsub.Event[question.Request]{Type: pubsub.CreatedEvent, Payload: question.Request{
+		ID:        "q1",
+		SessionID: u.session.ID,
+		Questions: []question.Question{{ID: "ok", Type: question.TypeYesNo, Text: text}},
+	}})
+	form, ok := u.activeInline.(*dialog.QuestionForm)
+	require.True(t, ok, "the question waits in the editor")
+	var answered []question.Answer
+	form.OnAnswer = func(a []question.Answer) { answered = a }
+	return &answered
+}
+
+func wheelAt(u *UI, x, y int, deltaY float64) {
+	_, _ = u.Update(common.CoalescedWheelMsg{Mouse: tea.Mouse{X: x, Y: y}, DeltaY: deltaY})
+}
+
+// The agent asks while the explorer covers the editor.
+func TestExplorer_AClickOnItFullLeavesTheEditorUnderIt(t *testing.T) {
+	bare := explorerUI(t, 150, 50)
+	askYesNo(t, bare, "Ship it?")
+	yes := at(drawn(bare), bare.layout.editor, "Yes")
+	require.GreaterOrEqual(t, yes.Y, 0)
+
+	u := explorerUI(t, 150, 50)
+	press(u, ctrlX)
+	answered := askYesNo(t, u, "Ship it?")
+	require.Equal(t, explorerFull, u.explorerDrawn())
+	require.Equal(t, -1, at(drawn(u), u.layout.area, "Yes").Y, "the explorer covers the question")
+	require.Equal(t, bare.layout.editor, u.layout.editor, "where the Yes is under it")
+	click(u, yes.X+1, yes.Y)
+
+	require.Empty(t, *answered, "the Yes under the explorer is not pressed")
+	require.NotNil(t, u.activeInline, "the question still waits")
+}
+
+func TestExplorer_TheWheelOnItFullLeavesTheEditorUnderIt(t *testing.T) {
+	u := explorerUI(t, 150, 50)
+	press(u, ctrlX)
+	askYesNo(t, u, "Ship it?")
+	drawn(u)
+	under := u.layout.editor.Min.Add(image.Pt(1, 1))
+	require.True(t, under.In(u.layout.explorer))
+
+	wheelAt(u, under.X, under.Y, -1)
+
+	require.Equal(t, "fix-flaky-test/find-cause", u.selectedFrame().id, "the wheel moves the explorer's selection")
 }

@@ -1602,6 +1602,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
+		if m.state == uiChat && m.explorerAt(msg.X, msg.Y) {
+			if msg.Button == uv.MouseLeft {
+				cmds = append(cmds, m.handleExplorerClick(msg))
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		// Route clicks to inline editors that support mouse interaction.
 		if m.activeInline != nil {
 			if selectable, ok := m.activeInline.(dialog.MouseSelectableEditor); ok &&
@@ -1626,12 +1633,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		if m.state == uiChat && m.explorerAt(msg.X, msg.Y) {
-			if msg.Button == uv.MouseLeft {
-				cmds = append(cmds, m.handleExplorerClick(msg))
-			}
-			return m, tea.Batch(cmds...)
-		}
 		if m.state == uiChat && msg.Button == uv.MouseLeft {
 			if key, ok := m.stackFrameAt(msg.X, msg.Y); ok {
 				m.detailsOpen = false
@@ -1790,7 +1791,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Route wheel events to active inline editor only when the
 		// mouse is over the editor area, so scrolling over the chat
 		// still scrolls the chat.
-		if m.activeInline != nil && image.Pt(msg.Mouse.X, msg.Mouse.Y).In(m.layout.editor) {
+		if m.activeInline != nil && image.Pt(msg.Mouse.X, msg.Mouse.Y).In(m.layout.editor) && !m.explorerAt(msg.Mouse.X, msg.Mouse.Y) {
 			if we, ok := m.activeInline.(common.WheelScrollable); ok {
 				we.HandleWheel(msg.DeltaX, msg.DeltaY)
 				return m, tea.Batch(cmds...)
