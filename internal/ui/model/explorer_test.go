@@ -621,6 +621,27 @@ func TestExplorer_EnterOnAFrameNearTheChatsEndLeavesNoRowBlank(t *testing.T) {
 	require.NotEmpty(t, strings.TrimSpace(string(last[main.Min.X:main.Max.X-1])), "the chat stops at its bottom")
 }
 
+func TestExplorer_TheChatShowsWhichMarkedItemIsSelected(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('k'), typed('k'), enter)
+	reply := at(drawn(u), u.layout.main, "xxxx")
+	click(u, reply.X, reply.Y)
+	require.Equal(t, u.chat.idInxMap["f3"], u.chat.list.Selected(), "the click selects the marked reply")
+
+	// bar is the color of the first cell of the reply's first row.
+	bar := func() color.Color {
+		scr := uv.NewScreenBuffer(u.width, u.height)
+		u.Draw(scr, scr.Bounds())
+		y := at(screenRows(scr, scr.Bounds()), u.layout.main, "xxxx").Y
+		return scr.CellAt(u.layout.main.Min.X, y).Style.Fg
+	}
+	focused := u.com.Styles.Messages.AssistantFocused.GetBorderLeftForeground()
+	require.True(t, sameColor(bar(), focused), "the selected item keeps its focus bar")
+
+	press(u, tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})
+	require.True(t, sameColor(bar(), u.com.Styles.Header.LogoGradToColor), "once another is selected, the gutter")
+}
+
 func TestExplorer_DetailListsWhatTheModelNoLongerHas(t *testing.T) {
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('k'), typed('k'))
