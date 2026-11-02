@@ -409,7 +409,7 @@ type TUIOptions struct {
 	Scrollbar    string      `json:"scrollbar,omitempty" jsonschema:"description=Chat scrollbar visibility,enum=default,enum=always,enum=never,default=default"`
 	Mouse        *bool       `json:"mouse,omitempty" jsonschema:"description=Enable terminal mouse capture for selection\\, clicks\\, and scrolling in the TUI. Disable to let the terminal emulator or tmux handle text selection and copy/paste,default=true"`
 	ExitBanner   ExitBanner  `json:"exit_banner,omitempty" jsonschema:"description=Exit banner style after quitting Gnosh,enum=default,enum=compact,enum=none,default=default"`
-	ReduceMotion bool        `json:"reduce_motion,omitempty" jsonschema:"description=Keep the frames' views still: no shimmer on the frame at work\\, no flash or count-up on a pop. Clocks still run,default=false"`
+	ReduceMotion bool        `json:"reduce_motion,omitempty" jsonschema:"description=Keep the frames' views still: no shimmer on the frame at work\\, no flash or count-up on a pop. Their clocks\\, the spinners and the rest of the TUI still move,default=false"`
 }
 
 // IsTransparent reports whether the TUI draws a transparent background. The
