@@ -1441,6 +1441,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.appendSessionMessage(msg.Payload))
 			m.upsertArtifactsFromMessage(msg.Payload)
 			m.sessionFrames.observe(m.session.ID, msg.Payload, time.Now())
+			m.chat.MarkPopped(msg.Payload)
 			// A new message is a run boundary — a user prompt starting
 			// a turn or the agent replying/dequeueing. Drop the
 			// memoized busy state and re-fetch it and the queue
@@ -1459,6 +1460,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.updateSessionMessage(msg.Payload))
 			m.upsertArtifactsFromMessage(msg.Payload)
 			m.sessionFrames.observe(m.session.ID, msg.Payload, time.Now())
+			m.chat.MarkPopped(msg.Payload)
 		case pubsub.DeletedEvent:
 			m.chat.RemoveMessage(msg.Payload.ID)
 			m.sessionFrames.forget(msg.Payload.ID)
@@ -2086,6 +2088,9 @@ func (m *UI) setSessionMessages(msgs []message.Message) tea.Cmd {
 
 	if cmd := m.chat.SetMessages(items...); cmd != nil {
 		cmds = append(cmds, cmd)
+	}
+	for _, msg := range msgs {
+		m.chat.MarkPopped(msg)
 	}
 	// SetMessages rebuilds the items from stored messages, which cannot
 	// include the placeholder. Put it back when this session is still
