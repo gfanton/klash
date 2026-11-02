@@ -109,7 +109,10 @@ type frameNode struct {
 	// since is when it was pushed, in Unix seconds.
 	since  int64
 	popped bool
-	result string
+	// popIndex is its pop's place among the session's pops, from 1; 0
+	// while it is on the stack.
+	popIndex int
+	result   string
 	// poppedAt is when the UI saw its pop happen; zero for a pop loaded
 	// with the session.
 	poppedAt time.Time
@@ -142,6 +145,7 @@ func (n *frameNode) open() bool {
 // last popped entry.
 func (f sessionFrames) tree() (roots, stack []*frameNode) {
 	owner := map[string]*frameNode{}
+	pops := 0
 	for _, call := range f.calls {
 		for _, ev := range call.frames {
 			switch ev.Kind {
@@ -157,7 +161,8 @@ func (f sessionFrames) tree() (roots, stack []*frameNode) {
 			case "pop":
 				for i := len(stack) - 1; i >= 0; i-- {
 					if stack[i].id == ev.Id {
-						stack[i].popped, stack[i].result, stack[i].poppedAt = true, ev.Result, call.seen
+						pops++
+						stack[i].popped, stack[i].result, stack[i].poppedAt, stack[i].popIndex = true, ev.Result, call.seen, pops
 						owner[ev.Id] = stack[i]
 						stack = slices.Delete(stack, i, i+1)
 						break
@@ -284,6 +289,46 @@ type stackLook struct {
 	busy bool
 }
 
+// resultLines is which finished frames the Stack shows with their result.
+type resultLines int
+
+const (
+	everyResult resultLines = iota
+	// lastResult is the result of the frame popped last.
+	lastResult
+	noResult
+)
+
+// stackFit is how much of the Stack a drawing of it shows: how many
+// finished top-level frames it lists, which finished frames keep their
+// result, and whether it says what slid out.
+type stackFit struct {
+	finished int
+	results  resultLines
+	slid     bool
+}
+
+// stackFits are the ways the Stack is drawn in a column of fixed height,
+// fullest first. Each drops the least needed of what the one before it
+// shows: older results, then earlier finished tasks, then what slid out,
+// then the last result. The frames the agent is in stay.
+func stackFits() []stackFit {
+	fits := []stackFit{{finished: maxFinishedTasks, results: everyResult, slid: true}}
+	for n := maxFinishedTasks; n >= 0; n-- {
+		fits = append(fits, stackFit{finished: n, results: lastResult, slid: true})
+	}
+	return append(fits, stackFit{results: lastResult}, stackFit{results: noResult})
+}
+
+// freedLabel says about how many tokens pops and slides took out of the
+// model's context; "" before any did.
+func freedLabel(t *styles.Styles, f sessionFrames) string {
+	if total := f.freed(); total > 0 {
+		return t.Files.Additions.Render(shortTokens(total) + " tok freed")
+	}
+	return ""
+}
+
 // stackSection renders the sidebar's Stack section: the frames the session
 // entered as a tree, a finished one with its result and about how many
 // tokens its pop took out of the model's context, the frame the agent is
@@ -291,27 +336,72 @@ type stackLook struct {
 // only the last few are listed. Then what slides took out. "" for a
 // session with neither.
 func stackSection(t *styles.Styles, f sessionFrames, width int, look stackLook) string {
+	body := stackBody(t, f, width, stackFits()[0], look)
+	if body == nil {
+		return ""
+	}
+	var info []string
+	if freed := freedLabel(t, f); freed != "" {
+		info = append(info, freed)
+	}
+	lines := append([]string{common.Section(t, "Stack", width, info...), ""}, body...)
+	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
+}
+
+// stackColumn renders the Stack in a column width wide and at most height
+// rows tall, as compact mode's details show it: the fullest of stackFits
+// that fits, else the leanest with its first lines cut, since the frames
+// the agent is in come last. "" for a session with neither frames nor
+// slides.
+func stackColumn(t *styles.Styles, f sessionFrames, width, height int, look stackLook) string {
+	if height <= 0 {
+		return ""
+	}
+	title := t.Files.SectionTitle.Render("Stack")
+	if freed := freedLabel(t, f); freed != "" {
+		title += "  " + freed
+	}
+	lines := []string{ansi.Truncate(title, width, "…"), ""}
+	var body []string
+	for _, fit := range stackFits() {
+		body = stackBody(t, f, width, fit, look)
+		if len(lines)+len(body) <= height {
+			break
+		}
+	}
+	if body == nil {
+		return ""
+	}
+	switch room := height - len(lines); {
+	case room <= 0:
+		lines = lines[:height]
+	case len(body) > room:
+		lines = append(lines, body[len(body)-room:]...)
+	default:
+		lines = append(lines, body...)
+	}
+	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
+}
+
+// stackBody is the lines of the Stack under its heading, drawn to fit;
+// nil for a session with neither frames nor slides.
+func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look stackLook) []string {
 	roots, stack := f.tree()
 	slidRows, slidTokens := f.slid()
 	if len(roots) == 0 && slidRows == 0 {
-		return ""
+		return nil
 	}
-	r := stackRenderer{t: t, width: width, look: look}
+	r := stackRenderer{t: t, width: width, look: look, results: fit.results, last: lastPopped(roots)}
 	if len(stack) > 0 {
 		r.top = stack[len(stack)-1]
 	}
-	var freed []string
-	if total := f.freed(); total > 0 {
-		freed = append(freed, t.Files.Additions.Render(shortTokens(total)+" tok freed"))
-	}
-	r.lines = []string{common.Section(t, "Stack", width, freed...), ""}
 	finished := 0
 	for _, n := range roots {
 		if !n.open() {
 			finished++
 		}
 	}
-	skip := max(finished-maxFinishedTasks, 0)
+	skip := max(finished-fit.finished, 0)
 	if skip > 0 {
 		r.add(t.Files.TruncationHint.Render(fmt.Sprintf("…%d earlier", skip)))
 	}
@@ -322,7 +412,7 @@ func stackSection(t *styles.Styles, f sessionFrames, width int, look stackLook) 
 		}
 		r.node(n, "", "", "")
 	}
-	if slidRows > 0 {
+	if slidRows > 0 && fit.slid {
 		unit := "msgs"
 		if slidRows == 1 {
 			unit = "msg"
@@ -331,7 +421,52 @@ func stackSection(t *styles.Styles, f sessionFrames, width int, look stackLook) 
 		r.add(t.Files.Path.Render("slid out of the model's context"))
 		r.add("  " + t.Files.EmptyMessage.Render(fmt.Sprintf("%d %s · ≈%s tokens", slidRows, unit, shortTokens(slidTokens))))
 	}
-	return lipgloss.NewStyle().Width(width).Render(strings.Join(r.lines, "\n"))
+	return r.lines
+}
+
+// stackColumnWidth is the widest the Stack's column gets in compact mode's
+// details.
+const stackColumnWidth = 30
+
+// trailGap is the least room between the trail's frames and its total.
+const trailGap = 2
+
+// stackTrail renders the Stack on one row width wide, for compact mode,
+// which has no sidebar: the frames the agent is in, root first, with the
+// clock of the one it works in, or the last task once all are done; and at
+// the row's end what pops and slides freed. A narrow row folds the middle
+// frames to "…", then drops the total, then the clock. "" for a session
+// without frames.
+func stackTrail(t *styles.Styles, f sessionFrames, width int, look stackLook) string {
+	roots, stack := f.tree()
+	if len(roots) == 0 || width <= 0 {
+		return ""
+	}
+	r := stackRenderer{t: t, width: width, look: look}
+	total := freedLabel(t, f)
+	type trailFit struct{ left, right string }
+	var fits []trailFit
+	if len(stack) == 0 {
+		last := roots[len(roots)-1]
+		left := t.Files.Additions.Render("✓") + " " + r.name(last, t.Files.Path, last.id)
+		if last.result != "" {
+			left += "  " + t.Files.EmptyMessage.Render(last.result)
+		}
+		fits = []trailFit{{left, total}, {left, ""}}
+	} else {
+		r.top = stack[len(stack)-1]
+		path, folded := r.path(stack, false), r.path(stack, true)
+		clock := "  " + r.clock(r.top)
+		fits = []trailFit{{path + clock, total}, {folded + clock, total}, {folded + clock, ""}, {folded, ""}}
+	}
+	for _, fit := range fits {
+		pad := width - lipgloss.Width(fit.left) - lipgloss.Width(fit.right)
+		if fit.right == "" && pad >= 0 || pad >= trailGap {
+			return fit.left + strings.Repeat(" ", pad) + fit.right
+		}
+	}
+	cut := ansi.Truncate(fits[len(fits)-1].left, width, "…")
+	return cut + strings.Repeat(" ", max(width-lipgloss.Width(cut), 0))
 }
 
 type stackRenderer struct {
@@ -339,8 +474,98 @@ type stackRenderer struct {
 	width int
 	look  stackLook
 	// top is the frame the agent is in; nil with an empty stack.
-	top   *frameNode
-	lines []string
+	top *frameNode
+	// results is which finished frames show their result; last is the
+	// frame popped last.
+	results resultLines
+	last    *frameNode
+	lines   []string
+}
+
+// lastPopped is the frame popped last among nodes and the frames entered
+// from them; nil when none was.
+func lastPopped(nodes []*frameNode) *frameNode {
+	var last *frameNode
+	for _, n := range nodes {
+		for _, c := range []*frameNode{n, lastPopped(n.children)} {
+			if c != nil && c.popIndex > 0 && (last == nil || c.popIndex > last.popIndex) {
+				last = c
+			}
+		}
+	}
+	return last
+}
+
+// working reports whether the agent works at the look's time, which sets
+// the clocks running and the frame it is in shimmering.
+func (r *stackRenderer) working() bool {
+	return r.look.busy && !r.look.now.IsZero()
+}
+
+// clock is how long open frame n has run while the agent works, else when
+// the agent entered it.
+func (r *stackRenderer) clock(n *frameNode) string {
+	if r.working() {
+		return r.t.Files.EmptyMessage.Render(runningFor(r.look.now.Sub(time.Unix(n.since, 0))))
+	}
+	return r.t.Files.EmptyMessage.Render(time.Unix(n.since, 0).Format("15:04"))
+}
+
+// name renders name, n's, in style: shimmering while the agent works in
+// n, in the gradient while n's pop is lit.
+func (r *stackRenderer) name(n *frameNode, style lipgloss.Style, name string) string {
+	switch {
+	case n == r.top && r.working():
+		return r.paint(style, name, int(r.look.now.UnixMilli()/shimmerStep.Milliseconds()))
+	case flashed(n.poppedAt, r.look.now) < 1:
+		return r.paint(style, name, 0)
+	}
+	return style.Render(name)
+}
+
+// shortName is id as it reads under parent's: its last part, or all of it
+// when it is not under it.
+func shortName(id, parent string) string {
+	if rest, ok := strings.CutPrefix(id, parent+"/"); ok && parent != "" {
+		return rest
+	}
+	return id
+}
+
+// path names the frames on stack, root first, each as it reads under the
+// one before it; folded, the ones between the root and the top are one
+// "…".
+func (r *stackRenderer) path(stack []*frameNode, fold bool) string {
+	t := r.t
+	var parts []string
+	for i, n := range stack {
+		if fold && i > 0 && i < len(stack)-1 {
+			if i == 1 {
+				parts = append(parts, t.Files.TruncationHint.Render("…"))
+			}
+			continue
+		}
+		parent, style := "", t.Files.Path
+		if i > 0 {
+			parent = stack[i-1].id
+		}
+		if n == r.top {
+			style = t.Files.ArtifactLabel
+		}
+		parts = append(parts, r.name(n, style, shortName(n.id, parent)))
+	}
+	return t.LSP.WarningDiagnostic.Render("▸") + " " + strings.Join(parts, t.Files.TruncationHint.Render(" › "))
+}
+
+// showsResult reports whether finished frame n keeps its result line.
+func (r *stackRenderer) showsResult(n *frameNode) bool {
+	switch r.results {
+	case everyResult:
+		return true
+	case lastResult:
+		return n == r.last
+	}
+	return false
 }
 
 // shimmerStep is how long the shimmer's colors stay before moving on by
@@ -389,23 +614,15 @@ func (r *stackRenderer) add(line string) {
 // frames entered from it.
 func (r *stackRenderer) node(n *frameNode, parent, lead, cont string) {
 	t := r.t
-	name := n.id
-	if rest, ok := strings.CutPrefix(n.id, parent+"/"); ok && parent != "" {
-		name = rest
-	}
+	name := shortName(n.id, parent)
 	open := n.open()
-	working := r.look.busy && !r.look.now.IsZero()
-	lit := flashed(n.poppedAt, r.look.now)
 	marker, nameStyle, right := t.Files.Additions.Render("✓"), t.Files.Path, ""
-	switch {
-	case open && working:
+	if open {
 		marker, nameStyle = t.LSP.WarningDiagnostic.Render("▸"), t.Files.ArtifactLabel
-		right = t.Files.EmptyMessage.Render(runningFor(r.look.now.Sub(time.Unix(n.since, 0))))
-	case open:
-		marker, nameStyle = t.LSP.WarningDiagnostic.Render("▸"), t.Files.ArtifactLabel
-		right = t.Files.EmptyMessage.Render(time.Unix(n.since, 0).Format("15:04"))
-	default:
+		right = r.clock(n)
+	} else {
 		// A pop just seen counts its freed tokens up, easing out.
+		lit := flashed(n.poppedAt, r.look.now)
 		eased := 1 - (1-lit)*(1-lit)*(1-lit)
 		if freed := int64(float64(n.total()) * eased); freed > 0 {
 			right = t.Files.Additions.Render("−" + shortTokens(freed) + " tok")
@@ -421,20 +638,13 @@ func (r *stackRenderer) node(n *frameNode, parent, lead, cont string) {
 	if right == "" {
 		pad = 0
 	}
-	shown := nameStyle.Render(name)
-	switch {
-	case n == r.top && working:
-		shown = r.paint(nameStyle, name, int(r.look.now.UnixMilli()/shimmerStep.Milliseconds()))
-	case lit < 1:
-		shown = r.paint(nameStyle, name, 0)
-	}
-	r.add(head + shown + strings.Repeat(" ", pad) + right)
+	r.add(head + r.name(n, nameStyle, name) + strings.Repeat(" ", pad) + right)
 
 	detail := t.Files.TruncationHint.Render(cont + "  ")
 	switch {
 	case n == r.top:
 		r.add(detail + t.Files.EmptyMessage.Render(strconv.Quote(n.purpose)))
-	case !open && n.result != "":
+	case !open && n.result != "" && r.showsResult(n):
 		r.add(detail + t.Files.EmptyMessage.Render(n.result))
 	}
 	if !open {
