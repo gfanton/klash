@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/crush/internal/gnovm"
 	gnovmtools "github.com/charmbracelet/crush/internal/gnovm/tools"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/ui/common"
 	"github.com/charmbracelet/crush/internal/ui/fade"
 	"github.com/charmbracelet/crush/internal/ui/styles"
@@ -322,15 +323,14 @@ type stackLook struct {
 type resultLines int
 
 const (
-	everyResult resultLines = iota
 	// lastResult is the result of the frame popped last.
-	lastResult
+	lastResult resultLines = iota
 	noResult
 )
 
 // stackFit is how much of the Stack a drawing of it shows: how many
-// finished top-level frames it lists, which finished frames keep their
-// result, and whether it says what slid out.
+// finished top-level frames it lists, whether the frame popped last keeps
+// its result, and whether it says what slid out.
 type stackFit struct {
 	finished int
 	results  resultLines
@@ -339,10 +339,10 @@ type stackFit struct {
 
 // stackFits are the ways the Stack is drawn in a column of fixed height,
 // fullest first. Each drops the least needed of what the one before it
-// shows: older results, then earlier finished tasks, then what slid out,
-// then the last result. The frames the agent is in stay.
+// shows: earlier finished tasks, then what slid out, then the last
+// result. The frames the agent is in stay.
 func stackFits() []stackFit {
-	fits := []stackFit{{finished: maxFinishedTasks, results: everyResult, slid: true}}
+	var fits []stackFit
 	for n := maxFinishedTasks; n >= 0; n-- {
 		fits = append(fits, stackFit{finished: n, results: lastResult, slid: true})
 	}
@@ -365,13 +365,13 @@ func freedLabel(t *styles.Styles, f sessionFrames) string {
 // only the last few are listed. Then what slides took out. "" for a
 // session with neither.
 func stackSection(t *styles.Styles, f sessionFrames, width int, look stackLook) string {
-	view, _ := stackSectionLines(t, f, width, look)
+	view, _ := stackSectionLines(t, f, nil, width, look)
 	return view
 }
 
 // stackSectionLines is stackSection with, for each of its lines, the key
 // of the frame entry it shows, "" for a line that shows none.
-func stackSectionLines(t *styles.Styles, f sessionFrames, width int, look stackLook) (string, []string) {
+func stackSectionLines(t *styles.Styles, f sessionFrames, todos []session.Todo, width int, look stackLook) (string, []string) {
 	body, keys := stackBody(t, f, width, stackFits()[0], look)
 	if body == nil {
 		return "", nil
@@ -380,8 +380,29 @@ func stackSectionLines(t *styles.Styles, f sessionFrames, width int, look stackL
 	if freed := freedLabel(t, f); freed != "" {
 		info = append(info, freed)
 	}
-	lines := append([]string{common.Section(t, "Stack", width, info...), ""}, body...)
-	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n")), append([]string{"", ""}, keys...)
+	title := "Stack"
+	if len(todos) > 0 {
+		done := 0
+		for _, todo := range todos {
+			if todo.Status == session.TodoStatusCompleted {
+				done++
+			}
+		}
+		title = fmt.Sprintf("Stack · %d/%d", done, len(todos))
+	}
+	lines := append([]string{common.Section(t, title, width, info...), ""}, body...)
+	keys = append([]string{"", ""}, keys...)
+	var next []string
+	for _, todo := range todos {
+		if todo.Status == session.TodoStatusPending {
+			next = append(next, "○ "+todo.Content)
+		}
+	}
+	if len(next) > 0 {
+		lines = append(lines, ansi.Truncate("  "+t.Files.EmptyMessage.Render(strings.Join(next, " · ")), width, "…"))
+		keys = append(keys, "")
+	}
+	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n")), keys
 }
 
 // stackColumn renders the Stack in a column width wide and at most height
@@ -435,7 +456,7 @@ func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look 
 	if len(roots) == 0 && slidRows == 0 {
 		return nil, nil
 	}
-	r := stackRenderer{t: t, width: width, look: look, results: fit.results, last: lastPopped(roots)}
+	r := stackRenderer{t: t, width: width - 1, look: look, results: fit.results, last: lastPopped(roots)}
 	if len(stack) > 0 {
 		r.top = stack[len(stack)-1]
 	}
@@ -466,7 +487,21 @@ func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look 
 		r.add(t.Files.Path.Render("slid out of the model's context"))
 		r.add("  " + t.Files.EmptyMessage.Render(fmt.Sprintf("%d %s · ≈%s tokens", slidRows, unit, shortTokens(slidTokens))))
 	}
+	r.markTop()
 	return r.lines, r.keys
+}
+
+// markTop starts each line with a column for the gutter: › on the line
+// of the frame the agent is in, a space on the others.
+func (r *stackRenderer) markTop() {
+	marked := false
+	for i, line := range r.lines {
+		mark := " "
+		if r.top != nil && !marked && r.keys[i] == r.top.key {
+			mark, marked = lipgloss.NewStyle().Foreground(r.t.Header.LogoGradToColor).Render("›"), true
+		}
+		r.lines[i] = mark + line
+	}
 }
 
 // stackColumnWidth is the widest the Stack's column gets in compact mode's
@@ -610,13 +645,7 @@ func (r *stackRenderer) path(stack []*frameNode, fold bool) string {
 
 // showsResult reports whether finished frame n keeps its result line.
 func (r *stackRenderer) showsResult(n *frameNode) bool {
-	switch r.results {
-	case everyResult:
-		return true
-	case lastResult:
-		return n == r.last
-	}
-	return false
+	return r.results == lastResult && n == r.last
 }
 
 // shimmerStep is how long the shimmer's colors stay before moving on by
@@ -667,8 +696,12 @@ func (r *stackRenderer) add(line string) {
 func (r *stackRenderer) node(n *frameNode, parent, lead, cont string) {
 	t := r.t
 	r.key = n.key
-	r.add(r.entry(n, shortName(n.id, parent), lead, r.width))
 	open := n.open()
+	tail := ""
+	if !open {
+		tail = r.stepDots(n)
+	}
+	r.add(r.entry(n, shortName(n.id, parent), tail, lead, r.width))
 
 	detail := t.Files.TruncationHint.Render(cont + "  ")
 	switch {
@@ -689,32 +722,50 @@ func (r *stackRenderer) node(n *frameNode, parent, lead, cont string) {
 	}
 }
 
-// entry renders n's line, width wide: lead, its marker and name, then
-// when it was entered while it is open, or what its pop freed once done.
-func (r *stackRenderer) entry(n *frameNode, name, lead string, width int) string {
+// entry renders n's line, width wide: lead, its marker and name and tail,
+// then when it was entered while it is open, or what its pop freed once
+// done.
+func (r *stackRenderer) entry(n *frameNode, name, tail, lead string, width int) string {
 	right := r.entryRight(n)
 	room := width - lipgloss.Width(right)
 	if right != "" {
 		room--
 	}
-	head := r.entryHead(n, name, lead, room)
+	head := r.entryHead(n, name, tail, lead, room)
 	if right == "" {
 		return head
 	}
 	return head + strings.Repeat(" ", max(width-lipgloss.Width(head)-lipgloss.Width(right), 1)) + right
 }
 
-// entryHead renders lead, then n's marker and name, name cut to fit
-// width.
-func (r *stackRenderer) entryHead(n *frameNode, name, lead string, width int) string {
+// entryHead renders lead, then n's marker and name, then tail after a
+// space, name cut to fit width.
+func (r *stackRenderer) entryHead(n *frameNode, name, tail, lead string, width int) string {
 	t := r.t
 	marker, nameStyle := t.Files.Additions.Render("✓"), t.Files.Path
 	if n.open() {
 		marker, nameStyle = t.LSP.WarningDiagnostic.Render("▸"), t.Files.ArtifactLabel
 	}
 	head := t.Files.TruncationHint.Render(lead) + marker + " "
-	name = ansi.Truncate(name, max(width-lipgloss.Width(head), 1), "…")
-	return head + r.name(n, nameStyle, name)
+	if tail != "" {
+		tail = " " + tail
+	}
+	name = ansi.Truncate(name, max(width-lipgloss.Width(head)-lipgloss.Width(tail), 1), "…")
+	return head + r.name(n, nameStyle, name) + tail
+}
+
+// stepDots is a dot for each frame entered from n: filled once it is
+// done, hollow while it is open.
+func (r *stackRenderer) stepDots(n *frameNode) string {
+	var b strings.Builder
+	for _, c := range n.children {
+		if c.open() {
+			b.WriteString(r.t.Files.EmptyMessage.Render("○"))
+		} else {
+			b.WriteString(r.t.Files.Additions.Render("●"))
+		}
+	}
+	return b.String()
 }
 
 // entryRight is when n was entered while it is open, or what its pop
