@@ -314,6 +314,20 @@ func TestExplorer_HeaderButtonsSizeAndCloseIt(t *testing.T) {
 	require.False(t, u.explorer.open)
 }
 
+// A header too narrow for anything but the buttons still ends with them,
+// where a click finds them.
+func TestExplorer_HeaderButtonsWorkWhenNarrow(t *testing.T) {
+	for _, width := range []int{32, 24} {
+		u := explorerUI(t, width, 40)
+		press(u, ctrlX)
+
+		closing := at(drawn(u), u.layout.explorer, "× close")
+		require.GreaterOrEqual(t, closing.Y, 0, "at %d columns", width)
+		click(u, closing.X+1, closing.Y)
+		require.False(t, u.explorer.open, "at %d columns", width)
+	}
+}
+
 func TestExplorer_AClickOnAFrameSelectsIt(t *testing.T) {
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
