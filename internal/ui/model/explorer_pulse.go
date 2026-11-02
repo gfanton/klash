@@ -255,14 +255,9 @@ func (m *UI) pulseTab(inner, height int) []string {
 	waits := m.waitsOnUser()
 	if len(waits) > 0 {
 		lines = append(lines, t.LSP.WarningDiagnostic.Bold(true).Render("▲ WAITS ON YOU")+" "+muted.Render(fmt.Sprintf("(%d)", len(waits))))
-		gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
 		sel := m.selectedWait()
 		for i, w := range waits {
-			mark := "   "
-			if i == sel {
-				mark = gutter.Render("›") + "  "
-			}
-			lines = append(lines, mark+t.Files.ArtifactLabel.Render("`"+w.Name+"`")+"   "+muted.Render(w.Title))
+			lines = append(lines, gutterMark(t, i == sel)+"  "+t.Files.ArtifactLabel.Render("`"+w.Name+"`")+"   "+muted.Render(w.Title))
 		}
 		lines = append(lines, "")
 	}
@@ -391,13 +386,8 @@ func (m *UI) laneLines(i int, items []pulseItem, width, rows int) []string {
 	if w.above != "" {
 		lines = append(lines, "  "+muted.Render(w.above))
 	}
-	gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
 	for j, item := range items[w.first : w.first+w.shown] {
-		mark := "  "
-		if w.first+j == sel {
-			mark = gutter.Render("›") + " "
-		}
-		line := mark + item.head
+		line := gutterMark(t, w.first+j == sel) + " " + item.head
 		if item.right != "" {
 			line = fitLeft(line, width-lipgloss.Width(item.right)-1) + " " + item.right
 		}

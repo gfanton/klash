@@ -496,12 +496,19 @@ func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look 
 func (r *stackRenderer) markTop() {
 	marked := false
 	for i, line := range r.lines {
-		mark := " "
-		if r.top != nil && !marked && r.keys[i] == r.top.key {
-			mark, marked = lipgloss.NewStyle().Foreground(r.t.Header.LogoGradToColor).Render("›"), true
-		}
-		r.lines[i] = mark + line
+		top := r.top != nil && !marked && r.keys[i] == r.top.key
+		marked = marked || top
+		r.lines[i] = gutterMark(r.t, top) + line
 	}
+}
+
+// gutterMark is the column a line of a list starts with: › on the line
+// the list marks, a space on the others.
+func gutterMark(t *styles.Styles, marked bool) string {
+	if !marked {
+		return " "
+	}
+	return lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor).Render("›")
 }
 
 // stackColumnWidth is the widest the Stack's column gets in compact mode's
