@@ -479,7 +479,8 @@ func (l *List) EndSelectionDrag() {
 	}
 }
 
-// ScrollToIndex scrolls the list to the given item index.
+// ScrollToIndex scrolls the list to the given item index, or to the
+// bottom where too little follows the item to fill the viewport.
 func (l *List) ScrollToIndex(index int) {
 	if index < 0 {
 		index = 0
@@ -489,6 +490,10 @@ func (l *List) ScrollToIndex(index int) {
 	}
 	l.offsetIdx = index
 	l.offsetLine = 0
+	if lastOffsetIdx, lastOffsetLine, _ := l.lastOffsetItem(); l.offsetIdx > lastOffsetIdx {
+		l.offsetIdx = lastOffsetIdx
+		l.offsetLine = lastOffsetLine
+	}
 }
 
 // ScrollBy scrolls the list by the given number of lines.
