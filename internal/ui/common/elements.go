@@ -182,7 +182,8 @@ type StatusOpts struct {
 }
 
 // Status renders a status line with icon, title, description, and extra
-// content. The description is truncated if it exceeds the available width.
+// content, on one row of width: the title and the description are cut to
+// fit.
 func Status(t *styles.Styles, opts StatusOpts, width int) string {
 	icon := opts.Icon
 	title := opts.Title
@@ -191,15 +192,25 @@ func Status(t *styles.Styles, opts StatusOpts, width int) string {
 	titleColor := cmp.Or(opts.TitleColor, t.Resource.DefaultTitleFg)
 	descriptionColor := cmp.Or(opts.DescriptionColor, t.Resource.DefaultDescFg)
 
-	title = t.Resource.RowTitleBase.Foreground(titleColor).Render(title)
+	extraContentWidth := lipgloss.Width(opts.ExtraContent)
+	if extraContentWidth > 0 {
+		extraContentWidth += 1
+	}
+	// A section counts one row per status line: the title is cut, not
+	// wrapped, to what the icon and the extra content leave.
+	titleRoom := width - extraContentWidth
+	if icon != "" {
+		titleRoom -= lipgloss.Width(icon) + 1
+	}
+	title = t.Resource.RowTitleBase.Foreground(titleColor).Render(ansi.Truncate(title, max(titleRoom, 0), "…"))
 
 	if description != "" {
-		extraContentWidth := lipgloss.Width(opts.ExtraContent)
-		if extraContentWidth > 0 {
-			extraContentWidth += 1
+		if room := width - lipgloss.Width(icon) - lipgloss.Width(title) - 2 - extraContentWidth; room > 0 {
+			description = ansi.Truncate(description, room, "…")
+			description = t.Resource.RowDescBase.Foreground(descriptionColor).Render(description)
+		} else {
+			description = ""
 		}
-		description = ansi.Truncate(description, width-lipgloss.Width(icon)-lipgloss.Width(title)-2-extraContentWidth, "…")
-		description = t.Resource.RowDescBase.Foreground(descriptionColor).Render(description)
 	}
 
 	var content []string
