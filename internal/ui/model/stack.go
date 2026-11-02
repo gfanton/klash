@@ -37,9 +37,17 @@ type sessionFrames struct {
 	// asked is askCall's answers by question; nil once a mem call's row
 	// comes or a row goes.
 	asked map[string]string
-	// popFreed is freedBy's answers by entry key; emptied once a row comes
-	// or goes.
-	popFreed map[string]int64
+	// worked is what draws work out from the rows, kept until a row comes
+	// or goes; nil keeps nothing.
+	worked *framesWorked
+}
+
+// framesWorked is what draws work out from a session's rows.
+type framesWorked struct {
+	// freed is freedBy's answers by entry key.
+	freed map[string]int64
+	// series is contextSeries' answer; nil until asked.
+	series []contextPoint
 }
 
 // frameCall is the frames one gnovm_run call pushed and popped, in order.
@@ -89,7 +97,7 @@ func (f *sessionFrames) observe(sessionID string, row message.Message, now time.
 		f.tokens = map[string]int64{}
 	}
 	f.tokens[row.ID] = agent.RowTokens(row)
-	f.popFreed = map[string]int64{}
+	f.worked = &framesWorked{freed: map[string]int64{}}
 	if callsMem(row) {
 		f.asked = nil
 	}
@@ -135,7 +143,7 @@ func (f *sessionFrames) forget(rowID string) bool {
 			f.at[f.rows[j].ID] = j
 		}
 		f.asked = nil
-		f.popFreed = map[string]int64{}
+		f.worked = &framesWorked{freed: map[string]int64{}}
 	}
 	n := len(f.calls)
 	f.calls = slices.DeleteFunc(f.calls, func(c frameCall) bool { return c.rowID == rowID })
