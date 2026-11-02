@@ -251,6 +251,19 @@ func TestExplorer_OpensFromAClickOnTheSidebarStack(t *testing.T) {
 	require.Equal(t, explorerTree, u.explorer.tab, "in the tree, whichever tab was last open")
 }
 
+func TestExplorer_OpensFollowingFromAClickOnTheFrameAtWork(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('3'), esc)
+
+	row := at(drawn(u), u.layout.sidebar, "try-free-port")
+	require.GreaterOrEqual(t, row.Y, 0)
+	click(u, row.X+1, row.Y)
+	require.True(t, u.explorer.open)
+	require.True(t, u.explorer.following, "the frame the agent is in is what following shows")
+	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id)
+	require.Equal(t, explorerTree, u.explorer.tab)
+}
+
 func TestExplorer_OpensFromACompactTrailClick(t *testing.T) {
 	u := explorerUI(t, 100, 40)
 	require.True(t, u.isCompact)
