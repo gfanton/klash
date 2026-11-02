@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/gnovm"
 	gnovmtools "github.com/charmbracelet/crush/internal/gnovm/tools"
 	"github.com/charmbracelet/crush/internal/history"
@@ -371,6 +372,37 @@ func TestStackSection_APopCountsUpWhatItFreed(t *testing.T) {
 	require.Contains(t, draw(2*time.Second), "−1K tok", "and ends at what the pop freed")
 	require.True(t, f.animating(popped.Add(100*time.Millisecond), false))
 	require.False(t, f.animating(popped.Add(2*time.Second), false))
+}
+
+func TestStackSection_StandsStillWhenMotionIsReduced(t *testing.T) {
+	f := releaseFrames(t)
+	at := time.Unix(1_700_000_100, 0)
+	working := func(after time.Duration) string {
+		return stackSection(minimalFileStyles(), f, 30, stackLook{now: at.Add(after), busy: true, still: true})
+	}
+	require.Equal(t, working(0), working(240*time.Millisecond), "the frame at work does not shimmer")
+
+	popped := time.Unix(1_700_000_200, 0)
+	f.observe("s1", toolRow("m7", 1_700_000_200, memResult(t, "c7", popWith("release-v2/ci-green", "CI passed"))), popped)
+	draw := func(after time.Duration) string {
+		return stackSection(minimalFileStyles(), f, 30, stackLook{now: popped.Add(after), still: true})
+	}
+	require.Equal(t, draw(100*time.Millisecond), draw(2*time.Second), "a pop neither flashes nor counts up")
+}
+
+func TestReduceMotionIsATUIOption(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	require.False(t, u.stackLook().still)
+
+	u.com.Workspace = stillWorkspace{u.com.Workspace.(*exportWorkspace)}
+	require.True(t, u.stackLook().still)
+}
+
+// stillWorkspace is exportWorkspace with reduce_motion set.
+type stillWorkspace struct{ *exportWorkspace }
+
+func (stillWorkspace) Config() *config.Config {
+	return &config.Config{Options: &config.Options{TUI: &config.TUIOptions{ReduceMotion: true}}}
 }
 
 func TestSessionFrames_AnimatesWhileTheAgentWorksInAFrame(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"math"
 	"slices"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -492,7 +491,7 @@ func (m *UI) contextChartLines(c contextNow, inner, height int) []string {
 	muted := t.Files.EmptyMessage
 	roots, _ := m.sessionFrames.tree()
 	width := max(inner-chartLabel, 1)
-	axis := m.sessionFrames.treeAxis(roots, stackLook{now: time.Now(), busy: m.isAgentBusy()}, width)
+	axis := m.sessionFrames.treeAxis(roots, m.stackLook(), width)
 	series := m.contextOverTime()
 	top := c.window
 	for _, p := range series {

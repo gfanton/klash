@@ -845,7 +845,7 @@ func (m *UI) explorerTree(inner, height int) ([]string, int) {
 	l := treeLayoutFor(rows, inner, height)
 	sel := m.selectedRow(rows)
 	top := explorerTreeTop(sel, l.tree)
-	look := stackLook{now: time.Now(), busy: m.isAgentBusy()}
+	look := m.stackLook()
 	r := stackRenderer{t: t, width: inner - treeGutter, look: look}
 	r.freedOf = func(n *frameNode) int64 { return tokensOf(m.sessionFrames.heldRows(n)) }
 	if len(stack) > 0 {

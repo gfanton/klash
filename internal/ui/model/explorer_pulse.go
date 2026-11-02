@@ -81,10 +81,18 @@ func shortSession(id string) string {
 	return id[:min(len(id), 8)]
 }
 
+// stackLook is what the frames are drawn for now, still where the TUI's
+// reduce_motion option says so.
+func (m *UI) stackLook() stackLook {
+	opts := m.com.Config().Options
+	still := opts != nil && opts.TUI != nil && opts.TUI.ReduceMotion
+	return stackLook{now: time.Now(), busy: m.isAgentBusy(), still: still}
+}
+
 // pulseRenderer draws the session's frames for the Pulse tab, as the
 // Tree tab does.
 func (m *UI) pulseRenderer() *stackRenderer {
-	r := &stackRenderer{t: m.com.Styles, look: stackLook{now: time.Now(), busy: m.isAgentBusy()}}
+	r := &stackRenderer{t: m.com.Styles, look: m.stackLook()}
 	r.freedOf = func(n *frameNode) int64 { return tokensOf(m.sessionFrames.heldRows(n)) }
 	if _, stack := m.sessionFrames.tree(); len(stack) > 0 {
 		r.top = stack[len(stack)-1]

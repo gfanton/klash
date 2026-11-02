@@ -4184,7 +4184,7 @@ func (m *UI) drawStackTrail(scr uv.Screen, area uv.Rectangle) {
 	// Under the header's wordmark, past the space that leads it.
 	area.Min.X += leftPadding + 1
 	area.Max.X -= rightPadding + 1
-	trail := stackTrail(m.com.Styles, m.sessionFrames, area.Dx(), stackLook{now: time.Now(), busy: m.isAgentBusy()})
+	trail := stackTrail(m.com.Styles, m.sessionFrames, area.Dx(), m.stackLook())
 	uv.NewStyledString(trail).Draw(scr, area)
 }
 
@@ -7372,7 +7372,7 @@ func (m *UI) sessionDetailsIn(area uv.Rectangle) sessionDetails {
 
 	// The Stack, which compact mode has no sidebar for, comes first.
 	stackWidth := min(width/3, stackColumnWidth)
-	stack, keys := stackColumnLines(s, m.sessionFrames, stackWidth, maxItemsPerSection+2, stackLook{now: time.Now(), busy: m.isAgentBusy()})
+	stack, keys := stackColumnLines(s, m.sessionFrames, stackWidth, maxItemsPerSection+2, m.stackLook())
 	if stack != "" {
 		// The four sections share what it leaves, a space between columns.
 		sectionWidth = max(1, min(maxSectionWidth, (width-stackWidth-4)/4))
