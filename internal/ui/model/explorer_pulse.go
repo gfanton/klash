@@ -249,11 +249,24 @@ func (m *UI) lanesBeside(lanes [laneCount][]pulseItem, inner, rows int) []string
 }
 
 // lanesUnder draws the lanes one under the other, inner wide, sharing
-// rows.
+// rows: each gets up to a third, then the rows the others leave go to
+// those that need more, the first first.
 func (m *UI) lanesUnder(lanes [laneCount][]pulseItem, inner, rows int) []string {
+	var need, got [laneCount]int
+	left := rows
+	for i, items := range lanes {
+		need[i] = 1 + max(2*len(items), 1)
+		got[i] = min(need[i], max(rows/laneCount, 3))
+		left -= got[i]
+	}
+	for i := range lanes {
+		more := min(need[i]-got[i], max(left, 0))
+		got[i] += more
+		left -= more
+	}
 	var lines []string
 	for i := range lanes {
-		lines = append(lines, m.laneLines(i, lanes[i], inner, max(rows/laneCount, 3))...)
+		lines = append(lines, m.laneLines(i, lanes[i], inner, got[i])...)
 	}
 	return lines
 }

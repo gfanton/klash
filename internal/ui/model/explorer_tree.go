@@ -336,7 +336,7 @@ func (r *stackRenderer) bar(n *frameNode, axis timeAxis) string {
 		style := lipgloss.NewStyle().Foreground(r.t.Header.LogoGradToColor)
 		return strings.Repeat(" ", start) + style.Render(strings.Repeat("█", axis.width-1-start)+"▶")
 	}
-	end := axis.x(n.until)
+	end := max(axis.x(n.until), start)
 	return strings.Repeat(" ", start) + r.t.Files.Additions.Render(strings.Repeat("█", end-start+1)) + strings.Repeat(" ", axis.width-1-end)
 }
 

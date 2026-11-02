@@ -1241,7 +1241,10 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sessions.Name(m.takeStartName())
 		}
 	case memPulseMsg:
-		m.memPulse = msg.pulse
+		// Reads land in any order; one older than the last is dropped.
+		if msg.pulse.At >= m.memPulse.At {
+			m.memPulse = msg.pulse
+		}
 	case reportMsg:
 		if msg.plain {
 			m.dialog.OpenDialog(dialog.NewTextReport(m.com, msg.title, msg.report))
@@ -4830,6 +4833,11 @@ func (m *UI) updateLayoutAndSize() {
 	if m.textarea.Height() != prevHeight || inlineHeightChanged {
 		m.layout = m.generateLayout(m.width, m.height)
 		m.updateSize()
+	}
+
+	// A full explorer covers the editor, which must not keep the keys.
+	if m.explorer.open && m.explorerDrawn() == explorerFull && m.focus != uiFocusExplorer {
+		m.focusExplorer()
 	}
 }
 

@@ -10,10 +10,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/gnovm"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -685,6 +687,16 @@ func TestExplorer_PulseLanes(t *testing.T) {
 		slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "JUST FINISHED") }), "and one under the other when not")
 }
 
+func TestExplorer_PulseLanesShareTheRows(t *testing.T) {
+	u := pulseUI(t, 80, 26)
+	u.memPulse.Asks = nil
+	press(u, ctrlX, typed('2'))
+	body := strings.Join(bodyOf(u), "\n")
+
+	require.Contains(t, body, "shapes/circle", "a lane takes the rows the others leave")
+	require.NotContains(t, body, "more")
+}
+
 func TestExplorer_PulseOpensAFrameInTheTree(t *testing.T) {
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('2'))
@@ -748,6 +760,89 @@ func TestSidebarShowsHowMuchTheModelSees(t *testing.T) {
 
 	unknown := explorerUI(t, 200, 50)
 	require.Equal(t, -1, at(drawn(unknown), unknown.layout.sidebar, "model sees").Y, "no window known, no gauge")
+}
+
+func TestExplorer_DrawsInATerminalTooShortForIt(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX)
+	for _, height := range []int{2, 1, 0} {
+		u.height = height
+		u.updateLayoutAndSize()
+		require.NotPanics(t, func() { drawn(u) }, "%d rows", height)
+	}
+}
+
+func TestExplorer_OutlivesItsFrames(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	observeRows(u, slidRows(t)[len(explorerRows(t)):]...)
+	press(u, ctrlX)
+	for _, id := range []string{"f1", "f2", "f4", "f5"} {
+		_, _ = u.Update(pubsub.Event[message.Message]{Type: pubsub.DeletedEvent, Payload: message.Message{ID: id, SessionID: "s1"}})
+	}
+	require.Zero(t, u.frameEntries(), "a rewind took every push, not the rows a slide took")
+
+	require.NotPanics(t, func() { drawn(u) })
+	require.NotPanics(t, func() { press(u, typed('j'), typed('h'), enter) })
+}
+
+func TestExplorer_TakesTheKeysWhenItCoversTheEditor(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, tab)
+	require.Equal(t, uiFocusEditor, u.focus)
+
+	u.width = 120
+	u.updateLayoutAndSize()
+
+	require.Equal(t, explorerFull, u.explorerDrawn())
+	require.Equal(t, uiFocusExplorer, u.focus, "keys typed to an editor out of sight would be lost")
+}
+
+func TestBarOfAPopRecordedBeforeItsPush(t *testing.T) {
+	r := stackRenderer{t: minimalFileStyles()}
+	n := &frameNode{since: 100, until: 50, popped: true}
+
+	bar := stripANSI(r.bar(n, timeAxis{from: 0, to: 200, width: 20}))
+
+	require.Equal(t, 20, lipgloss.Width(bar), "a clock stepped back draws the pop at its push")
+}
+
+func TestExplorer_AnOlderPulseDoesNotReplaceANewerOne(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	_, _ = u.Update(memPulseMsg{gnovm.MemPulse{At: 10, Asks: []gnovm.MemPulseItem{{Name: "new"}}}})
+	_, _ = u.Update(memPulseMsg{gnovm.MemPulse{At: 5}})
+
+	require.EqualValues(t, 10, u.memPulse.At, "reads land in any order")
+}
+
+func TestExplorer_SearchFoldsBackWhatItOpened(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('k'), typed('k'), typed('k'), typed('h'))
+	require.Empty(t, lineWith(treeOf(u), "try-free-port"))
+
+	press(u, typed('/'), typed('p'), typed('o'), typed('r'), typed('t'))
+	require.NotEmpty(t, lineWith(treeOf(u), "try-free-port"))
+	press(u, typed('x'))
+	require.Empty(t, lineWith(treeOf(u), "try-free-port"), "a query that moved on folds back what it opened")
+
+	press(u, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	require.NotEmpty(t, lineWith(treeOf(u), "try-free-port"))
+	press(u, esc)
+	require.Empty(t, lineWith(treeOf(u), "try-free-port"), "and so does esc")
+}
+
+func TestExplorer_DetailFollowsNewWorkInTheFrame(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX)
+	require.GreaterOrEqual(t, at(drawn(u), u.layout.explorer, "work      nothing yet").Y, 0)
+
+	observeRows(u,
+		callRow("e8", 1_700_000_050, toolCall("ed1", "edit", `{"file_path":"/x/a.go"}`)),
+		toolRow("f8", 1_700_000_050, editResult("ed1")),
+	)
+
+	rows := drawn(u)
+	require.GreaterOrEqual(t, at(rows, u.layout.explorer, "edit 1").Y, 0)
+	require.GreaterOrEqual(t, at(rows, u.layout.explorer, "/x/a.go").Y, 0)
 }
 
 func TestExplorer_DetailComesUnderAShortTree(t *testing.T) {

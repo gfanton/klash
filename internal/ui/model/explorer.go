@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"image"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -68,15 +69,28 @@ type explorer struct {
 	// pulse the Pulse tab's, a lane and an entry in it.
 	row         int
 	lane, pulse int
+	// work is the selected frame's work and edits, as last worked out.
+	work frameWorkCache
 	// back is the focus to give back on closing.
 	back uiFocusState
 }
 
-// explorerSelection is what the explorer selects: the agent's frame, or
-// the entry selected.
+// explorerSelection is what the explorer selects, the agent's frame or the
+// entry selected, and the entries it folds against their default.
 type explorerSelection struct {
 	following bool
 	selected  string
+	flipped   map[string]bool
+}
+
+// selection is what the explorer selects now.
+func (e *explorer) selection() explorerSelection {
+	return explorerSelection{following: e.following, selected: e.selected, flipped: maps.Clone(e.flipped)}
+}
+
+// restore selects s again.
+func (e *explorer) restore(s explorerSelection) {
+	e.following, e.selected, e.flipped = s.following, s.selected, maps.Clone(s.flipped)
 }
 
 // halfFits reports whether the terminal keeps two sides of about 80
@@ -206,6 +220,9 @@ func (e explorer) folds(n *frameNode, depth int) bool {
 // entry of the frame it slid pushed before it, among that entry's frames
 // by time; at the top where there is none.
 func (e explorer) rows(roots []*frameNode, slides []frameSlide) []explorerRow {
+	if len(roots) == 0 {
+		return nil
+	}
 	owned := map[*frameNode][]*frameSlide{}
 	var top []*frameSlide
 	for i := range slides {
@@ -386,7 +403,7 @@ func (m *UI) searchKey(msg tea.KeyPressMsg) {
 	switch {
 	case key.Matches(msg, m.keyMap.Explorer.Close):
 		e.searching = false
-		e.following, e.selected = e.from.following, e.from.selected
+		e.restore(e.from)
 		return
 	case key.Matches(msg, m.keyMap.Explorer.Show):
 		e.searching = false
@@ -404,10 +421,10 @@ func (m *UI) searchKey(msg tea.KeyPressMsg) {
 
 // findFrame selects the first frame the query matches, in any case, and
 // opens the frames above it; with no query or no match, the selection
-// from before the search.
+// and the folds from before the search.
 func (m *UI) findFrame() {
 	e := &m.explorer
-	e.following, e.selected = e.from.following, e.from.selected
+	e.restore(e.from)
 	q := strings.ToLower(e.query)
 	if q == "" {
 		return
@@ -483,7 +500,7 @@ func (m *UI) handleExplorerKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, k.Close), key.Matches(msg, m.keyMap.Chat.Frames):
 		return m.closeExplorer(), true
 	case tree && key.Matches(msg, k.Search):
-		e.searching, e.query, e.from = true, "", explorerSelection{following: e.following, selected: e.selected}
+		e.searching, e.query, e.from = true, "", e.selection()
 	case key.Matches(msg, k.Show):
 		return m.showOnTab(), true
 	case key.Matches(msg, k.Full):
@@ -716,7 +733,7 @@ func (m *UI) explorerView(width, height int) (string, int) {
 		lit += explorerBodyRow
 	}
 	pad := strings.Repeat(" ", explorerPad)
-	out := make([]string, height)
+	out := make([]string, max(height, 0))
 	for i := range out {
 		line := ""
 		if i < len(lines) {
@@ -997,8 +1014,9 @@ func (m *UI) frameDetail(n *frameNode, r *stackRenderer) []string {
 		}
 		lines = append(lines, label("ran")+value.Render(ran))
 	}
+	uses, edits := m.frameWorkOf(n, rows)
 	var work []string
-	for _, u := range frameWork(rows) {
+	for _, u := range uses {
 		work = append(work, fmt.Sprintf("%s %d", u.name, u.n))
 	}
 	if len(work) == 0 {
@@ -1006,7 +1024,7 @@ func (m *UI) frameDetail(n *frameNode, r *stackRenderer) []string {
 	} else {
 		lines = append(lines, label("work")+value.Render(strings.Join(work, " · ")))
 	}
-	if edits := frameEdits(rows, m.com.Workspace.WorkingDir()); len(edits) > 0 {
+	if len(edits) > 0 {
 		lines = append(lines, label("edited")+value.Render(strings.Join(edits, ", ")))
 	} else {
 		lines = append(lines, label("edited")+muted.Render("nothing"))
