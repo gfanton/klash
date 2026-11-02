@@ -468,13 +468,9 @@ func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look 
 	}
 	r.key = ""
 	if slidRows > 0 && fit.slid {
-		unit := "msgs"
-		if slidRows == 1 {
-			unit = "msg"
-		}
 		r.add("")
 		r.add(t.LSP.WarningDiagnostic.Render("⟲") + " " + t.Files.Path.Render("slid out of context"))
-		r.add("  " + t.Files.EmptyMessage.Render(fmt.Sprintf("%d %s · ≈%s tokens", slidRows, unit, shortTokens(slidTokens))))
+		r.add("  " + t.Files.EmptyMessage.Render(fmt.Sprintf("%s · ≈%s tokens", plural(slidRows, "msg"), shortTokens(slidTokens))))
 	}
 	r.markTop()
 	return r.lines, r.keys
