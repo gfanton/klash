@@ -4,6 +4,7 @@ import (
 	"image"
 	"strings"
 
+	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/ui/chat"
 	"github.com/charmbracelet/crush/internal/ui/list"
@@ -88,7 +89,7 @@ func (m *Chat) poppedLabel(after int) string {
 		name = "…" + mark[strings.LastIndex(mark, "/"):]
 	}
 	text := "popped by `" + name + "` · out of the model's context"
-	if strings.HasPrefix(mark, slideMarkPrefix) {
+	if _, slid := agent.SlidFrame(mark); slid {
 		text = "slid out of the model's context"
 	}
 	line := strings.Repeat(" ", chat.MessageLeftPaddingTotal) + "┄ " + text

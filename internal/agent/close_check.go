@@ -338,7 +338,7 @@ func roundPops(msgs []message.Message, at int, sessionID string) bool {
 			if !calls[r.ToolCallID] {
 				continue
 			}
-			for _, ev := range frameEvents(r) {
+			for _, ev := range FrameEvents(r) {
 				if ev.Session == sessionID && ev.Kind == "pop" {
 					return true
 				}
@@ -416,7 +416,7 @@ func callCode(m message.Message, callID string) string {
 func lastFrameEvent(msgs []message.Message, sessionID string) int {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		for _, r := range msgs[i].ToolResults() {
-			for _, ev := range frameEvents(r) {
+			for _, ev := range FrameEvents(r) {
 				if ev.Session == sessionID {
 					return i
 				}

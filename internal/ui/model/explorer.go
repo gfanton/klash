@@ -12,6 +12,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/message"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -865,7 +866,7 @@ func (m *UI) explorerHeader(inner int) string {
 	})
 	slides := map[string]bool{}
 	for _, r := range m.sessionFrames.cut {
-		if strings.HasPrefix(r.mark, slideMarkPrefix) {
+		if _, slid := agent.SlidFrame(r.mark); slid {
 			slides[r.mark] = true
 		}
 	}

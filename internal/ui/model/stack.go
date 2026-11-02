@@ -1,7 +1,6 @@
 package model
 
 import (
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -11,7 +10,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/gnovm"
-	gnovmtools "github.com/charmbracelet/crush/internal/gnovm/tools"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/ui/common"
@@ -68,9 +66,6 @@ type cutRow struct {
 	mark   string
 	tokens int64
 }
-
-// slideMarkPrefix starts the mark of a row a slide took out.
-const slideMarkPrefix = "slide:"
 
 func deriveFrames(sessionID string, rows []message.Message) sessionFrames {
 	var f sessionFrames
@@ -265,7 +260,7 @@ func (f sessionFrames) freed() int64 {
 // how many tokens they held.
 func (f sessionFrames) slid() (rows int, tokens int64) {
 	for _, r := range f.cut {
-		if strings.HasPrefix(r.mark, slideMarkPrefix) {
+		if _, slid := agent.SlidFrame(r.mark); slid {
 			rows++
 			tokens += r.tokens
 		}
@@ -282,14 +277,7 @@ func frameCallsOf(sessionID string, row message.Message) []frameCall {
 	}
 	var calls []frameCall
 	for _, result := range row.ToolResults() {
-		if result.Name != gnovmtools.RunToolName || result.IsError || result.Metadata == "" {
-			continue
-		}
-		var meta gnovmtools.RunResponseMetadata
-		if json.Unmarshal([]byte(result.Metadata), &meta) != nil {
-			continue
-		}
-		own := slices.DeleteFunc(meta.Frames, func(ev gnovm.MemFrame) bool { return ev.Session != sessionID })
+		own := slices.DeleteFunc(agent.FrameEvents(result), func(ev gnovm.MemFrame) bool { return ev.Session != sessionID })
 		if len(own) > 0 {
 			calls = append(calls, frameCall{rowID: row.ID, callID: result.ToolCallID, at: row.CreatedAt, frames: own})
 		}

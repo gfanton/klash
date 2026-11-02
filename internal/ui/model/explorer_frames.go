@@ -3,7 +3,6 @@ package model
 import (
 	"cmp"
 	"slices"
-	"strings"
 
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/message"
@@ -69,7 +68,7 @@ func (f sessionFrames) freedBy(n *frameNode) int64 {
 func heldOf(n *frameNode, rows []message.Message) []message.Message {
 	var held []message.Message
 	for _, r := range rows {
-		if strings.HasPrefix(r.Popped, slideMarkPrefix) || !n.popped && r.Popped != "" {
+		if _, slid := agent.SlidFrame(r.Popped); slid || !n.popped && r.Popped != "" {
 			continue
 		}
 		held = append(held, r)
