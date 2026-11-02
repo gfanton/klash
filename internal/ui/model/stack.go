@@ -138,8 +138,10 @@ type frameNode struct {
 	// call and place in it.
 	key string
 	// pushCall and popCall are the gnovm_run calls that pushed and popped
-	// it; popCall is "" while it is on the stack.
+	// it; popCall is "" while it is on the stack. pushRow is the row of
+	// pushCall's result.
 	pushCall, popCall string
+	pushRow           string
 	// since and until are when it was pushed and popped, in Unix seconds.
 	since, until int64
 	popped       bool
@@ -186,7 +188,7 @@ func (f sessionFrames) tree() (roots, stack []*frameNode) {
 		for e, ev := range call.frames {
 			switch ev.Kind {
 			case "push":
-				n := &frameNode{id: ev.Id, purpose: ev.Purpose, since: call.at, pushCall: call.callID, key: call.callID + ":" + strconv.Itoa(e)}
+				n := &frameNode{id: ev.Id, purpose: ev.Purpose, since: call.at, pushCall: call.callID, pushRow: call.rowID, key: call.callID + ":" + strconv.Itoa(e)}
 				if len(stack) == 0 {
 					roots = append(roots, n)
 				} else {

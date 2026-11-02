@@ -1004,20 +1004,22 @@ const listBesideWidth = 120
 // height tall: its detail, and where there is room, beside it, what it
 // held.
 func (m *UI) detailPane(n *frameNode, r *stackRenderer, inner, height int) []string {
-	detail := m.frameDetail(n, r)
+	rows := m.sessionFrames.frameRows(n)
+	held := heldOf(n, rows)
+	detail := m.frameDetail(n, r, rows, held)
 	if inner < listBesideWidth {
 		return detail[:min(height, len(detail))]
 	}
 	left := inner / 2
-	held := m.heldList(n, inner-left-2, height)
-	lines := make([]string, min(height, max(len(detail), len(held))))
+	list := m.heldList(n, held, inner-left-2, height)
+	lines := make([]string, min(height, max(len(detail), len(list))))
 	for i := range lines {
 		d, h := "", ""
 		if i < len(detail) {
 			d = detail[i]
 		}
-		if i < len(held) {
-			h = held[i]
+		if i < len(list) {
+			h = list[i]
 		}
 		lines[i] = fitLeft(d, left) + "  " + h
 	}
@@ -1026,11 +1028,10 @@ func (m *UI) detailPane(n *frameNode, r *stackRenderer, inner, height int) []str
 
 // heldList is, width wide and at most height lines, what the model no
 // longer has from n once it is popped, or what it holds from it while it
-// is open: a line per chat item showing those rows, the first the chat
-// draws for it.
-func (m *UI) heldList(n *frameNode, width, height int) []string {
+// is open, held: a line per chat item showing those rows, the first the
+// chat draws for it.
+func (m *UI) heldList(n *frameNode, held []message.Message, width, height int) []string {
 	t := m.com.Styles
-	held := m.sessionFrames.heldRows(n)
 	title := "what the model no longer has · "
 	if !n.popped {
 		title = "what the model holds · "
@@ -1078,16 +1079,14 @@ func (m *UI) chatLine(id string) string {
 	return ""
 }
 
-// frameDetail is the detail pane's lines for n, the most needed first:
-// its name and id, purpose, result, what it freed or holds, when it ran,
-// its work, its edits, its thoughts.
-func (m *UI) frameDetail(n *frameNode, r *stackRenderer) []string {
+// frameDetail is the detail pane's lines for n, of its rows and those it
+// held, the most needed first: its name and id, purpose, result, what it
+// freed or holds, when it ran, its work, its edits, its thoughts.
+func (m *UI) frameDetail(n *frameNode, r *stackRenderer, rows, held []message.Message) []string {
 	t := m.com.Styles
 	label := func(s string) string { return t.Files.TruncationHint.Render(fmt.Sprintf("%-10s", s)) }
 	value := t.Files.ArtifactLabel
 	muted := t.Files.EmptyMessage
-	rows := m.sessionFrames.frameRows(n)
-	held := m.sessionFrames.heldRows(n)
 	tokens := tokensOf(held)
 
 	marker := t.Files.Additions.Render("✓")

@@ -20,8 +20,25 @@ func eachFrame(nodes []*frameNode, fn func(*frameNode)) {
 
 // frameRows is the rows frame n holds: those its pop took out of the
 // model's context, or, while it is open, those a pop now would take.
+// FrameRows is given the rows from n's push on: a draw looks up every
+// frame in view, and from the first row each costs the whole session.
 func (f sessionFrames) frameRows(n *frameNode) []message.Message {
-	return agent.FrameRows(f.rows, n.pushCall, n.popCall)
+	return agent.FrameRows(f.rows[f.pushRound(n):], n.pushCall, n.popCall)
+}
+
+// pushRound is where the row making n's push call stands among the rows,
+// found from its result's row back; 0 where it is not there.
+func (f sessionFrames) pushRound(n *frameNode) int {
+	i, ok := f.at[n.pushRow]
+	if !ok {
+		return 0
+	}
+	for ; i >= 0; i-- {
+		if r := f.rows[i]; r.Role == message.Assistant && slices.ContainsFunc(r.ToolCalls(), func(c message.ToolCall) bool { return c.ID == n.pushCall }) {
+			return i
+		}
+	}
+	return 0
 }
 
 // heldRows is the rows frame n held in the model's context: once it is
@@ -29,8 +46,13 @@ func (f sessionFrames) frameRows(n *frameNode) []message.Message {
 // them since, and less what a slide took; while it is open, those still
 // sent, which a pop now would take out.
 func (f sessionFrames) heldRows(n *frameNode) []message.Message {
+	return heldOf(n, f.frameRows(n))
+}
+
+// heldOf is heldRows of rows, frame n's.
+func heldOf(n *frameNode, rows []message.Message) []message.Message {
 	var held []message.Message
-	for _, r := range f.frameRows(n) {
+	for _, r := range rows {
 		if strings.HasPrefix(r.Popped, slideMarkPrefix) || !n.popped && r.Popped != "" {
 			continue
 		}
