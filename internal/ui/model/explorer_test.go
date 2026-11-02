@@ -725,6 +725,14 @@ func TestExplorer_ContextNamesWhatEachBigRowIs(t *testing.T) {
 	require.Contains(t, lineWith(body, "reply"), `"Both tests bind :8080."`)
 }
 
+func TestExplorer_ContextCountsAPromptsAttachments(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	observeRows(u, attachedPrompt("u1", 1_700_000_045))
+	press(u, ctrlX, typed('+'), typed('3'))
+
+	require.Contains(t, lineWith(bodyOf(u), "look at this"), "≈10K", "the model is sent the file inside the prompt")
+}
+
 func TestExplorer_ContextSetsItsListsSideBySideWhenWide(t *testing.T) {
 	wide := contextUI(t, 226, 50)
 	press(wide, ctrlX, typed('+'), typed('3'))
@@ -747,7 +755,7 @@ func TestExplorer_ContextListSaysWhatItHidesAbove(t *testing.T) {
 		observeRows(u, callRow(fmt.Sprintf("x%d", i), 1_700_000_050+int64(i), toolCall(fmt.Sprintf("v%d", i), "view", `{"file_path":"a.go"}`)))
 	}
 	press(u, ctrlX, typed('+'), typed('3'))
-	for range len(u.contextNow().biggest()) {
+	for range len(u.contextNow().sent) {
 		press(u, typed('j'))
 	}
 	body := bodyOf(u)

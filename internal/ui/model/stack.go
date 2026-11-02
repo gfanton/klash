@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/gnovm"
 	gnovmtools "github.com/charmbracelet/crush/internal/gnovm/tools"
 	"github.com/charmbracelet/crush/internal/message"
@@ -30,6 +31,9 @@ type sessionFrames struct {
 	// at where each row id stands in it.
 	rows []message.Message
 	at   map[string]int
+	// tokens is about how many tokens each row holds for the model, by row
+	// id, as the agent counts what a pop takes out.
+	tokens map[string]int64
 	// asked is askCall's answers by question; nil once a mem call's row
 	// comes or a row goes.
 	asked map[string]string
@@ -78,6 +82,10 @@ func (f *sessionFrames) observe(sessionID string, row message.Message, now time.
 		f.at[row.ID] = len(f.rows)
 		f.rows = append(f.rows, row)
 	}
+	if f.tokens == nil {
+		f.tokens = map[string]int64{}
+	}
+	f.tokens[row.ID] = agent.RowTokens(row)
 	if callsMem(row) {
 		f.asked = nil
 	}
@@ -98,7 +106,7 @@ func (f *sessionFrames) observe(sessionID string, row message.Message, now time.
 	was, wasCut := f.cut[row.ID]
 	switch {
 	case row.Popped != "":
-		if now := (cutRow{mark: row.Popped, tokens: rowTokens(row)}); !wasCut || was != now {
+		if now := (cutRow{mark: row.Popped, tokens: f.tokens[row.ID]}); !wasCut || was != now {
 			if f.cut == nil {
 				f.cut = map[string]cutRow{}
 			}
@@ -118,6 +126,7 @@ func (f *sessionFrames) forget(rowID string) bool {
 	if i, ok := f.at[rowID]; ok {
 		f.rows = slices.Delete(f.rows, i, i+1)
 		delete(f.at, rowID)
+		delete(f.tokens, rowID)
 		for j := i; j < len(f.rows); j++ {
 			f.at[f.rows[j].ID] = j
 		}
@@ -296,24 +305,10 @@ func frameCallsOf(sessionID string, row message.Message) []frameCall {
 	return calls
 }
 
-// rowTokens is about how many tokens row holds for the model: 4 bytes a
-// token, rounded up, per text.
-func rowTokens(row message.Message) int64 {
-	approx := func(s string) int64 { return int64((len(s) + 3) / 4) }
-	var n int64
-	for _, part := range row.Parts {
-		switch p := part.(type) {
-		case message.TextContent:
-			n += approx(p.Text)
-		case message.ReasoningContent:
-			n += approx(p.Thinking)
-		case message.ToolCall:
-			n += approx(p.Name) + approx(p.Input)
-		case message.ToolResult:
-			n += approx(p.Content)
-		}
-	}
-	return n
+// rowTokens is about how many tokens row, one of the session's, holds for
+// the model.
+func (f sessionFrames) rowTokens(row message.Message) int64 {
+	return f.tokens[row.ID]
 }
 
 // maxFinishedTasks is how many finished top-level frames the section

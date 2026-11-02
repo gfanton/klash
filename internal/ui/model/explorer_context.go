@@ -23,9 +23,9 @@ type contextShare struct {
 	tokens int64
 }
 
-func (s *contextShare) add(r message.Message) {
+func (s *contextShare) add(tokens int64) {
 	s.rows++
-	s.tokens += rowTokens(r)
+	s.tokens += tokens
 }
 
 // contextNow is what the model is sent now, in parts.
@@ -110,11 +110,12 @@ func (m *UI) contextNow() contextNow {
 	c.sent = m.sessionFrames.sentRows()
 	var estimated int64
 	for _, r := range c.sent {
-		estimated += rowTokens(r)
+		tokens := m.sessionFrames.rowTokens(r)
+		estimated += tokens
 		if i, ok := c.owner[r.ID]; ok {
-			c.frames[i].add(r)
+			c.frames[i].add(tokens)
 		} else {
-			c.outside.add(r)
+			c.outside.add(tokens)
 		}
 	}
 	c.always = m.alwaysSent(m.sessionFrames.contextSeries())
@@ -141,10 +142,10 @@ func (c contextNow) frameName(i int) string {
 	return shortName(c.stack[i].id, c.stack[i-1].id)
 }
 
-// biggest is the rows the model is still sent, the biggest first.
-func (c contextNow) biggest() []message.Message {
-	rows := slices.Clone(c.sent)
-	slices.SortStableFunc(rows, func(a, b message.Message) int { return cmp.Compare(rowTokens(b), rowTokens(a)) })
+// biggest is rows, the session's, the biggest first.
+func (f sessionFrames) biggest(rows []message.Message) []message.Message {
+	rows = slices.Clone(rows)
+	slices.SortStableFunc(rows, func(a, b message.Message) int { return cmp.Compare(f.rowTokens(b), f.rowTokens(a)) })
 	return rows
 }
 
@@ -177,7 +178,7 @@ func (m *UI) contextTab(inner, height int) []string {
 	if counted := m.countedTokens(); counted > 0 {
 		foot = []string{m.com.Styles.Files.EmptyMessage.Render("≈ a row's tokens are estimated at 4 bytes a token; " + shortTokens(counted) + " is the provider's count.")}
 	}
-	rows := c.biggest()
+	rows := m.sessionFrames.biggest(c.sent)
 	if inner >= listsBesideWidth {
 		width := (inner - laneGap) / 2
 		shown := min(len(rows), maxBiggest, max(height-len(lines)-len(foot)-4, 1))
@@ -463,7 +464,7 @@ func (m *UI) biggestLines(c contextNow, rows []message.Message, shown, inner int
 		if f, ok := c.owner[row.ID]; ok {
 			in = lipgloss.NewStyle().Foreground(colors[f]).Render(c.frameName(f))
 		}
-		lines = append(lines, mark+fitRight(value.Render("≈"+shortTokens(rowTokens(row))), bigTokens)+"  "+
+		lines = append(lines, mark+fitRight(value.Render("≈"+shortTokens(m.sessionFrames.rowTokens(row))), bigTokens)+"  "+
 			fitLeft(m.bigRowLine(row), text)+"  "+fitLeft(in, bigIn))
 	}
 	if w.below != "" {
@@ -590,7 +591,7 @@ func (m *UI) moveContextRow(delta int) {
 
 // showRowInChat shows the selected one of the biggest rows in the chat.
 func (m *UI) showRowInChat() tea.Cmd {
-	rows := m.contextNow().biggest()
+	rows := m.sessionFrames.biggest(m.contextNow().sent)
 	if len(rows) == 0 {
 		return nil
 	}

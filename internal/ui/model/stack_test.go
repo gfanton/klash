@@ -171,11 +171,11 @@ func TestFrameTree_EachFrameKeepsWhatItsPopFreed(t *testing.T) {
 
 	roots, _ := f.tree()
 	a, b := roots[0], roots[0].children[0]
-	require.Equal(t, int64(100), b.total())
-	require.Equal(t, int64(100), a.total(), "a frame's figure holds its children's")
+	require.Equal(t, int64(103), b.total())
+	require.Equal(t, int64(103), a.total(), "a frame's figure holds its children's")
 	rows, tokens := f.slid()
 	require.Equal(t, 1, rows)
-	require.Equal(t, int64(10), tokens)
+	require.Equal(t, int64(13), tokens)
 
 	// The parent's pop marks the child's rows as its own; nothing is
 	// counted twice.
@@ -184,7 +184,7 @@ func TestFrameTree_EachFrameKeepsWhatItsPopFreed(t *testing.T) {
 	require.True(t, f.observe("s1", inB, time.Time{}))
 	roots, _ = f.tree()
 	require.Equal(t, int64(0), roots[0].children[0].total())
-	require.Equal(t, int64(100), roots[0].total())
+	require.Equal(t, int64(103), roots[0].total())
 }
 
 // release-v2 as a session works it: two steps done, the third under way.
@@ -224,7 +224,7 @@ func TestStackSection_ShowsFinishedFramesAndTheLastResult(t *testing.T) {
 		at += i + len(want)
 	}
 	require.Contains(t, got, "−1K tok", "bump-version's pop freed about 1000 tokens")
-	require.Contains(t, got, "−100 tok")
+	require.Contains(t, got, "−103 tok")
 	require.Contains(t, got, time.Unix(1_700_000_050, 0).Format("15:04"), "the frame the agent is in says when it entered it")
 	require.NotContains(t, got, "release-v2/bump-version", "a frame under its parent is named by its last part")
 	require.NotContains(t, got, `"release v2"`, "only the frame the agent is in shows its purpose")
@@ -285,6 +285,30 @@ func TestStackSection_TheHeadingSaysWhatLeftTheContextInAll(t *testing.T) {
 	fresh := deriveFrames("s1", []message.Message{toolRow("m1", 10, memResult(t, "c1", push("a", "a")))})
 	got := stripANSI(stackSection(minimalFileStyles(), fresh, 30, stackLook{}))
 	require.NotContains(t, got, "freed", "nothing has left the context yet")
+}
+
+// attachedPrompt is a prompt with a 40 KB text file attached, which the
+// model is sent inside the prompt: about 10K tokens.
+func attachedPrompt(id string, at int64) message.Message {
+	return message.Message{ID: id, SessionID: "s1", Role: message.User, CreatedAt: at, Parts: []message.ContentPart{
+		message.TextContent{Text: "look at this"},
+		message.BinaryContent{Path: "notes.txt", MIMEType: "text/plain", Data: []byte(strings.Repeat("x", 40_000))},
+	}}
+}
+
+func TestSidebar_APopFreesWhatAPromptsAttachmentsHeld(t *testing.T) {
+	u, _ := sidebarUI(t, 60)
+	prompt := attachedPrompt("u1", 15)
+	prompt.Popped = "fix-test"
+	observeRows(u,
+		callRow("a1", 10, memCall("c1")),
+		toolRow("t1", 10, memResult(t, "c1", push("fix-test", "fix the test"))),
+		prompt,
+		callRow("a2", 20, memCall("c2")),
+		toolRow("t2", 20, memResult(t, "c2", popWith("fix-test", "fixed"))),
+	)
+
+	require.GreaterOrEqual(t, rowShowing(u, drawSidebarOf(u), "10K tok freed"), 0, "the attachment counts, as the agent counts it")
 }
 
 func TestStackSection_KeepsTheLastThreeFinishedTasks(t *testing.T) {

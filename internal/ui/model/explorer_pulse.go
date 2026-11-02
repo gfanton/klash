@@ -152,7 +152,7 @@ func (m *UI) stackLook() stackLook {
 // Tree tab does.
 func (m *UI) pulseRenderer() *stackRenderer {
 	r := &stackRenderer{t: m.com.Styles, look: m.stackLook()}
-	r.freedOf = func(n *frameNode) int64 { return tokensOf(m.sessionFrames.heldRows(n)) }
+	r.freedOf = func(n *frameNode) int64 { return m.sessionFrames.tokensOf(m.sessionFrames.heldRows(n)) }
 	if _, stack := m.sessionFrames.tree(); len(stack) > 0 {
 		r.top = stack[len(stack)-1]
 	}

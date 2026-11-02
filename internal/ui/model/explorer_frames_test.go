@@ -166,10 +166,10 @@ func TestContextSeries_RisesWithEachRowAndDropsAtAPop(t *testing.T) {
 	require.Len(t, series, len(rows), "a point per row")
 	var held int64
 	for _, r := range rows[3:7] {
-		held += rowTokens(r)
+		held += f.rowTokens(r)
 	}
 	before, after := series[len(series)-2], series[len(series)-1]
-	require.Equal(t, before.tokens+rowTokens(rows[8])-held, after.tokens, "the pop takes out what the frame held")
+	require.Equal(t, before.tokens+f.rowTokens(rows[8])-held, after.tokens, "the pop takes out what the frame held")
 	require.Equal(t, int64(9), after.at)
 	for i := 1; i < len(series)-1; i++ {
 		require.Greater(t, series[i].tokens, series[i-1].tokens, "every row before the pop adds")
@@ -191,8 +191,8 @@ func TestContextSeries_ASlideTakesItsRowsOutAfterTheLastOfThem(t *testing.T) {
 
 	series := f.contextSeries()
 
-	require.Equal(t, int64(2100), series[2].tokens, "both slid rows were sent until the slide")
-	require.Equal(t, int64(110), series[3].tokens, "then only the prompt and what came after")
+	require.Equal(t, int64(2107), series[2].tokens, "both slid rows were sent until the slide")
+	require.Equal(t, int64(114), series[3].tokens, "then only the prompt and what came after")
 }
 
 func TestContextSeries_StartsAgainAtASummary(t *testing.T) {
@@ -207,6 +207,6 @@ func TestContextSeries_StartsAgainAtASummary(t *testing.T) {
 
 	series := f.contextSeries()
 
-	require.Equal(t, int64(200), series[2].tokens, "the summary alone")
-	require.Equal(t, int64(210), series[3].tokens)
+	require.Equal(t, int64(203), series[2].tokens, "the summary alone")
+	require.Equal(t, int64(214), series[3].tokens)
 }
