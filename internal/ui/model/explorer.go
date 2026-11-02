@@ -111,6 +111,13 @@ func (m *UI) explorerDrawn() explorerSize {
 	return explorerFull
 }
 
+// sizeExplorer asks for the explorer at size and lays the UI out for
+// the size it is drawn at.
+func (m *UI) sizeExplorer(size explorerSize) {
+	m.explorer.want = size
+	m.updateLayoutAndSize()
+}
+
 // explorerBeside reports whether the explorer is open beside the chat.
 func (m *UI) explorerBeside() bool {
 	return m.explorer.open && m.explorerDrawn() == explorerHalf
@@ -539,8 +546,7 @@ func (m *UI) showInChat(ids []string, at string) tea.Cmd {
 	case !m.explorer.open, m.explorerDrawn() == explorerHalf:
 		return nil
 	case m.halfFits():
-		m.explorer.want = explorerHalf
-		m.updateLayoutAndSize()
+		m.sizeExplorer(explorerHalf)
 		return nil
 	}
 	m.explorer.back = uiFocusMain
@@ -566,11 +572,9 @@ func (m *UI) handleExplorerKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, k.Show):
 		return m.showOnTab(), true
 	case key.Matches(msg, k.Full):
-		e.want = explorerFull
-		m.updateLayoutAndSize()
+		m.sizeExplorer(explorerFull)
 	case key.Matches(msg, k.Half):
-		e.want = explorerHalf
-		m.updateLayoutAndSize()
+		m.sizeExplorer(explorerHalf)
 	case key.Matches(msg, k.NextTab):
 		return m.setTab((e.tab + 1) % explorerTabCount), true
 	case key.Matches(msg, k.PrevTab):
@@ -654,11 +658,9 @@ func (m *UI) handleExplorerClick(msg tea.MouseClickMsg) tea.Cmd {
 	case y == explorerHeaderRow:
 		switch explorerButtonAt(area.Dx(), x) {
 		case buttonHalf:
-			m.explorer.want = explorerHalf
-			m.updateLayoutAndSize()
+			m.sizeExplorer(explorerHalf)
 		case buttonFull:
-			m.explorer.want = explorerFull
-			m.updateLayoutAndSize()
+			m.sizeExplorer(explorerFull)
 		case buttonClose:
 			return m.closeExplorer()
 		}
