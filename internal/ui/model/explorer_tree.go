@@ -121,14 +121,15 @@ func (a timeAxis) labels() string {
 		}
 	}
 	line := []rune(strings.Repeat(" ", a.width))
+	clock := time.Duration(step)*time.Second >= time.Minute
 	first := a.from
-	if step >= 60 {
+	if clock {
 		first = (a.from + step - 1) / step * step
 	}
 	free := 0
 	for t := first; t <= a.to; t += step {
 		label := time.Unix(t, 0).Format("15:04")
-		if step < 60 {
+		if !clock {
 			label = runningFor(time.Duration(t-a.from) * time.Second)
 		}
 		x := a.x(t)

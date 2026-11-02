@@ -666,6 +666,10 @@ func (r *stackRenderer) showsResult(n *frameNode) bool {
 // one cell.
 const shimmerStep = 80 * time.Millisecond
 
+// minShimmerPeriod is the fewest cells the shimmer's fade spans, however
+// short the name.
+const minShimmerPeriod = 8
+
 // paint renders s in the theme's fade from its gradient's start to its end
 // and back, shifted by phase cells, so that drawn at successive phases the
 // colors run along it. Without the theme's colors it is base's alone.
@@ -675,7 +679,7 @@ func (r *stackRenderer) paint(base lipgloss.Style, s string, phase int) string {
 	if from == nil || to == nil || len(runes) == 0 {
 		return base.Render(s)
 	}
-	period := max(2*len(runes), 8)
+	period := max(2*len(runes), minShimmerPeriod)
 	ramp := lipgloss.Blend1D(period, fade.Stops(from, to, from)...)
 	var b strings.Builder
 	for i, c := range runes {
