@@ -37,6 +37,9 @@ type sessionFrames struct {
 	// asked is askCall's answers by question; nil once a mem call's row
 	// comes or a row goes.
 	asked map[string]string
+	// popFreed is freedBy's answers by entry key; emptied once a row comes
+	// or goes.
+	popFreed map[string]int64
 }
 
 // frameCall is the frames one gnovm_run call pushed and popped, in order.
@@ -86,6 +89,7 @@ func (f *sessionFrames) observe(sessionID string, row message.Message, now time.
 		f.tokens = map[string]int64{}
 	}
 	f.tokens[row.ID] = agent.RowTokens(row)
+	f.popFreed = map[string]int64{}
 	if callsMem(row) {
 		f.asked = nil
 	}
@@ -131,6 +135,7 @@ func (f *sessionFrames) forget(rowID string) bool {
 			f.at[f.rows[j].ID] = j
 		}
 		f.asked = nil
+		f.popFreed = map[string]int64{}
 	}
 	n := len(f.calls)
 	f.calls = slices.DeleteFunc(f.calls, func(c frameCall) bool { return c.rowID == rowID })
@@ -163,20 +168,7 @@ type frameNode struct {
 	// poppedAt is when the UI saw its pop happen; zero for a pop loaded
 	// with the session.
 	poppedAt time.Time
-	// freed is about how many tokens the rows still marked with the
-	// frame's id held. A parent's pop marks its children's rows as its own.
-	freed    int64
 	children []*frameNode
-}
-
-// total is about how many tokens the frame's pop and its children's took
-// out of the model's context.
-func (n *frameNode) total() int64 {
-	t := n.freed
-	for _, c := range n.children {
-		t += c.total()
-	}
-	return t
 }
 
 // open reports whether the frame, or one entered from it, is still on
@@ -188,10 +180,8 @@ func (n *frameNode) open() bool {
 // tree is the frames the session entered, each under the frame it was
 // entered from, in order; and the stack, those not yet left, bottom
 // first. A pop takes off the frame it names, wherever it stands, and a
-// frame entered again is a new entry. A frame id's marks count for its
-// last popped entry.
+// frame entered again is a new entry.
 func (f sessionFrames) tree() (roots, stack []*frameNode) {
-	owner := map[string]*frameNode{}
 	pops := 0
 	for _, call := range f.calls {
 		for e, ev := range call.frames {
@@ -211,17 +201,11 @@ func (f sessionFrames) tree() (roots, stack []*frameNode) {
 						pops++
 						stack[i].popped, stack[i].result, stack[i].poppedAt, stack[i].popIndex = true, ev.Result, call.seen, pops
 						stack[i].popCall, stack[i].until, stack[i].thoughts = call.callID, call.at, ev.Thoughts
-						owner[ev.Id] = stack[i]
 						stack = slices.Delete(stack, i, i+1)
 						break
 					}
 				}
 			}
-		}
-	}
-	for _, row := range f.cut {
-		if n, ok := owner[row.mark]; ok {
-			n.freed += row.tokens
 		}
 	}
 	return roots, stack
@@ -476,7 +460,7 @@ func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look 
 	if len(roots) == 0 && slidRows == 0 {
 		return nil, nil
 	}
-	r := stackRenderer{t: t, width: width - 1, look: look, results: fit.results, last: lastPopped(roots)}
+	r := stackRenderer{t: t, width: width - 1, look: look, results: fit.results, last: lastPopped(roots), frames: f}
 	if len(stack) > 0 {
 		r.top = stack[len(stack)-1]
 	}
@@ -579,9 +563,9 @@ type stackRenderer struct {
 	// frame popped last.
 	results resultLines
 	last    *frameNode
-	// freedOf is what a finished frame's pop freed; nil for its total,
-	// children's included, from the marks of the rows.
-	freedOf func(*frameNode) int64
+	// frames is the session's frames, for what a finished frame's pop
+	// freed.
+	frames sessionFrames
 	// lines is what was drawn, and keys the key of the frame entry each
 	// line shows; key is the entry the lines added now show.
 	lines, keys []string
@@ -801,11 +785,7 @@ func (r *stackRenderer) entryRight(n *frameNode) string {
 	if r.look.still {
 		eased = 1
 	}
-	total := n.total()
-	if r.freedOf != nil {
-		total = r.freedOf(n)
-	}
-	if freed := int64(float64(total) * eased); freed > 0 {
+	if freed := int64(float64(r.frames.freedBy(n)) * eased); freed > 0 {
 		return r.t.Files.Additions.Render("−" + shortTokens(freed) + " tok")
 	}
 	return ""

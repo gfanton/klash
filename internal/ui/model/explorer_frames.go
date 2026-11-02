@@ -49,6 +49,21 @@ func (f sessionFrames) heldRows(n *frameNode) []message.Message {
 	return heldOf(n, f.frameRows(n))
 }
 
+// freedBy is about how many tokens popped frame n's pop took out of the
+// model's context, its children's rows included. It is kept until a row
+// comes or goes: the sidebar asks it of each popped frame it shows at
+// every draw.
+func (f sessionFrames) freedBy(n *frameNode) int64 {
+	if tokens, ok := f.popFreed[n.key]; ok {
+		return tokens
+	}
+	tokens := f.tokensOf(f.heldRows(n))
+	if f.popFreed != nil {
+		f.popFreed[n.key] = tokens
+	}
+	return tokens
+}
+
 // heldOf is heldRows of rows, frame n's.
 func heldOf(n *frameNode, rows []message.Message) []message.Message {
 	var held []message.Message

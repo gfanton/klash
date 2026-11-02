@@ -163,28 +163,32 @@ func TestFrameTree_EnteringAFrameAgainIsANewFrame(t *testing.T) {
 }
 
 func TestFrameTree_EachFrameKeepsWhatItsPopFreed(t *testing.T) {
-	pushes := toolRow("m1", 10, memResult(t, "c1", push("a", "a"), push("a/b", "b")))
 	inB := cutMsg("m2", "a/b", 400)
-	popB := toolRow("m3", 30, memResult(t, "c3", popWith("a/b", "done")))
-	slid := cutMsg("m4", "slide::c1:c3", 40)
-	f := deriveFrames("s1", []message.Message{pushes, inB, popB, slid})
+	f := deriveFrames("s1", []message.Message{
+		callRow("e1", 10, memCall("c1")),
+		toolRow("m1", 10, memResult(t, "c1", push("a", "a"), push("a/b", "b"))),
+		inB,
+		callRow("e3", 30, memCall("c3")),
+		toolRow("m3", 30, memResult(t, "c3", popWith("a/b", "done"))),
+		cutMsg("m4", "slide::c1:c3", 40),
+	})
+	freed := func(n *frameNode) int64 { return f.tokensOf(f.heldRows(n)) }
 
 	roots, _ := f.tree()
-	a, b := roots[0], roots[0].children[0]
-	require.Equal(t, int64(103), b.total())
-	require.Equal(t, int64(103), a.total(), "a frame's figure holds its children's")
+	require.Equal(t, int64(103), freed(roots[0].children[0]))
 	rows, tokens := f.slid()
 	require.Equal(t, 1, rows)
 	require.Equal(t, int64(13), tokens)
 
-	// The parent's pop marks the child's rows as its own; nothing is
-	// counted twice.
+	// The parent's pop marks the child's rows as its own: the child keeps
+	// what its own pop took out, and the parent's figure holds it.
+	f.observe("s1", callRow("e5", 50, memCall("c5")), time.Time{})
 	f.observe("s1", toolRow("m5", 50, memResult(t, "c5", popWith("a", "all done"))), time.Time{})
 	inB.Popped = "a"
 	require.True(t, f.observe("s1", inB, time.Time{}))
 	roots, _ = f.tree()
-	require.Equal(t, int64(0), roots[0].children[0].total())
-	require.Equal(t, int64(103), roots[0].total())
+	require.Equal(t, int64(103), freed(roots[0].children[0]))
+	require.Greater(t, freed(roots[0]), int64(103), "a frame's figure holds its children's")
 }
 
 // release-v2 as a session works it: two steps done, the third under way.
@@ -193,14 +197,20 @@ func releaseFrames(t *testing.T) sessionFrames {
 	return deriveFrames("s1", releaseRows(t))
 }
 
+// releaseRows is release-v2's rows as they come: each call's assistant
+// row, then the tool row answering it.
 func releaseRows(t *testing.T) []message.Message {
 	t.Helper()
 	return []message.Message{
+		callRow("e1", 1_700_000_000, memCall("c1")),
 		toolRow("m1", 1_700_000_000, memResult(t, "c1", push("release-v2", "release v2"))),
+		callRow("e2", 1_700_000_010, memCall("c2")),
 		toolRow("m2", 1_700_000_010, memResult(t, "c2", push("release-v2/bump-version", "bump the version"))),
 		cutMsg("m3", "release-v2/bump-version", 4000),
+		callRow("e4", 1_700_000_030, memCall("c4")),
 		toolRow("m4", 1_700_000_030, memResult(t, "c4", popWith("release-v2/bump-version", "VERSION says 2.0.0"), push("release-v2/tag-release", "tag the release"))),
 		cutMsg("m5", "release-v2/tag-release", 400),
+		callRow("e6", 1_700_000_050, memCall("c6")),
 		toolRow("m6", 1_700_000_050, memResult(t, "c6", popWith("release-v2/tag-release", "tagged v2.0.0"), push("release-v2/ci-green", "CI is green"))),
 	}
 }
@@ -232,6 +242,7 @@ func TestStackSection_ShowsFinishedFramesAndTheLastResult(t *testing.T) {
 
 func TestStackSection_AFinishedTaskFoldsItsSteps(t *testing.T) {
 	f := releaseFrames(t)
+	f.observe("s1", callRow("e7", 1_700_000_070, memCall("c7")), time.Time{})
 	f.observe("s1", toolRow("m7", 1_700_000_070, memResult(t, "c7", popWith("release-v2/ci-green", "CI passed"), popWith("release-v2", "released 2.0.0"))), time.Time{})
 
 	got := stripANSI(stackSection(minimalFileStyles(), f, 30, stackLook{}))
@@ -311,6 +322,38 @@ func TestSidebar_APopFreesWhatAPromptsAttachmentsHeld(t *testing.T) {
 	require.GreaterOrEqual(t, rowShowing(u, drawSidebarOf(u), "10K tok freed"), 0, "the attachment counts, as the agent counts it")
 }
 
+// A frame entered twice is two entries, each with what its own pop took
+// out, in the sidebar as in the explorer.
+func TestStackSection_EachEntryFreesWhatItsOwnPopTookOut(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	u.sessionFrames = sessionFrames{}
+	observeRows(u,
+		callRow("a1", 10, memCall("c1")),
+		toolRow("t1", 10, memResult(t, "c1", push("fix-test", "fix the test"))),
+		cutMsg("w1", "fix-test", 40_000),
+		callRow("a2", 20, memCall("c2")),
+		toolRow("t2", 20, memResult(t, "c2", popWith("fix-test", "first try"))),
+		callRow("a3", 30, memCall("c3")),
+		toolRow("t3", 30, memResult(t, "c3", push("fix-test", "fix the test again"))),
+		cutMsg("w2", "fix-test", 20_000),
+		callRow("a4", 40, memCall("c4")),
+		toolRow("t4", 40, memResult(t, "c4", popWith("fix-test", "second try"))),
+	)
+	for i := range u.sessionFrames.calls {
+		u.sessionFrames.calls[i].seen = time.Time{}
+	}
+
+	scr := drawSidebarOf(u)
+	first, second := rowShowing(u, scr, "−10K tok"), rowShowing(u, scr, "−5K tok")
+	require.GreaterOrEqual(t, first, 0, "the first entry's pop took out 10K")
+	require.Greater(t, second, first, "and the second's 5K, under it")
+
+	press(u, ctrlX)
+	tree := treeOf(u)
+	require.Contains(t, lineWith(tree, "−10K tok"), "fix-test", "the explorer says the same")
+	require.Contains(t, lineWith(tree, "−5K tok"), "fix-test")
+}
+
 func TestStackSection_KeepsTheLastThreeFinishedTasks(t *testing.T) {
 	var rows []message.Message
 	for i := range 5 {
@@ -388,10 +431,12 @@ func TestStackSection_TheFrameAtWorkShimmers(t *testing.T) {
 
 func TestStackSection_APopCountsUpWhatItFreed(t *testing.T) {
 	f := deriveFrames("s1", []message.Message{
+		callRow("e1", 10, memCall("c1")),
 		toolRow("m1", 10, memResult(t, "c1", push("a", "a"), push("a/b", "b"))),
 		cutMsg("m2", "a/b", 4000),
 	})
 	popped := time.Unix(1_700_000_200, 0)
+	f.observe("s1", callRow("e3", 1_700_000_200, memCall("c3")), popped)
 	f.observe("s1", toolRow("m3", 1_700_000_200, memResult(t, "c3", popWith("a/b", "done"))), popped)
 	draw := func(after time.Duration) string {
 		return stripANSI(stackSection(minimalFileStyles(), f, 30, stackLook{now: popped.Add(after)}))
