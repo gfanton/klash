@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"image/color"
 	"slices"
 	"strings"
 	"testing"
@@ -1260,6 +1261,48 @@ func TestSidebarShowsHowMuchTheModelSees(t *testing.T) {
 
 	unknown := explorerUI(t, 200, 50)
 	require.Equal(t, -1, at(drawn(unknown), unknown.layout.sidebar, "model sees").Y, "no window known, no gauge")
+}
+
+// gaugeFill is the color the sidebar fills its gauge with, nil without a
+// gauge.
+func gaugeFill(u *UI) color.Color {
+	scr := uv.NewScreenBuffer(u.width, u.height)
+	u.Draw(scr, scr.Bounds())
+	y := at(screenRows(scr, scr.Bounds()), u.layout.sidebar, "model sees").Y
+	for x := u.layout.sidebar.Min.X; x < u.layout.sidebar.Max.X; x++ {
+		if c := scr.CellAt(x, y); c != nil && c.Content == "█" {
+			return c.Style.Fg
+		}
+	}
+	return nil
+}
+
+func sameColor(a, b color.Color) bool {
+	r1, g1, b1, a1 := a.RGBA()
+	r2, g2, b2, a2 := b.RGBA()
+	return r1 == r2 && g1 == g2 && b1 == b2 && a1 == a2
+}
+
+// What a pop took out after the count is not sent again: the gauge shows
+// the count less it, and is past the slide point as the agent reckons.
+func TestSidebar_ModelSeesTheCountLessWhatPopsTookOut(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	observeRows(u,
+		whole(callRow("g1", 1_700_000_050, memCall("gc1"))),
+		toolRow("g2", 1_700_000_050, memResult(t, "gc1", push("g", "a big step"))),
+		cutMsg("g3", "g", 60_000),
+		whole(callRow("g4", 1_700_000_060, memCall("gc4"))),
+		toolRow("g5", 1_700_000_060, memResult(t, "gc4", popWith("g", "done"))),
+	)
+	u.session.PromptTokens = 27_000 // counted for g4's request, past the slide point at 25.6K
+	warning := u.com.Styles.LSP.WarningDiagnostic.GetForeground()
+
+	rows := drawn(u)
+	require.Contains(t, rows[at(rows, u.layout.sidebar, "model sees").Y], "12K", "the pop took 15K out")
+	require.False(t, sameColor(gaugeFill(u), warning), "under the slide point once the pop is taken out")
+
+	u.session.PromptTokens = 45_000
+	require.True(t, sameColor(gaugeFill(u), warning), "past it even so")
 }
 
 func TestExplorer_DrawsInATerminalTooShortForIt(t *testing.T) {
