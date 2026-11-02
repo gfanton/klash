@@ -1812,8 +1812,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case uiChat:
 			// Over the frame explorer, the wheel moves its selection.
 			if m.explorerAt(msg.Mouse.X, msg.Mouse.Y) {
-				if lines := int(msg.DeltaY); lines != 0 {
-					m.moveOnTab(lines)
+				if step := cmp.Compare(msg.DeltaY, 0); step != 0 {
+					m.moveOnTab(step)
 				}
 				break
 			}
