@@ -1356,3 +1356,15 @@ func TestExplorer_TheWheelOnItFullLeavesTheEditorUnderIt(t *testing.T) {
 
 	require.Equal(t, "fix-flaky-test/find-cause", u.selectedFrame().id, "the wheel moves the explorer's selection")
 }
+
+// Some terminals, Ghostty among them, send a notch of the wheel as 3.
+func TestExplorer_TheWheelMovesOneEntryANotch(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX)
+	on := u.layout.explorer.Min.Add(image.Pt(1, explorerBodyRow))
+
+	wheelAt(u, on.X, on.Y, -3)
+	require.Equal(t, "fix-flaky-test/find-cause", u.selectedFrame().id)
+	wheelAt(u, on.X, on.Y, 3)
+	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id)
+}
