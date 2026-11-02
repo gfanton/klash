@@ -609,6 +609,18 @@ func TestExplorer_EnterShowsTheFrameInTheChat(t *testing.T) {
 	require.Empty(t, narrow.chat.framed, "closing the explorer clears the marks")
 }
 
+func TestExplorer_EnterOnAFrameNearTheChatsEndLeavesNoRowBlank(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX)
+	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id, "its push is the chat's last item")
+
+	press(u, enter)
+
+	main := u.layout.main
+	last := []rune(drawn(u)[main.Max.Y-1])
+	require.NotEmpty(t, strings.TrimSpace(string(last[main.Min.X:main.Max.X-1])), "the chat stops at its bottom")
+}
+
 func TestExplorer_DetailListsWhatTheModelNoLongerHas(t *testing.T) {
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('k'), typed('k'))
