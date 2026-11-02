@@ -96,6 +96,10 @@ type KeyMap struct {
 		Show    key.Binding
 		Search  key.Binding
 		Focus   key.Binding
+		// Lanes and Open are the Pulse tab's help for Fold and Unfold, and
+		// for Show.
+		Lanes key.Binding
+		Open  key.Binding
 	}
 
 	// Global key maps
@@ -364,6 +368,8 @@ func DefaultKeyMap() KeyMap {
 	km.Explorer.Show = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "show in chat"))
 	km.Explorer.Search = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search"))
 	km.Explorer.Focus = key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus editor"))
+	km.Explorer.Lanes = key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→/hl", "lanes"))
+	km.Explorer.Open = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open in tree"))
 
 	return km
 }

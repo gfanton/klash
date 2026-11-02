@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -898,6 +899,38 @@ func TestMemBlock(t *testing.T) {
 		"- `renew-tls-cert` \"renew the TLS cert\" (32d ago) due since 2026-12-01\n"+
 		"facts, newest first: `cmd/test` = go test -race ./...\n"+
 		"</mem>", block)
+}
+
+// mem's pulse is what its status.json says goes on: the questions waiting
+// on the user, and each open goal with the session working on it, its
+// steps, the next one, and those held back and why.
+func TestMemPulse(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	h := newTestMemHost(t, dir)
+	_, ok := memPulseOf(dir)
+	require.False(t, ok, "no status.json yet")
+	for _, q := range []memRequest{
+		{Code: `r := mem.Todo("release v2"); r.Todo("bump the version"); r.Todo("tag v2.0.0")`, Session: "s1"},
+		{Code: `mem.Ask("release-v2/tag-v2-0-0", "which key signs the tag?")`, Session: "s1"},
+		{Code: `mem.Todo("renew the TLS cert").Wait("2026-12-01")`, Session: "s1"},
+	} {
+		res, err := h.call(context.Background(), q)
+		require.NoError(t, err, res.Output)
+	}
+	st, _ := readMemStatus(dir)
+	p, ok := memPulseOf(dir)
+	require.True(t, ok)
+
+	require.Equal(t, st.At, p.At)
+	require.Equal(t, []MemPulseItem{{Name: "release-v2/tag-v2-0-0/which-key-signs-tag", Title: "which key signs the tag?"}}, p.Asks)
+	i := slices.IndexFunc(p.Goals, func(g MemPulseGoal) bool { return g.Name == "release-v2" })
+	require.GreaterOrEqual(t, i, 0)
+	g := p.Goals[i]
+	require.Equal(t, "release v2", g.Title)
+	require.Equal(t, 2, g.StepsOpen)
+	require.Equal(t, "release-v2/bump-version", g.Next)
+	require.Equal(t, "bump the version", g.NextTitle)
 }
 
 // The block names at most ten due items and ten questions for the user,

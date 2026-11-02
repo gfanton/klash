@@ -64,8 +64,10 @@ type explorer struct {
 	searching bool
 	query     string
 	from      explorerSelection
-	// row is the Context tab's selection among the biggest rows.
-	row int
+	// row is the Context tab's selection among the biggest rows; lane and
+	// pulse the Pulse tab's, a lane and an entry in it.
+	row         int
+	lane, pulse int
 	// back is the focus to give back on closing.
 	back uiFocusState
 }
@@ -487,15 +489,15 @@ func (m *UI) handleExplorerKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		e.want = explorerHalf
 		m.updateLayoutAndSize()
 	case key.Matches(msg, k.NextTab):
-		e.tab = (e.tab + 1) % explorerTabCount
+		return m.setTab((e.tab + 1) % explorerTabCount), true
 	case key.Matches(msg, k.PrevTab):
-		e.tab = (e.tab + explorerTabCount - 1) % explorerTabCount
+		return m.setTab((e.tab + explorerTabCount - 1) % explorerTabCount), true
 	case key.Matches(msg, k.Tree):
-		e.tab = explorerTree
+		return m.setTab(explorerTree), true
 	case key.Matches(msg, k.Pulse):
-		e.tab = explorerPulse
+		return m.setTab(explorerPulse), true
 	case key.Matches(msg, k.Context):
-		e.tab = explorerContext
+		return m.setTab(explorerContext), true
 	case key.Matches(msg, k.Up):
 		m.moveOnTab(-1)
 	case key.Matches(msg, k.Down):
@@ -504,6 +506,10 @@ func (m *UI) handleExplorerKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.foldExplorer(true)
 	case tree && key.Matches(msg, k.Unfold):
 		m.foldExplorer(false)
+	case e.tab == explorerPulse && key.Matches(msg, k.Fold):
+		m.changeLane(-1)
+	case e.tab == explorerPulse && key.Matches(msg, k.Unfold):
+		m.changeLane(1)
 	case key.Matches(msg, k.Follow):
 		e.following, e.selected = true, ""
 	case key.Matches(msg, k.Focus):
@@ -525,16 +531,30 @@ func (m *UI) moveOnTab(delta int) {
 		m.moveExplorer(delta)
 	case explorerContext:
 		m.moveContextRow(delta)
+	case explorerPulse:
+		m.movePulse(delta)
 	}
 }
 
-// showOnTab shows the open tab's selection in the chat.
+// showOnTab shows the open tab's selection: in the chat from the Tree and
+// Context tabs, in the Tree tab from the Pulse tab.
 func (m *UI) showOnTab() tea.Cmd {
 	switch m.explorer.tab {
 	case explorerTree:
 		return m.showFrameInChat()
 	case explorerContext:
 		return m.showRowInChat()
+	case explorerPulse:
+		m.openPulseFrame()
+	}
+	return nil
+}
+
+// setTab opens tab; the Pulse tab reads what mem says anew.
+func (m *UI) setTab(tab explorerTab) tea.Cmd {
+	m.explorer.tab = tab
+	if tab == explorerPulse {
+		return m.loadMemPulse()
 	}
 	return nil
 }
@@ -559,7 +579,7 @@ func (m *UI) handleExplorerClick(msg tea.MouseClickMsg) tea.Cmd {
 		}
 	case y == explorerTabsRow:
 		if tab := explorerTabAt(x); tab >= 0 {
-			m.explorer.tab = tab
+			return m.setTab(tab)
 		}
 	case m.explorer.tab == explorerTree:
 		rows := m.treeRows()
@@ -685,8 +705,8 @@ func (m *UI) explorerView(width, height int) (string, int) {
 		lines = append(lines, body...)
 	case explorerContext:
 		lines = append(lines, m.contextTab(inner, height-explorerBodyRow)...)
-	default:
-		lines = append(lines, "", t.Files.EmptyMessage.Render("not built yet"))
+	case explorerPulse:
+		lines = append(lines, m.pulseTab(inner, height-explorerBodyRow)...)
 	}
 	if lit >= 0 {
 		lit += explorerBodyRow
