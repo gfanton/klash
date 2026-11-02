@@ -816,10 +816,10 @@ func TestMemBlock(t *testing.T) {
 // steps, the next one, and those held back and why.
 func TestMemPulse(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	base := t.TempDir()
+	dir := memDir(base, "/proj")
 	h := newTestMemHost(t, dir)
-	_, ok := memPulseOf(dir)
-	require.False(t, ok, "no status.json yet")
+	require.Equal(t, MemPulse{}, ReadMemPulse(base, "/proj"), "no status.json yet")
 	for _, q := range []memRequest{
 		{Code: `r := mem.Todo("release v2"); r.Todo("bump the version"); r.Todo("tag v2.0.0")`, Session: "s1"},
 		{Code: `mem.Ask("release-v2/tag-v2-0-0", "which key signs the tag?")`, Session: "s1"},
@@ -829,8 +829,7 @@ func TestMemPulse(t *testing.T) {
 		require.NoError(t, err, res.Output)
 	}
 	st, _ := readMemStatus(dir)
-	p, ok := memPulseOf(dir)
-	require.True(t, ok)
+	p := ReadMemPulse(base, "/proj")
 
 	require.Equal(t, st.At, p.At)
 	require.Equal(t, []MemPulseItem{{Name: "release-v2/tag-v2-0-0/which-key-signs-tag", Title: "which key signs the tag?"}}, p.Asks)
