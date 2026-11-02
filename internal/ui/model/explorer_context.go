@@ -389,7 +389,7 @@ func (m *UI) contextPopLines(c contextNow, inner int) []string {
 	if c.slideAt <= 0 || len(c.stack) == 0 {
 		return lines
 	}
-	top, large := len(c.stack)-1, c.slideAt/2
+	top, large := len(c.stack)-1, agent.LargeStepAt(c.slideAt)
 	took := c.frames[top].tokens
 	lines = append(lines, "  "+muted.Render("since its push")+"  "+gauge(lipgloss.NewStyle().Foreground(m.frameColors(len(c.stack))[top]), t.Files.TruncationHint, took, large, 20)+" "+
 		value.Render(shortTokens(took))+muted.Render(" of "+shortTokens(large)))

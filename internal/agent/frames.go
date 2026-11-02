@@ -1393,9 +1393,16 @@ func slidLine(slid []string, stack []stackFrame) string {
 // compaction check was not.
 const largeStep = "this step is large: pop it with what you have, or split it into sub-steps"
 
+// LargeStepAt is how many tokens the work of the frame a session is in
+// may take in, for a session that compacts or slides at point, before the
+// model is told its step is large: half of point.
+func LargeStepAt(point int64) int64 {
+	return point / 2
+}
+
 // largeLine is largeStep for the frame on top of the session's stack when
-// the session's running total, tokens, has grown past half of point since
-// the push, given once per frame; "" otherwise.
+// the session's running total, tokens, has grown past LargeStepAt(point)
+// since the push, given once per frame; "" otherwise.
 func (f *frameStacks) largeLine(ctx context.Context, sessionID string, tokens, point int64) string {
 	if f == nil || sessionID == "" || point <= 0 {
 		return ""
@@ -1407,7 +1414,7 @@ func (f *frameStacks) largeLine(ctx context.Context, sessionID string, tokens, p
 		return ""
 	}
 	top := rec.stack[len(rec.stack)-1]
-	if top.warned || tokens-top.tokens <= point/2 {
+	if top.warned || tokens-top.tokens <= LargeStepAt(point) {
 		return ""
 	}
 	top.warned = true
