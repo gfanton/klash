@@ -913,7 +913,11 @@ func (m *UI) explorerHeader(inner int) string {
 			return left + strings.Repeat(" ", gap) + right
 		}
 	}
-	return right
+	// The buttons end the header, where a click looks for them.
+	if cut := lipgloss.Width(right) - inner; cut > 0 {
+		return ansi.TruncateLeft(right, cut+1, "…")
+	}
+	return strings.Repeat(" ", inner-lipgloss.Width(right)) + right
 }
 
 // plural writes n things: "1 pop", "3 pops".
