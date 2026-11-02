@@ -114,9 +114,11 @@ func (m *UI) askCall(name string) string {
 
 // ---- Lanes
 
-// The Pulse tab's lanes.
+// pulseLane is a lane of the Pulse tab.
+type pulseLane int
+
 const (
-	laneNow = iota
+	laneNow pulseLane = iota
 	laneDone
 	laneNext
 	laneCount
@@ -310,9 +312,9 @@ const (
 // lanesBeside draws the lanes side by side, inner wide, at most rows
 // tall.
 func (m *UI) lanesBeside(lanes [laneCount][]pulseItem, inner, rows int) []string {
-	width := (inner - laneGap*(laneCount-1)) / laneCount
+	width := (inner - laneGap*(int(laneCount)-1)) / int(laneCount)
 	cols := make([][]string, laneCount)
-	for i := range lanes {
+	for i := range laneCount {
 		cols[i] = m.laneLines(i, lanes[i], width, rows)
 	}
 	return beside(cols, width)
@@ -351,7 +353,7 @@ func (m *UI) lanesUnder(lanes [laneCount][]pulseItem, inner, rows int) []string 
 	left := rows
 	for i, items := range lanes {
 		need[i] = 1 + max(itemRows(items)*len(items), 1)
-		got[i] = min(need[i], max(rows/laneCount, laneMinRows))
+		got[i] = min(need[i], max(rows/int(laneCount), laneMinRows))
 		left -= got[i]
 	}
 	for i := range lanes {
@@ -360,7 +362,7 @@ func (m *UI) lanesUnder(lanes [laneCount][]pulseItem, inner, rows int) []string 
 		left -= more
 	}
 	var lines []string
-	for i := range lanes {
+	for i := range laneCount {
 		lines = append(lines, m.laneLines(i, lanes[i], inner, got[i])...)
 	}
 	return lines
@@ -369,7 +371,7 @@ func (m *UI) lanesUnder(lanes [laneCount][]pulseItem, inner, rows int) []string 
 // laneLines draws lane i, width wide and at most rows tall: its name and
 // how many entries it has, then the entries that fit around the one
 // selected, it marked, and how many are hidden above and below them.
-func (m *UI) laneLines(i int, items []pulseItem, width, rows int) []string {
+func (m *UI) laneLines(i pulseLane, items []pulseItem, width, rows int) []string {
 	t := m.com.Styles
 	muted := t.Files.EmptyMessage
 	head := fmt.Sprintf("── %s (%d) ", laneNames[i], len(items))
@@ -433,7 +435,7 @@ func (m *UI) movePulse(delta int) {
 
 // changeLane moves the selection to the lane delta away.
 func (m *UI) changeLane(delta int) {
-	m.explorer.lane = min(max(m.explorer.lane+delta, 0), laneCount-1)
+	m.explorer.lane = min(max(m.explorer.lane+pulseLane(delta), 0), laneCount-1)
 	m.explorer.pulse, m.explorer.onWaits = 0, false
 }
 

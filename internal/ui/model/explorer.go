@@ -69,9 +69,10 @@ type explorer struct {
 	// row is the Context tab's selection among the biggest rows; lane and
 	// pulse the Pulse tab's, a lane and an entry in it, or with onWaits an
 	// entry of what waits on the user.
-	row         int
-	lane, pulse int
-	onWaits     bool
+	row     int
+	lane    pulseLane
+	pulse   int
+	onWaits bool
 	// work is the selected frame's work and edits, as last worked out.
 	work frameWorkCache
 	// back is the focus to give back on closing.
@@ -702,8 +703,11 @@ func explorerInner(width int) int {
 	return max(width-2*explorerPad, 1)
 }
 
+// explorerButton is a button at the end of the explorer's header.
+type explorerButton int
+
 const (
-	buttonHalf = iota
+	buttonHalf explorerButton = iota
 	buttonFull
 	buttonClose
 )
@@ -712,12 +716,12 @@ var explorerButtons = [...]string{buttonHalf: "◧ half", buttonFull: "■ full"
 
 // explorerButtonAt is the header button over column x of an explorer
 // width wide, or -1. The buttons end the header, two columns apart.
-func explorerButtonAt(width, x int) int {
+func explorerButtonAt(width, x int) explorerButton {
 	right := width - explorerPad
 	for i := len(explorerButtons) - 1; i >= 0; i-- {
 		left := right - lipgloss.Width(explorerButtons[i])
 		if x >= left && x < right {
-			return i
+			return explorerButton(i)
 		}
 		right = left - 2
 	}
@@ -887,11 +891,11 @@ func (m *UI) explorerHeader(inner int) string {
 		}
 		state = brief + t.Files.EmptyMessage.Render(" · G to follow")
 	}
-	drawn := map[explorerSize]int{explorerHalf: buttonHalf, explorerFull: buttonFull}[m.explorerDrawn()]
+	drawn := map[explorerSize]explorerButton{explorerHalf: buttonHalf, explorerFull: buttonFull}[m.explorerDrawn()]
 	var buttons []string
 	for i, b := range explorerButtons {
 		style := t.Files.EmptyMessage
-		if i == drawn {
+		if explorerButton(i) == drawn {
 			style = t.Files.ArtifactLabel.Underline(true)
 		}
 		buttons = append(buttons, style.Render(b))
