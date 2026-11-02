@@ -94,6 +94,9 @@ type Chat struct {
 	// popped is the mark of each item that shows a row out of the
 	// model's context, by item id (see MarkPopped).
 	popped map[string]string
+	// framed is the items of the frame the explorer shows in the chat,
+	// marked with a gutter (see ShowFrame).
+	framed map[string]bool
 
 	// animRunning is true while the shared animation clock has a tick
 	// outstanding. The clock stops itself when no visible item is spinning
@@ -198,6 +201,7 @@ func NewChat(com *common.Common, scrollbarMode string) *Chat {
 	l.RegisterRenderCallback(c.applyHighlightRange)
 	l.RegisterRenderCallback(list.FocusedRenderCallback(l))
 	l.RegisterRenderCallback(c.dimPopped)
+	l.RegisterRenderCallback(c.frameGutter)
 	l.SetGapLabel(c.poppedLabel)
 	c.list = l
 	c.mouseDownItem = -1
@@ -443,6 +447,7 @@ func (m *Chat) InvalidateVisibleRenderCaches() {
 func (m *Chat) SetMessages(msgs ...chat.MessageItem) tea.Cmd {
 	m.idInxMap = make(map[string]int)
 	m.popped = nil
+	m.framed = nil
 	m.resetScrollbar() // Reset scrollbar visibility on new session load
 
 	items := make([]list.Item, len(msgs))
@@ -968,6 +973,7 @@ func (m *Chat) SelectNearestInView(scrolledUp bool) {
 func (m *Chat) ClearMessages() {
 	m.idInxMap = make(map[string]int)
 	m.popped = nil
+	m.framed = nil
 	m.resetScrollbar()
 	m.list.SetItems()
 	m.ClearMouse()
