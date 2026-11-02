@@ -992,6 +992,20 @@ func TestExplorer_PulseCountsTheSessionsAtWork(t *testing.T) {
 	require.NotContains(t, body, "paused")
 }
 
+func TestExplorer_PulseShimmersTheFrameAtWork(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	at := time.Unix(1_700_000_100, 0)
+	head := func(after time.Duration) string {
+		r := u.pulseRenderer()
+		r.look = stackLook{now: at.Add(after), busy: true}
+		return u.pulseLanes(r)[laneNow][0].head
+	}
+
+	require.Contains(t, stripANSI(head(0)), "fix-flaky-test/find-cause/try-free-port")
+	require.NotEqual(t, head(0), head(240*time.Millisecond), "its colors move while the agent works")
+	require.Equal(t, stripANSI(head(0)), stripANSI(head(240*time.Millisecond)), "and only its colors")
+}
+
 func TestExplorer_PulseLaneSaysWhatItHidesAboveAndBelow(t *testing.T) {
 	u := pulseUI(t, 200, 50)
 	items := make([]pulseItem, 8)
