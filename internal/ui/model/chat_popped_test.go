@@ -59,6 +59,8 @@ func rowWith(rows []string, text string) int {
 }
 
 func TestChatDimsTheRowsAPopTookOutOfTheModelsContext(t *testing.T) {
+	t.Parallel()
+
 	u := newTestUI()
 	before := reply("a1", "entering bump-version", "")
 	inside := reply("a2", "reading the version file", "release-v2/bump-version")
@@ -91,6 +93,8 @@ func TestChatDimsTheRowsAPopTookOutOfTheModelsContext(t *testing.T) {
 }
 
 func TestChatLabelsADeepPopByItsLastName(t *testing.T) {
+	t.Parallel()
+
 	u := newTestUI()
 	before := reply("a1", "trying a free port", "")
 	inside := reply("a2", "reading the notes", "fix-flaky-test/find-cause/try-free-port")
@@ -102,6 +106,8 @@ func TestChatLabelsADeepPopByItsLastName(t *testing.T) {
 }
 
 func TestChatLabelsWhatASlideTookOut(t *testing.T) {
+	t.Parallel()
+
 	u := newTestUI()
 	slid := reply("a1", "an early round", "slide::c1:c4")
 	u.chat.SetMessages(
@@ -116,6 +122,8 @@ func TestChatLabelsWhatASlideTookOut(t *testing.T) {
 }
 
 func TestPoppedItemIDs(t *testing.T) {
+	t.Parallel()
+
 	row := message.Message{ID: "a1", Role: message.Assistant, Parts: []message.ContentPart{
 		message.TextContent{Text: "x"},
 		message.ToolCall{ID: "call-1", Name: "view"},
@@ -132,6 +140,8 @@ func TestPoppedItemIDs(t *testing.T) {
 // poppedItemIDs names every item the chat makes for a row, whatever its
 // kind.
 func TestPoppedItemIDsNameEveryItemTheChatMakes(t *testing.T) {
+	t.Parallel()
+
 	sty := newTestUI().com.Styles
 	rows := map[string]message.Message{
 		"prompt": {ID: "u1", Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "fix it"}}},
@@ -147,6 +157,8 @@ func TestPoppedItemIDsNameEveryItemTheChatMakes(t *testing.T) {
 	}
 	for name, row := range rows {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			items := chat.ExtractMessageItems(sty, &row, nil, "")
 			require.NotEmpty(t, items)
 			for _, item := range items {
@@ -158,6 +170,8 @@ func TestPoppedItemIDsNameEveryItemTheChatMakes(t *testing.T) {
 
 // A bang command run inside a frame is dimmed with the frame's rows.
 func TestChatDimsAPoppedShellCommand(t *testing.T) {
+	t.Parallel()
+
 	u, _ := sidebarUI(t, 60)
 	_, _ = u.Update(loadSessionMsg{session: &session.Session{ID: "s1", Title: "release"}, messages: []message.Message{
 		*reply("a0", "entering fix-test", ""),
@@ -176,6 +190,8 @@ func TestChatDimsAPoppedShellCommand(t *testing.T) {
 
 // A new session's chat starts with nothing dimmed.
 func TestChatSetMessagesForgetsTheMarks(t *testing.T) {
+	t.Parallel()
+
 	u := newTestUI()
 	inside := reply("a2", "reading the version file", "release-v2/bump-version")
 	u.chat.SetMessages(chat.NewAssistantMessageItem(u.com.Styles, inside))
@@ -189,6 +205,8 @@ func TestChatSetMessagesForgetsTheMarks(t *testing.T) {
 }
 
 func TestChatShowFrameMarksItsItemsWithAGutter(t *testing.T) {
+	t.Parallel()
+
 	u := newTestUI()
 	u.chat.SetMessages(
 		chat.NewAssistantMessageItem(u.com.Styles, reply("a1", "entering bump-version", "")),
@@ -207,6 +225,8 @@ func TestChatShowFrameMarksItsItemsWithAGutter(t *testing.T) {
 
 // A session loaded from its rows dims the ones its pops marked.
 func TestChatDimsTheMarkedRowsOfALoadedSession(t *testing.T) {
+	t.Parallel()
+
 	u, _ := sidebarUI(t, 60)
 	_, _ = u.Update(loadSessionMsg{session: &session.Session{ID: "s1", Title: "release"}, messages: []message.Message{
 		*reply("a1", "entering bump-version", ""),
@@ -220,6 +240,8 @@ func TestChatDimsTheMarkedRowsOfALoadedSession(t *testing.T) {
 
 // The marks arrive as the rows are updated, the way a pop marks them.
 func TestChatDimsRowsAsTheirPopArrives(t *testing.T) {
+	t.Parallel()
+
 	u, _ := sidebarUI(t, 60)
 	send := func(typ pubsub.EventType, msg *message.Message) {
 		t.Helper()

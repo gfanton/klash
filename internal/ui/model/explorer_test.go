@@ -102,6 +102,8 @@ func at(rows []string, area image.Rectangle, text string) image.Point {
 }
 
 func TestExplorer_CtrlXOpensItAndEscClosesIt(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	require.Equal(t, uiFocusEditor, u.focus)
 
@@ -118,6 +120,8 @@ func TestExplorer_CtrlXOpensItAndEscClosesIt(t *testing.T) {
 }
 
 func TestExplorer_CtrlXClosesItOrTakesFocusBack(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, tab)
 	require.True(t, u.explorer.open)
@@ -134,6 +138,8 @@ func TestExplorer_CtrlXClosesItOrTakesFocusBack(t *testing.T) {
 // Esc cancels a working agent; with the explorer open, esc closes the
 // explorer and leaves the agent alone.
 func TestExplorer_EscClosesItWithoutCancellingTheAgent(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	u.agentReady = true
 	u.agentBusyCache.set(true)
@@ -147,6 +153,8 @@ func TestExplorer_EscClosesItWithoutCancellingTheAgent(t *testing.T) {
 }
 
 func TestExplorer_HalfWhereItFitsFullElsewhere(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	edge := u.layout.sidebar.Max.X
 	press(u, ctrlX)
@@ -178,6 +186,8 @@ func TestExplorer_HalfWhereItFitsFullElsewhere(t *testing.T) {
 }
 
 func TestExplorer_SizeAndMovesLeaveTheTabAlone(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('k'), typed('k'))
 
@@ -186,6 +196,8 @@ func TestExplorer_SizeAndMovesLeaveTheTabAlone(t *testing.T) {
 }
 
 func TestExplorer_TabsSwitchOnBracketsAndDigits(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 	require.Equal(t, explorerTree, u.explorer.tab)
@@ -203,6 +215,8 @@ func TestExplorer_TabsSwitchOnBracketsAndDigits(t *testing.T) {
 }
 
 func TestExplorer_FollowsTheAgentUntilMoved(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id)
@@ -221,6 +235,8 @@ func TestExplorer_FollowsTheAgentUntilMoved(t *testing.T) {
 }
 
 func TestExplorer_TreeFoldsAndShowsTheSelectedFrame(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('k'), typed('k'))
 	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
@@ -238,6 +254,8 @@ func TestExplorer_TreeFoldsAndShowsTheSelectedFrame(t *testing.T) {
 }
 
 func TestExplorer_OpensFromAClickOnTheSidebarStack(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	rows := drawn(u)
 	heading := at(rows, u.layout.sidebar, "Stack ─")
@@ -257,6 +275,8 @@ func TestExplorer_OpensFromAClickOnTheSidebarStack(t *testing.T) {
 }
 
 func TestExplorer_OpensFollowingFromAClickOnTheFrameAtWork(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('3'), esc)
 
@@ -270,6 +290,8 @@ func TestExplorer_OpensFollowingFromAClickOnTheFrameAtWork(t *testing.T) {
 }
 
 func TestExplorer_OpensFromACompactTrailClick(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 100, 40)
 	require.True(t, u.isCompact)
 
@@ -280,6 +302,8 @@ func TestExplorer_OpensFromACompactTrailClick(t *testing.T) {
 }
 
 func TestExplorer_OpensFromAClickInTheDetailsColumn(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 100, 40)
 	press(u, tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 	require.True(t, u.detailsOpen)
@@ -294,6 +318,8 @@ func TestExplorer_OpensFromAClickInTheDetailsColumn(t *testing.T) {
 }
 
 func TestExplorer_HeaderButtonsSizeAndCloseIt(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 
@@ -317,6 +343,8 @@ func TestExplorer_HeaderButtonsSizeAndCloseIt(t *testing.T) {
 // A header too narrow for anything but the buttons still ends with them,
 // where a click finds them.
 func TestExplorer_HeaderButtonsWorkWhenNarrow(t *testing.T) {
+	t.Parallel()
+
 	for _, width := range []int{32, 24} {
 		u := explorerUI(t, width, 40)
 		press(u, ctrlX)
@@ -329,6 +357,8 @@ func TestExplorer_HeaderButtonsWorkWhenNarrow(t *testing.T) {
 }
 
 func TestExplorer_AClickOnAFrameSelectsIt(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 	frame := at(drawn(u), u.layout.explorer, "└ ▸ find-cause")
@@ -341,6 +371,8 @@ func TestExplorer_AClickOnAFrameSelectsIt(t *testing.T) {
 }
 
 func TestExplorer_KeysShowInTheStatusBar(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 
@@ -356,6 +388,8 @@ func TestExplorer_KeysShowInTheStatusBar(t *testing.T) {
 }
 
 func TestExplorer_IsNotOfferedWithoutFrames(t *testing.T) {
+	t.Parallel()
+
 	u, _ := sidebarUI(t, 50)
 	u.keyMap = DefaultKeyMap()
 	u.width = 200
@@ -403,6 +437,8 @@ func column(line, text string) int {
 }
 
 func TestExplorer_TreeDrawsEachFrameOnATimeAxis(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 34)
 	press(u, ctrlX, typed('+'))
 	tree := treeOf(u)
@@ -421,6 +457,8 @@ func TestExplorer_TreeDrawsEachFrameOnATimeAxis(t *testing.T) {
 }
 
 func TestExplorer_TreeDropsTheBarsWhenNarrow(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 48, 30)
 	press(u, ctrlX)
 	tree := strings.Join(treeOf(u), "\n")
@@ -445,6 +483,8 @@ func slidRows(t *testing.T) []message.Message {
 }
 
 func TestExplorer_TreeShowsASlideUnderTheFrameItSlid(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 34)
 	observeRows(u, slidRows(t)[len(explorerRows(t)):]...)
 	press(u, ctrlX, typed('+'))
@@ -460,8 +500,12 @@ func TestExplorer_TreeShowsASlideUnderTheFrameItSlid(t *testing.T) {
 }
 
 func TestExplorer_TreeEndsTheGoalAtWorkWithItsStepsNotStarted(t *testing.T) {
+	t.Parallel()
+
 	for name, size := range map[string][2]int{"with bars": {200, 50}, "without": {100, 40}} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			u := explorerUI(t, size[0], size[1])
 			u.session.Todos = []session.Todo{
 				{Content: "reproduce it", Status: session.TodoStatusCompleted},
@@ -484,6 +528,8 @@ func TestExplorer_TreeEndsTheGoalAtWorkWithItsStepsNotStarted(t *testing.T) {
 }
 
 func TestExplorer_TreeShowsTheContextOverTimeWhenTall(t *testing.T) {
+	t.Parallel()
+
 	tall := explorerUI(t, 200, 50)
 	press(tall, ctrlX, typed('+'))
 	require.NotEmpty(t, lineWith(treeOf(tall), "model context"))
@@ -546,12 +592,16 @@ func TestExplorer_TreeChartShowsWhatIsAlwaysSentAtItsFoot(t *testing.T) {
 }
 
 func TestContextChartDrawsFromItsFloor(t *testing.T) {
+	t.Parallel()
+
 	series := []contextPoint{{at: 10, tokens: 9000}, {at: 20, tokens: 10_000}, {at: 30, tokens: 9500}}
 
 	require.Equal(t, []string{" █ ", " ██"}, contextChart(series, timeAxis{from: 10, to: 30, width: 3}, 2, 9000, 10_000), "the rows from the floor to the top")
 }
 
 func TestContextChartScalesToItsHeight(t *testing.T) {
+	t.Parallel()
+
 	series := []contextPoint{{at: 10, tokens: 1000}, {at: 20, tokens: 2000}, {at: 30, tokens: 500}}
 
 	require.Equal(t, []string{" █ ", "██▄"}, contextChart(series, timeAxis{from: 10, to: 30, width: 3}, 2, 0, 2000))
@@ -561,6 +611,8 @@ func TestContextChartScalesToItsHeight(t *testing.T) {
 var enter = tea.KeyPressMsg{Code: tea.KeyEnter}
 
 func TestExplorer_SearchSelectsTheFirstFrameMatching(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('/'))
 	for _, r := range "WHY" {
@@ -583,6 +635,8 @@ func TestExplorer_SearchSelectsTheFirstFrameMatching(t *testing.T) {
 }
 
 func TestExplorer_SearchOpensTheFramesAboveItsMatch(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('k'), typed('k'), typed('k'), typed('h'))
 	require.Equal(t, "fix-flaky-test", u.selectedFrame().id)
@@ -595,6 +649,8 @@ func TestExplorer_SearchOpensTheFramesAboveItsMatch(t *testing.T) {
 }
 
 func TestExplorer_EnterShowsTheFrameInTheChat(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('k'), typed('k'))
 	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
@@ -624,6 +680,8 @@ func TestExplorer_EnterShowsTheFrameInTheChat(t *testing.T) {
 }
 
 func TestExplorer_EnterOnAFrameNearTheChatsEndLeavesNoRowBlank(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id, "its push is the chat's last item")
@@ -636,6 +694,8 @@ func TestExplorer_EnterOnAFrameNearTheChatsEndLeavesNoRowBlank(t *testing.T) {
 }
 
 func TestExplorer_TheChatShowsWhichMarkedItemIsSelected(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('k'), typed('k'), enter)
 	reply := at(drawn(u), u.layout.main, "xxxx")
@@ -657,6 +717,8 @@ func TestExplorer_TheChatShowsWhichMarkedItemIsSelected(t *testing.T) {
 }
 
 func TestExplorer_DetailListsWhatTheModelNoLongerHas(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('k'), typed('k'))
 	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
@@ -875,6 +937,8 @@ func TestExplorer_ContextChartSpansTheRowsOnceEveryPushIsGone(t *testing.T) {
 }
 
 func TestExplorer_ContextWithoutAWindow(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('3'))
 	body := strings.Join(bodyOf(u), "\n")
@@ -907,6 +971,8 @@ func pulseUI(t *testing.T, width, height int) *UI {
 }
 
 func TestExplorer_PulseShowsWhatWaitsOnTheUser(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('2'))
 	body := bodyOf(u)
@@ -919,6 +985,8 @@ func TestExplorer_PulseShowsWhatWaitsOnTheUser(t *testing.T) {
 }
 
 func TestExplorer_PulseLanes(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('2'))
 	body := strings.Join(bodyOf(u), "\n")
@@ -943,6 +1011,8 @@ func TestExplorer_PulseLanes(t *testing.T) {
 }
 
 func TestExplorer_PulseListsEachStepUpNextOnceOnALine(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	u.memPulse.Goals = append(u.memPulse.Goals, gnovm.MemPulseGoal{
 		Name: "fix-flaky-test", Title: "fix the flaky test",
@@ -959,6 +1029,8 @@ func TestExplorer_PulseListsEachStepUpNextOnceOnALine(t *testing.T) {
 // Under /goal mem does not push the goal itself: the session's bottom
 // frame is a step of it.
 func TestExplorer_PulseListsTheNextStepOnceUnderAGoal(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	u.sessionFrames = deriveFrames("s1", []message.Message{
 		callRow("g1", 1_700_000_000, memCall("gc1")),
@@ -980,6 +1052,8 @@ func TestExplorer_PulseListsTheNextStepOnceUnderAGoal(t *testing.T) {
 }
 
 func TestExplorer_PulseCountsTheSessionsAtWork(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('2'))
 	body := strings.Join(bodyOf(u), "\n")
@@ -993,6 +1067,8 @@ func TestExplorer_PulseCountsTheSessionsAtWork(t *testing.T) {
 }
 
 func TestExplorer_PulseShimmersTheFrameAtWork(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	at := time.Unix(1_700_000_100, 0)
 	head := func(after time.Duration) string {
@@ -1007,6 +1083,8 @@ func TestExplorer_PulseShimmersTheFrameAtWork(t *testing.T) {
 }
 
 func TestExplorer_PulseLaneSaysWhatItHidesAboveAndBelow(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	items := make([]pulseItem, 8)
 	for i := range items {
@@ -1029,6 +1107,8 @@ func TestExplorer_PulseLaneSaysWhatItHidesAboveAndBelow(t *testing.T) {
 }
 
 func TestExplorer_PulseOffersEnterOnAFrameBeforeTheTabsKeys(t *testing.T) {
+	t.Parallel()
+
 	help := func(u *UI) []string {
 		var descs []string
 		for _, b := range u.ShortHelp() {
@@ -1047,6 +1127,8 @@ func TestExplorer_PulseOffersEnterOnAFrameBeforeTheTabsKeys(t *testing.T) {
 }
 
 func TestExplorer_PulseGivesAPopWithoutResultOneRow(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	observeRows(u, toolRow("f6", 1_700_000_060, memResult(t, "fc6", popWith("fix-flaky-test/find-cause/try-free-port", ""))))
 	done := u.pulseLanes(u.explorerRenderer())[laneDone]
@@ -1054,6 +1136,8 @@ func TestExplorer_PulseGivesAPopWithoutResultOneRow(t *testing.T) {
 }
 
 func TestExplorer_PulseSummarySitsAtTheFoot(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('2'))
 	body := bodyOf(u)
@@ -1066,6 +1150,8 @@ func TestExplorer_PulseSummarySitsAtTheFoot(t *testing.T) {
 }
 
 func TestExplorer_PulseLanesShareTheRows(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 80, 26)
 	u.memPulse.Asks = nil
 	press(u, ctrlX, typed('2'))
@@ -1078,6 +1164,8 @@ func TestExplorer_PulseLanesShareTheRows(t *testing.T) {
 // Lanes too tall for a short tab, or many questions waiting, are cut
 // above the summary, which stays at the foot.
 func TestExplorer_PulseKeepsItsSummaryWhenShort(t *testing.T) {
+	t.Parallel()
+
 	for _, height := range []int{10, 12, 15, 16} {
 		u := pulseUI(t, 80, height)
 		u.memPulse.Asks = nil
@@ -1096,6 +1184,8 @@ func TestExplorer_PulseKeepsItsSummaryWhenShort(t *testing.T) {
 }
 
 func TestExplorer_PulseOpensAFrameInTheTree(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('2'))
 	require.Contains(t, lineWith(bodyOf(u), "› ◌ fix-flaky-test/find-cause/try-free-port"), "try-free-port", "the frame at work is selected")
@@ -1109,6 +1199,8 @@ func TestExplorer_PulseOpensAFrameInTheTree(t *testing.T) {
 }
 
 func TestExplorer_MemPulseIsReadThroughTheWorkspace(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	pulse := gnovm.MemPulse{At: 7, Asks: []gnovm.MemPulseItem{{Name: "a", Title: "b"}}}
 	u.com.Workspace = pulseWorkspace{u.com.Workspace.(*exportWorkspace), pulse}
@@ -1133,6 +1225,8 @@ func (w *pulseReads) MemPulse(context.Context) (gnovm.MemPulse, error) {
 // A pop marks every row it takes out, the gnovm_run rows among them, and
 // each comes again with its mark: none is a new call to mem.
 func TestExplorer_APopsMarksReadNoPulse(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	ws := &pulseReads{exportWorkspace: u.com.Workspace.(*exportWorkspace)}
 	u.com.Workspace = ws
@@ -1157,6 +1251,8 @@ type pulseWorkspace struct {
 func (w pulseWorkspace) MemPulse(context.Context) (gnovm.MemPulse, error) { return w.pulse, nil }
 
 func TestExplorer_AFoldedTaskShowsADotAStep(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	observeRows(u, toolRow("f6", 1_700_000_060, memResult(t, "fc6",
 		popWith("fix-flaky-test/find-cause/try-free-port", "port 0"), popWith("fix-flaky-test/find-cause", "a shared port"), popWith("fix-flaky-test", "fixed"))))
@@ -1166,8 +1262,12 @@ func TestExplorer_AFoldedTaskShowsADotAStep(t *testing.T) {
 }
 
 func TestExplorer_AFoldedTaskSaysWhatItEndedWith(t *testing.T) {
+	t.Parallel()
+
 	for name, size := range map[string][2]int{"with bars": {200, 50}, "without": {100, 40}} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			u := explorerUI(t, size[0], size[1])
 			observeRows(u, toolRow("f6", 1_700_000_060, memResult(t, "fc6",
 				popWith("fix-flaky-test/find-cause/try-free-port", "port 0"), popWith("fix-flaky-test/find-cause", "a shared port"), popWith("fix-flaky-test", "fixed: each test binds port 0"))))
@@ -1211,6 +1311,8 @@ func askedHere(t *testing.T, u *UI) {
 }
 
 func TestExplorer_PulseAClickOnWhatWaitsShowsTheCallThatAskedIt(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	askedHere(t, u)
 	press(u, ctrlX, typed('+'), typed('2'))
@@ -1224,6 +1326,8 @@ func TestExplorer_PulseAClickOnWhatWaitsShowsTheCallThatAskedIt(t *testing.T) {
 }
 
 func TestExplorer_PulseSelectsWhatWaitsAboveTheLanes(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	askedHere(t, u)
 	press(u, ctrlX, typed('2'), typed('k'))
@@ -1246,6 +1350,8 @@ func TestExplorer_PulseSelectsWhatWaitsAboveTheLanes(t *testing.T) {
 }
 
 func TestExplorer_PulseMovesFromALaneOnceWhatWaitsIsAnswered(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('2'), typed('k'))
 	u.memPulse.Asks = nil
@@ -1256,6 +1362,8 @@ func TestExplorer_PulseMovesFromALaneOnceWhatWaitsIsAnswered(t *testing.T) {
 }
 
 func TestExplorer_PulseOffersAnAnswerOnlyForWhatThisSessionAsked(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('2'), typed('k'))
 	for _, b := range u.ShortHelp() {
@@ -1266,6 +1374,8 @@ func TestExplorer_PulseOffersAnAnswerOnlyForWhatThisSessionAsked(t *testing.T) {
 // The answer is offered once the call that asked comes, and no longer
 // once a rewind takes it.
 func TestExplorer_PulseOffersAnAnswerOnceThisSessionAsks(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('2'), typed('k'))
 	answers := func() bool {
@@ -1281,6 +1391,8 @@ func TestExplorer_PulseOffersAnAnswerOnceThisSessionAsks(t *testing.T) {
 }
 
 func TestExplorer_PulseOpensTheFrameAtWorkFollowing(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('2'), enter)
 	require.Equal(t, explorerTree, u.explorer.tab)
@@ -1289,6 +1401,8 @@ func TestExplorer_PulseOpensTheFrameAtWorkFollowing(t *testing.T) {
 }
 
 func TestExplorer_ShowingInTheChatLeavesAClosedExplorersSize(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	u.explorer.want = explorerFull
 	u.showInChat([]string{"f5"}, "f5")
@@ -1297,6 +1411,8 @@ func TestExplorer_ShowingInTheChatLeavesAClosedExplorersSize(t *testing.T) {
 }
 
 func TestSidebar_AClickOnWhatWaitsShowsTheCallThatAskedIt(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	askedHere(t, u)
 
@@ -1308,6 +1424,8 @@ func TestSidebar_AClickOnWhatWaitsShowsTheCallThatAskedIt(t *testing.T) {
 }
 
 func TestSidebar_AClickOnWhatWaitsFromElsewhereOpensPulse(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	waits := at(drawn(u), u.layout.sidebar, "▲ 1 waits on you")
 	click(u, waits.X+1, waits.Y)
@@ -1316,6 +1434,8 @@ func TestSidebar_AClickOnWhatWaitsFromElsewhereOpensPulse(t *testing.T) {
 }
 
 func TestSidebarSaysWhatWaitsOnTheUser(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	rows := drawn(u)
 
@@ -1338,6 +1458,8 @@ func (w *forgettingWorkspace) MemCommand(context.Context, string, string) (strin
 }
 
 func TestSidebar_WhatWaitsIsReadAgainAfterMem(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	u.com.Workspace = &forgettingWorkspace{pulseWorkspace{u.com.Workspace.(*exportWorkspace), u.memPulse}}
 
@@ -1403,6 +1525,8 @@ func TestSidebar_ModelSeesTheCountLessWhatPopsTookOut(t *testing.T) {
 }
 
 func TestExplorer_DrawsInATerminalTooShortForIt(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 	for _, height := range []int{2, 1, 0} {
@@ -1413,6 +1537,8 @@ func TestExplorer_DrawsInATerminalTooShortForIt(t *testing.T) {
 }
 
 func TestExplorer_OutlivesItsFrames(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	observeRows(u, slidRows(t)[len(explorerRows(t)):]...)
 	press(u, ctrlX)
@@ -1426,6 +1552,8 @@ func TestExplorer_OutlivesItsFrames(t *testing.T) {
 }
 
 func TestExplorer_TakesTheKeysWhenItCoversTheEditor(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, tab)
 	require.Equal(t, uiFocusEditor, u.focus)
@@ -1438,6 +1566,8 @@ func TestExplorer_TakesTheKeysWhenItCoversTheEditor(t *testing.T) {
 }
 
 func TestBarOfAPopRecordedBeforeItsPush(t *testing.T) {
+	t.Parallel()
+
 	r := stackRenderer{t: minimalFileStyles()}
 	n := &frameNode{since: 100, until: 50, popped: true}
 
@@ -1447,6 +1577,8 @@ func TestBarOfAPopRecordedBeforeItsPush(t *testing.T) {
 }
 
 func TestExplorer_AnOlderPulseDoesNotReplaceANewerOne(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	_, _ = u.Update(memPulseMsg{gnovm.MemPulse{At: 10, Asks: []gnovm.MemPulseItem{{Name: "new"}}}})
 	_, _ = u.Update(memPulseMsg{gnovm.MemPulse{At: 5}})
@@ -1457,6 +1589,8 @@ func TestExplorer_AnOlderPulseDoesNotReplaceANewerOne(t *testing.T) {
 // mem without a status, as after an erasure that could not write it
 // again, reads as an empty pulse: nothing is known to wait any more.
 func TestSidebar_AnEmptyPulseClearsWhatWaits(t *testing.T) {
+	t.Parallel()
+
 	u := pulseUI(t, 200, 50)
 	_, _ = u.Update(memPulseMsg{gnovm.MemPulse{}})
 
@@ -1464,6 +1598,8 @@ func TestSidebar_AnEmptyPulseClearsWhatWaits(t *testing.T) {
 }
 
 func TestExplorer_SearchFoldsBackWhatItOpened(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('k'), typed('k'), typed('k'), typed('h'))
 	require.Empty(t, lineWith(treeOf(u), "try-free-port"))
@@ -1480,6 +1616,8 @@ func TestExplorer_SearchFoldsBackWhatItOpened(t *testing.T) {
 }
 
 func TestExplorer_TreeKeepsALineARow(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	u.session.Todos = []session.Todo{{Content: "rerun the suite\n20 times", Status: session.TodoStatusPending}}
 	observeRows(u,
@@ -1497,6 +1635,8 @@ func TestExplorer_TreeKeepsALineARow(t *testing.T) {
 }
 
 func TestListWindowFitsItsRoom(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct{ n, sel, room, per int }{
 		{3, 1, 3, 2}, {3, 1, 2, 1}, {8, 7, 6, 2}, {8, 3, 6, 2}, {8, 0, 6, 2}, {20, 10, 7, 1}, {2, 0, 4, 2},
 	} {
@@ -1517,6 +1657,8 @@ func TestListWindowFitsItsRoom(t *testing.T) {
 }
 
 func TestExplorer_TreeColumnsHoldWhenAFrameFolds(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	observeRows(u,
 		callRow("e6", 1_700_000_050, memCall("fc6")),
@@ -1531,6 +1673,8 @@ func TestExplorer_TreeColumnsHoldWhenAFrameFolds(t *testing.T) {
 }
 
 func TestExplorer_HeaderNamesTheSession(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	u.session.Title = "release v2, then the flaky test"
 	press(u, ctrlX, typed('+'))
@@ -1538,6 +1682,8 @@ func TestExplorer_HeaderNamesTheSession(t *testing.T) {
 }
 
 func TestExplorer_DetailTimesToTheSecondAndSaysWhatTheChatShows(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('k'), typed('k'))
 	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
@@ -1551,6 +1697,8 @@ func TestExplorer_DetailTimesToTheSecondAndSaysWhatTheChatShows(t *testing.T) {
 }
 
 func TestExplorer_DetailFollowsNewWorkInTheFrame(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 	require.GreaterOrEqual(t, at(drawn(u), u.layout.explorer, "work      nothing yet").Y, 0)
@@ -1566,6 +1714,8 @@ func TestExplorer_DetailFollowsNewWorkInTheFrame(t *testing.T) {
 }
 
 func TestExplorer_DetailComesUnderAShortTree(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('+'))
 
@@ -1595,6 +1745,8 @@ func wheelAt(u *UI, x, y int, deltaY float64) {
 
 // The agent asks while the explorer covers the editor.
 func TestExplorer_AClickOnItFullLeavesTheEditorUnderIt(t *testing.T) {
+	t.Parallel()
+
 	bare := explorerUI(t, 150, 50)
 	askYesNo(t, bare, "Ship it?")
 	yes := at(drawn(bare), bare.layout.editor, "Yes")
@@ -1613,6 +1765,8 @@ func TestExplorer_AClickOnItFullLeavesTheEditorUnderIt(t *testing.T) {
 }
 
 func TestExplorer_TheWheelOnItFullLeavesTheEditorUnderIt(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 150, 50)
 	press(u, ctrlX)
 	askYesNo(t, u, "Ship it?")
@@ -1627,6 +1781,8 @@ func TestExplorer_TheWheelOnItFullLeavesTheEditorUnderIt(t *testing.T) {
 
 // Some terminals, Ghostty among them, send a notch of the wheel as 3.
 func TestExplorer_TheWheelMovesOneEntryANotch(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 	on := u.layout.explorer.Min.Add(image.Pt(1, explorerBodyRow))
@@ -1638,6 +1794,8 @@ func TestExplorer_TheWheelMovesOneEntryANotch(t *testing.T) {
 }
 
 func TestExplorer_BesideTheChatItLeavesTheSidebarNoFocus(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 30)
 	drawn(u)
 	require.True(t, u.sidebarScrollable, "the sidebar is long enough to take the keys")
@@ -1656,6 +1814,8 @@ func TestExplorer_BesideTheChatItLeavesTheSidebarNoFocus(t *testing.T) {
 }
 
 func TestExplorer_BesideTheChatAQuestionFitsTheEditor(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX)
 	askYesNo(t, u, strings.Repeat("Should the release wait for the flaky test? ", 9))
@@ -1665,9 +1825,13 @@ func TestExplorer_BesideTheChatAQuestionFitsTheEditor(t *testing.T) {
 }
 
 func TestExplorer_FullHelpListsItsKeys(t *testing.T) {
+	t.Parallel()
+
 	ctrlG := tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl}
 	for name, asking := range map[string]bool{"alone": false, "over a question": true} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			u := explorerUI(t, 150, 50)
 			press(u, ctrlX)
 			if asking {
