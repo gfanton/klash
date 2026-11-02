@@ -863,6 +863,29 @@ func TestExplorer_PulseListsEachStepUpNextOnceOnALine(t *testing.T) {
 	require.Contains(t, lineWith(bodyOf(u), "release-v2/notes"), "write the notes")
 }
 
+// Under /goal mem does not push the goal itself: the session's bottom
+// frame is a step of it.
+func TestExplorer_PulseListsTheNextStepOnceUnderAGoal(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	u.sessionFrames = deriveFrames("s1", []message.Message{
+		callRow("g1", 1_700_000_000, memCall("gc1")),
+		toolRow("g2", 1_700_000_000, memResult(t, "gc1", push("release-v2/bump-version", "bump the version"))),
+	})
+	u.session.Todos = []session.Todo{
+		{Content: "bump the version", Status: session.TodoStatusInProgress},
+		{Content: "tag v2.0.0", Status: session.TodoStatusPending},
+		{Content: "write the notes", Status: session.TodoStatusPending},
+	}
+	u.memPulse = gnovm.MemPulse{At: time.Now().Unix(), Goals: []gnovm.MemPulseGoal{
+		{Name: "release-v2", Title: "release v2", Doing: "s1", StepsOpen: 3, Next: "release-v2/tag-v2-0-0", NextTitle: "tag v2.0.0"},
+	}}
+	press(u, ctrlX, typed('+'), typed('2'))
+	body := strings.Join(bodyOf(u), "\n")
+
+	require.Contains(t, body, "UP NEXT (2)")
+	require.Equal(t, 1, strings.Count(body, "tag v2.0.0"), "the goal's next step is the session's todo")
+}
+
 func TestExplorer_PulseCountsTheSessionsAtWork(t *testing.T) {
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('2'))
