@@ -51,23 +51,23 @@ func (m *UI) modelInfo(width int) string {
 	return common.ModelInfo(m.com.Styles, modelName, providerName, reasoningInfo, modelContext, width, m.hyperCredits)
 }
 
-// modelSees is how much of its window the model was sent at the last
-// request, as a gauge width wide, in the warning's color past the slide
-// point; "" where the window or the count is unknown.
+// modelSees is how much of its window the model holds (modelHolds), as a
+// gauge width wide, in the warning's color past the slide point; "" where
+// the window or the count is unknown.
 func (m *UI) modelSees(width int) string {
 	window, slideAt := m.contextLimits()
-	counted := m.countedTokens()
-	if window <= 0 || counted <= 0 {
+	if window <= 0 || m.countedTokens() <= 0 {
 		return ""
 	}
+	holds := m.modelHolds()
 	t := m.com.Styles
 	fill, _ := m.chartColors()
-	if slideAt > 0 && counted >= slideAt {
+	if slideAt > 0 && holds >= slideAt {
 		fill = t.LSP.WarningDiagnostic
 	}
-	label, count := "  model sees ", " "+shortTokens(counted)
+	label, count := "  model sees ", " "+shortTokens(holds)
 	cells := max(width-len(label)-len(count)-2, 4)
-	return t.Files.EmptyMessage.Render(label) + gauge(fill, t.Files.TruncationHint, counted, window, cells) + t.Files.ArtifactLabel.Render(count)
+	return t.Files.EmptyMessage.Render(label) + gauge(fill, t.Files.TruncationHint, holds, window, cells) + t.Files.ArtifactLabel.Render(count)
 }
 
 // waitsLines is, for the sidebar width wide, how many things in mem wait

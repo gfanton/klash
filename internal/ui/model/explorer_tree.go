@@ -320,24 +320,52 @@ func (m *UI) contextOverTime() (series []contextPoint, always int64) {
 }
 
 // alwaysSent is what the provider counted for the session's last request
-// beyond the rows' estimate at its reply, series' point for the last
-// finished assistant row: the system prompt, the tools, the files given.
-// A pop after that reply, and the next reply while it streams, are in a
-// later request, not in the count. 0 where it counted nothing.
+// beyond the rows' estimate at its reply (countedReply): the system
+// prompt, the tools, the files given. 0 where it counted nothing.
 func (m *UI) alwaysSent(series []contextPoint) int64 {
 	counted := m.countedTokens()
 	if counted <= 0 || len(series) == 0 {
 		return 0
 	}
+	return max(counted-series[m.countedReply(series)].tokens, 0)
+}
+
+// countedReply is where in series, not empty, the reply stands whose
+// request the provider counted last: the last finished assistant row. A
+// pop after that reply, and the next reply while it streams, are in a
+// later request, not in the count.
+func (m *UI) countedReply(series []contextPoint) int {
 	rows := m.sessionFrames.rows
-	reply := len(series) - 1
 	for i := min(len(rows), len(series)) - 1; i >= 0; i-- {
 		if rows[i].Role == message.Assistant && rows[i].IsFinished() {
-			reply = i
+			return i
+		}
+	}
+	return len(series) - 1
+}
+
+// modelHolds is what the provider counted for the session's last request
+// less what pops and slides took out of the model's context since its
+// reply: the running total the agent slides or compacts at. 0 where it
+// counted nothing.
+func (m *UI) modelHolds() int64 {
+	counted := m.countedTokens()
+	series := m.sessionFrames.contextSeries()
+	if counted <= 0 || len(series) == 0 {
+		return counted
+	}
+	reply := m.countedReply(series)
+	// What was sent with the reply and still is; the rest left since.
+	var stays int64
+	for _, r := range slices.Backward(m.sessionFrames.rows[:reply+1]) {
+		if r.Popped == "" {
+			stays += m.sessionFrames.rowTokens(r)
+		}
+		if r.IsSummaryMessage {
 			break
 		}
 	}
-	return max(counted-series[reply].tokens, 0)
+	return max(counted-max(series[reply].tokens-stays, 0), 0)
 }
 
 // alwaysSentDarken is how much darker than the rows what is always sent
