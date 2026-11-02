@@ -139,6 +139,8 @@ type frameNode struct {
 	// while it is on the stack.
 	popIndex int
 	result   string
+	// thoughts is how many thoughts it held when it was popped.
+	thoughts int
 	// poppedAt is when the UI saw its pop happen; zero for a pop loaded
 	// with the session.
 	poppedAt time.Time
@@ -189,7 +191,7 @@ func (f sessionFrames) tree() (roots, stack []*frameNode) {
 					if stack[i].id == ev.Id {
 						pops++
 						stack[i].popped, stack[i].result, stack[i].poppedAt, stack[i].popIndex = true, ev.Result, call.seen, pops
-						stack[i].popCall, stack[i].until = call.callID, call.at
+						stack[i].popCall, stack[i].until, stack[i].thoughts = call.callID, call.at, ev.Thoughts
 						owner[ev.Id] = stack[i]
 						stack = slices.Delete(stack, i, i+1)
 						break
@@ -363,16 +365,23 @@ func freedLabel(t *styles.Styles, f sessionFrames) string {
 // only the last few are listed. Then what slides took out. "" for a
 // session with neither.
 func stackSection(t *styles.Styles, f sessionFrames, width int, look stackLook) string {
-	body := stackBody(t, f, width, stackFits()[0], look)
+	view, _ := stackSectionLines(t, f, width, look)
+	return view
+}
+
+// stackSectionLines is stackSection with, for each of its lines, the key
+// of the frame entry it shows, "" for a line that shows none.
+func stackSectionLines(t *styles.Styles, f sessionFrames, width int, look stackLook) (string, []string) {
+	body, keys := stackBody(t, f, width, stackFits()[0], look)
 	if body == nil {
-		return ""
+		return "", nil
 	}
 	var info []string
 	if freed := freedLabel(t, f); freed != "" {
 		info = append(info, freed)
 	}
 	lines := append([]string{common.Section(t, "Stack", width, info...), ""}, body...)
-	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n")), append([]string{"", ""}, keys...)
 }
 
 // stackColumn renders the Stack in a column width wide and at most height
@@ -381,42 +390,50 @@ func stackSection(t *styles.Styles, f sessionFrames, width int, look stackLook) 
 // the agent is in come last. "" for a session with neither frames nor
 // slides.
 func stackColumn(t *styles.Styles, f sessionFrames, width, height int, look stackLook) string {
+	view, _ := stackColumnLines(t, f, width, height, look)
+	return view
+}
+
+// stackColumnLines is stackColumn with, for each of its lines, the key of
+// the frame entry it shows, "" for a line that shows none.
+func stackColumnLines(t *styles.Styles, f sessionFrames, width, height int, look stackLook) (string, []string) {
 	if height <= 0 {
-		return ""
+		return "", nil
 	}
 	title := t.Files.SectionTitle.Render("Stack")
 	if freed := freedLabel(t, f); freed != "" {
 		title += "  " + freed
 	}
-	lines := []string{ansi.Truncate(title, width, "…"), ""}
-	var body []string
+	lines, keys := []string{ansi.Truncate(title, width, "…"), ""}, []string{"", ""}
+	var body, bodyKeys []string
 	for _, fit := range stackFits() {
-		body = stackBody(t, f, width, fit, look)
+		body, bodyKeys = stackBody(t, f, width, fit, look)
 		if len(lines)+len(body) <= height {
 			break
 		}
 	}
 	if body == nil {
-		return ""
+		return "", nil
 	}
 	switch room := height - len(lines); {
 	case room <= 0:
-		lines = lines[:height]
+		lines, keys = lines[:height], keys[:height]
 	case len(body) > room:
-		lines = append(lines, body[len(body)-room:]...)
+		lines, keys = append(lines, body[len(body)-room:]...), append(keys, bodyKeys[len(body)-room:]...)
 	default:
-		lines = append(lines, body...)
+		lines, keys = append(lines, body...), append(keys, bodyKeys...)
 	}
-	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n")), keys
 }
 
-// stackBody is the lines of the Stack under its heading, drawn to fit;
-// nil for a session with neither frames nor slides.
-func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look stackLook) []string {
+// stackBody is the lines of the Stack under its heading, drawn to fit, and
+// the key of the frame entry each shows; nil for a session with neither
+// frames nor slides.
+func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look stackLook) (lines, keys []string) {
 	roots, stack := f.tree()
 	slidRows, slidTokens := f.slid()
 	if len(roots) == 0 && slidRows == 0 {
-		return nil
+		return nil, nil
 	}
 	r := stackRenderer{t: t, width: width, look: look, results: fit.results, last: lastPopped(roots)}
 	if len(stack) > 0 {
@@ -439,16 +456,17 @@ func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look 
 		}
 		r.node(n, "", "", "")
 	}
+	r.key = ""
 	if slidRows > 0 && fit.slid {
 		unit := "msgs"
 		if slidRows == 1 {
 			unit = "msg"
 		}
-		r.lines = append(r.lines, "")
+		r.add("")
 		r.add(t.Files.Path.Render("slid out of the model's context"))
 		r.add("  " + t.Files.EmptyMessage.Render(fmt.Sprintf("%d %s · ≈%s tokens", slidRows, unit, shortTokens(slidTokens))))
 	}
-	return r.lines
+	return r.lines, r.keys
 }
 
 // stackColumnWidth is the widest the Stack's column gets in compact mode's
@@ -506,7 +524,13 @@ type stackRenderer struct {
 	// frame popped last.
 	results resultLines
 	last    *frameNode
-	lines   []string
+	// freedOf is what a finished frame's pop freed; nil for its total,
+	// children's included, from the marks of the rows.
+	freedOf func(*frameNode) int64
+	// lines is what was drawn, and keys the key of the frame entry each
+	// line shows; key is the entry the lines added now show.
+	lines, keys []string
+	key         string
 }
 
 // lastPopped is the frame popped last among nodes and the frames entered
@@ -632,6 +656,7 @@ func runningFor(d time.Duration) string {
 // add appends line, cut to the section's width.
 func (r *stackRenderer) add(line string) {
 	r.lines = append(r.lines, ansi.Truncate(line, r.width, "…"))
+	r.keys = append(r.keys, r.key)
 }
 
 // node adds n's line under lead: its name, the last part of its id under
@@ -641,31 +666,9 @@ func (r *stackRenderer) add(line string) {
 // frames entered from it.
 func (r *stackRenderer) node(n *frameNode, parent, lead, cont string) {
 	t := r.t
-	name := shortName(n.id, parent)
+	r.key = n.key
+	r.add(r.entry(n, shortName(n.id, parent), lead, r.width))
 	open := n.open()
-	marker, nameStyle, right := t.Files.Additions.Render("✓"), t.Files.Path, ""
-	if open {
-		marker, nameStyle = t.LSP.WarningDiagnostic.Render("▸"), t.Files.ArtifactLabel
-		right = r.clock(n)
-	} else {
-		// A pop just seen counts its freed tokens up, easing out.
-		lit := flashed(n.poppedAt, r.look.now)
-		eased := 1 - (1-lit)*(1-lit)*(1-lit)
-		if freed := int64(float64(n.total()) * eased); freed > 0 {
-			right = t.Files.Additions.Render("−" + shortTokens(freed) + " tok")
-		}
-	}
-	head := t.Files.TruncationHint.Render(lead) + marker + " "
-	room := r.width - lipgloss.Width(head) - lipgloss.Width(right)
-	if right != "" {
-		room--
-	}
-	name = ansi.Truncate(name, max(room, 1), "…")
-	pad := max(r.width-lipgloss.Width(head)-lipgloss.Width(name)-lipgloss.Width(right), 1)
-	if right == "" {
-		pad = 0
-	}
-	r.add(head + r.name(n, nameStyle, name) + strings.Repeat(" ", pad) + right)
 
 	detail := t.Files.TruncationHint.Render(cont + "  ")
 	switch {
@@ -684,4 +687,38 @@ func (r *stackRenderer) node(n *frameNode, parent, lead, cont string) {
 		}
 		r.node(c, n.id, cont+branch, cont+next)
 	}
+}
+
+// entry renders n's line, width wide: lead, its marker and name, then
+// when it was entered while it is open, or what its pop freed once done.
+func (r *stackRenderer) entry(n *frameNode, name, lead string, width int) string {
+	t := r.t
+	open := n.open()
+	marker, nameStyle, right := t.Files.Additions.Render("✓"), t.Files.Path, ""
+	if open {
+		marker, nameStyle = t.LSP.WarningDiagnostic.Render("▸"), t.Files.ArtifactLabel
+		right = r.clock(n)
+	} else {
+		// A pop just seen counts its freed tokens up, easing out.
+		lit := flashed(n.poppedAt, r.look.now)
+		eased := 1 - (1-lit)*(1-lit)*(1-lit)
+		total := n.total()
+		if r.freedOf != nil {
+			total = r.freedOf(n)
+		}
+		if freed := int64(float64(total) * eased); freed > 0 {
+			right = t.Files.Additions.Render("−" + shortTokens(freed) + " tok")
+		}
+	}
+	head := t.Files.TruncationHint.Render(lead) + marker + " "
+	room := width - lipgloss.Width(head) - lipgloss.Width(right)
+	if right != "" {
+		room--
+	}
+	name = ansi.Truncate(name, max(room, 1), "…")
+	pad := max(width-lipgloss.Width(head)-lipgloss.Width(name)-lipgloss.Width(right), 1)
+	if right == "" {
+		pad = 0
+	}
+	return head + r.name(n, nameStyle, name) + strings.Repeat(" ", pad) + right
 }

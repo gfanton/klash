@@ -98,7 +98,11 @@ func (m *UI) updateSidebarScrollState() {
 		m.modelInfo(contentWidth),
 		"",
 	}
-	if stack := stackSection(t, m.sessionFrames, contentWidth, stackLook{now: time.Now(), busy: m.isAgentBusy()}); stack != "" {
+	m.sidebarStack = stackLines{}
+	if stack, keys := stackSectionLines(t, m.sessionFrames, contentWidth, stackLook{now: time.Now(), busy: m.isAgentBusy()}); stack != "" {
+		// Where each line of the Stack lands in the content, for a click to
+		// find.
+		m.sidebarStack = stackLines{first: lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, parts...)), keys: keys}
 		parts = append(parts, stack, "")
 	}
 	m.sidebarArtifacts = m.sidebarArtifacts[:0]
