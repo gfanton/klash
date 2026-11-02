@@ -56,22 +56,34 @@ func (m *UI) waitsOnUser() []gnovm.MemPulseItem {
 }
 
 // showAsk shows the first thing that waits on the user: the call of the
-// session that asked it, marked in the chat, the keys in the editor for
-// the answer; with no such call, the Pulse tab, which lists it.
+// session that asked it; with no such call, the Pulse tab, which lists it.
 func (m *UI) showAsk() tea.Cmd {
 	waits := m.waitsOnUser()
 	if len(waits) == 0 {
 		return nil
 	}
 	if call := m.askCall(waits[0].Name); call != "" {
-		m.chat.ShowFrame([]string{call})
-		m.chat.ScrollToItem(call)
-		m.chat.Blur()
-		m.focus = uiFocusEditor
-		return m.textarea.Focus()
+		return m.showAskCall(call)
 	}
 	m.openExplorer("")
 	return m.setTab(explorerPulse)
+}
+
+// answerWait shows the call of the session that asked name, if it did.
+func (m *UI) answerWait(name string) tea.Cmd {
+	if call := m.askCall(name); call != "" {
+		return m.showAskCall(call)
+	}
+	return nil
+}
+
+// showAskCall marks the call that asked the user in the chat, and gives
+// the editor the keys for the answer.
+func (m *UI) showAskCall(call string) tea.Cmd {
+	cmd := m.showInChat([]string{call}, call)
+	m.chat.Blur()
+	m.focus = uiFocusEditor
+	return tea.Batch(cmd, m.textarea.Focus())
 }
 
 // askCall is the session's mem call that asked name, "" for none.
@@ -239,8 +251,14 @@ func (m *UI) pulseTab(inner, height int) []string {
 	waits := m.waitsOnUser()
 	if len(waits) > 0 {
 		lines = append(lines, t.LSP.WarningDiagnostic.Bold(true).Render("▲ WAITS ON YOU")+" "+muted.Render(fmt.Sprintf("(%d)", len(waits))))
-		for _, w := range waits {
-			lines = append(lines, "   "+t.Files.ArtifactLabel.Render("`"+w.Name+"`")+"   "+muted.Render(w.Title))
+		gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
+		sel := m.selectedWait()
+		for i, w := range waits {
+			mark := "   "
+			if i == sel {
+				mark = gutter.Render("›") + "  "
+			}
+			lines = append(lines, mark+t.Files.ArtifactLabel.Render("`"+w.Name+"`")+"   "+muted.Render(w.Title))
 		}
 		lines = append(lines, "")
 	}
@@ -355,7 +373,7 @@ func (m *UI) laneLines(i int, items []pulseItem, width, rows int) []string {
 		return append(lines, "  "+muted.Render("nothing"))
 	}
 	sel := -1
-	if m.explorer.lane == i {
+	if m.explorer.lane == i && m.selectedWait() < 0 {
 		sel = min(max(m.explorer.pulse, 0), len(items)-1)
 	}
 	per := itemRows(items)
@@ -386,30 +404,67 @@ func (m *UI) laneLines(i int, items []pulseItem, width, rows int) []string {
 
 // ---- Input
 
-// movePulse moves the selection in its lane by delta.
+// pulseWaitsRow is the explorer row of the first thing that waits on the
+// user, under the strip's heading.
+const pulseWaitsRow = explorerBodyRow + 1
+
+// movePulse moves the selection by delta in its lane, up from a lane's
+// top into what waits on the user, and down from the last of those back
+// into the lane.
 func (m *UI) movePulse(delta int) {
-	items := m.pulseLanes(m.pulseRenderer())[m.explorer.lane]
-	m.explorer.pulse = min(max(m.explorer.pulse+delta, 0), max(len(items)-1, 0))
+	e := &m.explorer
+	waits := len(m.waitsOnUser())
+	if m.selectedWait() < 0 {
+		// What it selected is answered: the lane's entry shows selected.
+		e.onWaits = false
+	}
+	switch to := e.pulse + delta; {
+	case e.onWaits && to >= waits:
+		e.onWaits, e.pulse = false, 0
+	case e.onWaits:
+		e.pulse = max(to, 0)
+	case to < 0 && waits > 0:
+		e.onWaits, e.pulse = true, waits-1
+	default:
+		items := m.pulseLanes(m.pulseRenderer())[e.lane]
+		e.pulse = min(max(to, 0), max(len(items)-1, 0))
+	}
 }
 
 // changeLane moves the selection to the lane delta away.
 func (m *UI) changeLane(delta int) {
 	m.explorer.lane = min(max(m.explorer.lane+delta, 0), laneCount-1)
-	m.explorer.pulse = 0
+	m.explorer.pulse, m.explorer.onWaits = 0, false
 }
 
-// openPulseFrame opens the selected entry in the Tree tab, where it is
-// one of the session's frames.
-func (m *UI) openPulseFrame() {
-	if n := m.pulseFrame(); n != nil {
-		m.explorer.tab = explorerTree
-		m.pauseExplorer(n.key)
+// selectedWait is the entry of what waits on the user that the Pulse tab
+// selects, -1 for none.
+func (m *UI) selectedWait() int {
+	if e := &m.explorer; e.onWaits && e.pulse < len(m.waitsOnUser()) {
+		return e.pulse
 	}
+	return -1
+}
+
+// showOnPulse shows the Pulse tab's selection: the call that asked what
+// waits on the user, or the frame in the Tree tab, following it where
+// the agent is in it.
+func (m *UI) showOnPulse() tea.Cmd {
+	if i := m.selectedWait(); i >= 0 {
+		return m.answerWait(m.waitsOnUser()[i].Name)
+	}
+	if n := m.pulseFrame(); n != nil {
+		m.openExplorer(n.key)
+	}
+	return nil
 }
 
 // pulseFrame is the session's frame the selected entry is; nil for an
-// entry that is none.
+// entry that is none, or for what waits on the user.
 func (m *UI) pulseFrame() *frameNode {
+	if m.selectedWait() >= 0 {
+		return nil
+	}
 	items := m.pulseLanes(m.pulseRenderer())[m.explorer.lane]
 	if len(items) == 0 {
 		return nil

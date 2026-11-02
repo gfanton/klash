@@ -66,9 +66,11 @@ type explorer struct {
 	query     string
 	from      explorerSelection
 	// row is the Context tab's selection among the biggest rows; lane and
-	// pulse the Pulse tab's, a lane and an entry in it.
+	// pulse the Pulse tab's, a lane and an entry in it, or with onWaits an
+	// entry of what waits on the user.
 	row         int
 	lane, pulse int
+	onWaits     bool
 	// work is the selected frame's work and edits, as last worked out.
 	work frameWorkCache
 	// back is the focus to give back on closing.
@@ -533,7 +535,7 @@ func (m *UI) showInChat(ids []string, at string) tea.Cmd {
 	m.chat.ShowFrame(ids)
 	m.chat.ScrollToItem(at)
 	switch {
-	case m.explorerDrawn() == explorerHalf:
+	case !m.explorer.open, m.explorerDrawn() == explorerHalf:
 		return nil
 	case m.halfFits():
 		m.explorer.want = explorerHalf
@@ -617,7 +619,8 @@ func (m *UI) moveOnTab(delta int) {
 }
 
 // showOnTab shows the open tab's selection: in the chat from the Tree and
-// Context tabs, in the Tree tab from the Pulse tab.
+// Context tabs, and from the Pulse tab's what waits on the user, else in
+// the Tree tab.
 func (m *UI) showOnTab() tea.Cmd {
 	switch m.explorer.tab {
 	case explorerTree:
@@ -625,7 +628,7 @@ func (m *UI) showOnTab() tea.Cmd {
 	case explorerContext:
 		return m.showRowInChat()
 	case explorerPulse:
-		m.openPulseFrame()
+		return m.showOnPulse()
 	}
 	return nil
 }
@@ -640,7 +643,8 @@ func (m *UI) setTab(tab explorerTab) tea.Cmd {
 }
 
 // handleExplorerClick handles a click on the explorer: a header button, a
-// tab's name, a frame of the tree. It gives the explorer the keys.
+// tab's name, a frame of the tree, what waits on the user in Pulse. It
+// gives the explorer the keys.
 func (m *UI) handleExplorerClick(msg tea.MouseClickMsg) tea.Cmd {
 	area := m.layout.explorer
 	x, y := msg.X-area.Min.X, msg.Y-area.Min.Y
@@ -668,6 +672,11 @@ func (m *UI) handleExplorerClick(msg tea.MouseClickMsg) tea.Cmd {
 		i := explorerTreeTop(m.selectedRow(rows), l.tree) + y - first
 		if y >= first && y < first+l.tree && i < len(rows) && rows[i].node != nil {
 			m.pauseExplorer(rows[i].node.key)
+		}
+	case m.explorer.tab == explorerPulse:
+		if i := y - pulseWaitsRow; i >= 0 && i < len(m.waitsOnUser()) {
+			m.explorer.onWaits, m.explorer.pulse = true, i
+			return m.showOnPulse()
 		}
 	}
 	return nil

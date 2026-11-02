@@ -1016,12 +1016,88 @@ func TestExplorer_AFoldedTaskSaysWhatItEndedWith(t *testing.T) {
 	require.Contains(t, tree[task+1], "it already says 2.0.0")
 }
 
-func TestSidebar_AClickOnWhatWaitsShowsTheCallThatAskedIt(t *testing.T) {
-	u := pulseUI(t, 200, 50)
+// askedHere adds to u's session the mem call fc9 that asked pulseUI's
+// question.
+func askedHere(t *testing.T, u *UI) {
+	t.Helper()
 	asked := toolRow("f9", 1_700_000_090, memResult(t, "fc9"))
 	asked.Parts[0] = message.ToolResult{ToolCallID: "fc9", Name: "gnovm_run",
 		Content: "asked `release-v2/ci-green/which-runner` \"which CI runner is the release one?\" (for the user)"}
 	observeRows(u, callRow("e9", 1_700_000_090, memCall("fc9")), asked)
+}
+
+func TestExplorer_PulseAClickOnWhatWaitsShowsTheCallThatAskedIt(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	askedHere(t, u)
+	press(u, ctrlX, typed('+'), typed('2'))
+
+	question := at(drawn(u), u.layout.explorer, "which CI runner")
+	require.GreaterOrEqual(t, question.Y, 0)
+	click(u, question.X+1, question.Y)
+	require.True(t, u.chat.framed["fc9"], "the call that asked is marked in the chat")
+	require.Equal(t, uiFocusEditor, u.focus, "and the keys go to the editor, for the answer")
+	require.True(t, u.explorerBeside(), "a full explorer turns half, for the chat to show")
+}
+
+func TestExplorer_PulseSelectsWhatWaitsAboveTheLanes(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	askedHere(t, u)
+	press(u, ctrlX, typed('2'), typed('k'))
+	require.Contains(t, lineWith(bodyOf(u), "release-v2/ci-green/which-runner"), "›", "↑ from a lane's top selects what waits")
+	require.Empty(t, lineWith(bodyOf(u), "› ◌"), "and no lane's entry")
+
+	var descs []string
+	for _, b := range u.ShortHelp() {
+		descs = append(descs, b.Help().Desc)
+	}
+	require.Contains(t, descs, "answer")
+	require.NotContains(t, descs, "open in tree")
+
+	press(u, typed('j'))
+	require.NotEmpty(t, lineWith(bodyOf(u), "› ◌ fix-flaky-test/find-cause/try-free-port"), "↓ goes back to the lane")
+
+	press(u, typed('k'), enter)
+	require.True(t, u.chat.framed["fc9"], "enter shows the call that asked it")
+	require.Equal(t, uiFocusEditor, u.focus)
+}
+
+func TestExplorer_PulseMovesFromALaneOnceWhatWaitsIsAnswered(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('2'), typed('k'))
+	u.memPulse.Asks = nil
+	require.NotEmpty(t, lineWith(bodyOf(u), "› ◌ fix-flaky-test/find-cause/try-free-port"), "answered, the lane's entry shows selected")
+
+	press(u, typed('j'))
+	require.Regexp(t, `› ◌ fix-flaky-test/find-cause\s`, strings.Join(bodyOf(u), "\n"), "↓ moves on from it")
+}
+
+func TestExplorer_PulseOffersAnAnswerOnlyForWhatThisSessionAsked(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('2'), typed('k'))
+	for _, b := range u.ShortHelp() {
+		require.NotEqual(t, "answer", b.Help().Desc, "no call of this session asked it")
+	}
+}
+
+func TestExplorer_PulseOpensTheFrameAtWorkFollowing(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('2'), enter)
+	require.Equal(t, explorerTree, u.explorer.tab)
+	require.True(t, u.explorer.following, "the frame the agent is in is what following shows")
+	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id)
+}
+
+func TestExplorer_ShowingInTheChatLeavesAClosedExplorersSize(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	u.explorer.want = explorerFull
+	u.showInChat([]string{"f5"}, "f5")
+	require.Equal(t, explorerFull, u.explorer.want)
+	require.False(t, u.explorer.open)
+}
+
+func TestSidebar_AClickOnWhatWaitsShowsTheCallThatAskedIt(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	askedHere(t, u)
 
 	question := at(drawn(u), u.layout.sidebar, "which CI runner")
 	click(u, question.X+1, question.Y)
