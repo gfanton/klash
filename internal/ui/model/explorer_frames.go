@@ -103,15 +103,9 @@ func (f sessionFrames) contextSeries() []contextPoint {
 			popped[n.popCall] = append(popped[n.popCall], n)
 		}
 	})
-	last := map[string]int{}
-	for i, r := range f.rows {
-		if strings.HasPrefix(r.Popped, slideMarkPrefix) {
-			last[r.Popped] = i
-		}
-	}
 	slidAt := map[int][]string{}
-	for mark, i := range last {
-		slidAt[i+1] = append(slidAt[i+1], mark)
+	for mark, end := range f.slideEnds() {
+		slidAt[end] = append(slidAt[end], mark)
 	}
 
 	live := map[string]int64{}

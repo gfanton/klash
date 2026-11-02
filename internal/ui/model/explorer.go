@@ -143,13 +143,23 @@ func (m *UI) toggleExplorer() (tea.Cmd, bool) {
 
 // ---- Selection
 
-// explorerRow is a line of the explorer's tree.
+// explorerRow is a line of the explorer's tree: a frame entry, or a slide
+// under the frame it slid.
 type explorerRow struct {
 	node   *frameNode
+	slide  *frameSlide
 	parent string
 	// lead is the tree's branches drawn before the entry.
 	lead  string
 	depth int
+}
+
+// name is what the row says after its marker.
+func (r explorerRow) name() string {
+	if r.slide != nil {
+		return "slid · " + plural(r.slide.rows, "row")
+	}
+	return shortName(r.node.id, r.parent)
 }
 
 // folds reports whether n's frames are hidden at depth: a finished
@@ -159,27 +169,62 @@ func (e explorer) folds(n *frameNode, depth int) bool {
 	return (depth == 0 && !n.open()) != e.flipped[n.key]
 }
 
-// rows is the tree's lines, as folded.
-func (e explorer) rows(roots []*frameNode) []explorerRow {
+// rows is the tree's lines, as folded. A slide stands under the last
+// entry of the frame it slid pushed before it, among that entry's frames
+// by time; at the top where there is none.
+func (e explorer) rows(roots []*frameNode, slides []frameSlide) []explorerRow {
+	owned := map[*frameNode][]*frameSlide{}
+	var top []*frameSlide
+	for i := range slides {
+		s := &slides[i]
+		var owner *frameNode
+		eachFrame(roots, func(n *frameNode) {
+			if n.id == s.frame && n.since <= s.at {
+				owner = n
+			}
+		})
+		if owner == nil {
+			top = append(top, s)
+		} else {
+			owned[owner] = append(owned[owner], s)
+		}
+	}
 	var rows []explorerRow
-	var walk func(nodes []*frameNode, parent, cont string, depth int)
-	walk = func(nodes []*frameNode, parent, cont string, depth int) {
-		for i, n := range nodes {
+	var walk func(nodes []*frameNode, slides []*frameSlide, parent, cont string, depth int)
+	walk = func(nodes []*frameNode, slides []*frameSlide, parent, cont string, depth int) {
+		var items []explorerRow
+		for _, n := range nodes {
+			for len(slides) > 0 && slides[0].at < n.since {
+				items, slides = append(items, explorerRow{slide: slides[0]}), slides[1:]
+			}
+			items = append(items, explorerRow{node: n})
+		}
+		for _, s := range slides {
+			items = append(items, explorerRow{slide: s})
+		}
+		for i, item := range items {
 			lead, next := "", ""
 			if depth > 0 {
 				lead, next = cont+"├ ", cont+"│ "
-				if i == len(nodes)-1 {
+				if i == len(items)-1 {
 					lead, next = cont+"└ ", cont+"  "
 				}
 			}
-			rows = append(rows, explorerRow{node: n, parent: parent, lead: lead, depth: depth})
-			if !e.folds(n, depth) {
-				walk(n.children, n.id, next, depth+1)
+			item.parent, item.lead, item.depth = parent, lead, depth
+			rows = append(rows, item)
+			if n := item.node; n != nil && !e.folds(n, depth) {
+				walk(n.children, owned[n], n.id, next, depth+1)
 			}
 		}
 	}
-	walk(roots, "", "", 0)
+	walk(roots, top, "", "", 0)
 	return rows
+}
+
+// treeRows is the explorer's tree lines for the session's frames.
+func (m *UI) treeRows() []explorerRow {
+	roots, _ := m.sessionFrames.tree()
+	return m.explorer.rows(roots, m.sessionFrames.slides())
 }
 
 // followed is the entry the agent is in: the top of the stack, or with
@@ -222,8 +267,11 @@ func (m *UI) selectedRow(rows []explorerRow) int {
 	if sel == nil {
 		return 0
 	}
-	at := 0
+	at := slices.IndexFunc(rows, func(r explorerRow) bool { return r.node != nil })
 	for i, r := range rows {
+		if r.node == nil {
+			continue
+		}
 		if r.node.key == sel.key {
 			return i
 		}
@@ -243,21 +291,32 @@ func (m *UI) pauseExplorer(key string) {
 	m.explorer.selected = key
 }
 
-// moveExplorer moves the selection by delta rows.
+// moveExplorer moves the selection by delta frames, over the slides.
 func (m *UI) moveExplorer(delta int) {
-	roots, _ := m.sessionFrames.tree()
-	rows := m.explorer.rows(roots)
+	rows := m.treeRows()
 	if len(rows) == 0 {
 		return
 	}
-	i := min(max(m.selectedRow(rows)+delta, 0), len(rows)-1)
+	i, step := m.selectedRow(rows), 1
+	if delta < 0 {
+		delta, step = -delta, -1
+	}
+	for range delta {
+		j := i + step
+		for j >= 0 && j < len(rows) && rows[j].node == nil {
+			j += step
+		}
+		if j < 0 || j >= len(rows) {
+			break
+		}
+		i = j
+	}
 	m.pauseExplorer(rows[i].node.key)
 }
 
 // foldExplorer folds or opens the selected entry's frames.
 func (m *UI) foldExplorer(fold bool) {
-	roots, _ := m.sessionFrames.tree()
-	rows := m.explorer.rows(roots)
+	rows := m.treeRows()
 	if len(rows) == 0 {
 		return
 	}
@@ -341,11 +400,11 @@ func (m *UI) handleExplorerClick(msg tea.MouseClickMsg) tea.Cmd {
 			m.explorer.tab = tab
 		}
 	case m.explorer.tab == explorerTree:
-		roots, _ := m.sessionFrames.tree()
-		rows := m.explorer.rows(roots)
-		tree, _ := explorerTreeHeights(area.Dy())
-		top := explorerTreeTop(m.selectedRow(rows), tree)
-		if i := top + y - explorerBodyRow; y >= explorerBodyRow && y < explorerBodyRow+tree && i < len(rows) {
+		rows := m.treeRows()
+		l := treeLayoutFor(rows, explorerInner(area.Dx()), area.Dy())
+		first := explorerBodyRow + l.head
+		i := explorerTreeTop(m.selectedRow(rows), l.tree) + y - first
+		if y >= first && y < first+l.tree && i < len(rows) && rows[i].node != nil {
 			m.pauseExplorer(rows[i].node.key)
 		}
 	}
@@ -363,6 +422,11 @@ const (
 
 // explorerPad is the room between the explorer's edges and its content.
 const explorerPad = 1
+
+// explorerInner is the width of an explorer's content.
+func explorerInner(width int) int {
+	return max(width-2*explorerPad, 1)
+}
 
 const (
 	buttonHalf = iota
@@ -445,7 +509,7 @@ func (m *UI) drawExplorer(scr uv.Screen, area uv.Rectangle) {
 // rows is the selected frame's, or -1.
 func (m *UI) explorerView(width, height int) (string, int) {
 	t := m.com.Styles
-	inner := max(width-2*explorerPad, 1)
+	inner := explorerInner(width)
 	lines := []string{
 		m.explorerHeader(inner),
 		m.explorerTabs(),
@@ -562,43 +626,47 @@ func (m *UI) explorerTabs() string {
 }
 
 // explorerTree is the Tree tab's lines, inner wide, for an explorer height
-// rows tall: the tree in view around the selection, then the selected
-// frame's detail; and the row of the selection among the lines.
+// rows tall: where there is room, the context chart and the time axis;
+// the tree in view around the selection, each frame on the axis where
+// there is room; then the selected frame's detail; and the row of the
+// selection among the lines.
 func (m *UI) explorerTree(inner, height int) ([]string, int) {
 	t := m.com.Styles
 	roots, stack := m.sessionFrames.tree()
-	rows := m.explorer.rows(roots)
-	tree, detail := explorerTreeHeights(height)
+	slides := m.sessionFrames.slides()
+	rows := m.explorer.rows(roots, slides)
+	if len(rows) == 0 {
+		return nil, -1
+	}
+	l := treeLayoutFor(rows, inner, height)
 	sel := m.selectedRow(rows)
-	top := explorerTreeTop(sel, tree)
-	r := stackRenderer{t: t, width: inner - 2, look: stackLook{now: time.Now(), busy: m.isAgentBusy()}}
+	top := explorerTreeTop(sel, l.tree)
+	look := stackLook{now: time.Now(), busy: m.isAgentBusy()}
+	r := stackRenderer{t: t, width: inner - treeGutter, look: look}
 	r.freedOf = func(n *frameNode) int64 { return tokensOf(m.sessionFrames.heldRows(n)) }
 	if len(stack) > 0 {
 		r.top = stack[len(stack)-1]
 	}
+	axis := m.sessionFrames.treeAxis(roots, look, l.cols.bars)
+	lines := m.treeHead(l, axis, roots, slides)
 	gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
-	lines := make([]string, 0, tree+detail+1)
-	for i := top; i < min(top+tree, len(rows)); i++ {
+	for i := top; i < min(top+l.tree, len(rows)); i++ {
 		mark := "  "
 		if i == sel {
 			mark = gutter.Render("›") + " "
 		}
-		row := rows[i]
-		lines = append(lines, mark+r.entry(row.node, shortName(row.node.id, row.parent), row.lead, inner-2))
+		lines = append(lines, mark+r.treeLine(rows[i], l.cols, axis, inner-treeGutter))
 	}
-	lit := sel - top
-	if len(rows) == 0 {
-		lit = -1
-	}
-	if detail == 0 || len(rows) == 0 {
+	lit := l.head + sel - top
+	if l.detail == 0 {
 		return lines, lit
 	}
-	for len(lines) < tree {
+	for len(lines) < l.head+l.tree {
 		lines = append(lines, "")
 	}
 	lines = append(lines, t.Files.TruncationHint.Render(strings.Repeat("─", inner)))
 	d := m.frameDetail(rows[sel].node, &r)
-	return append(lines, d[:min(detail, len(d))]...), lit
+	return append(lines, d[:min(l.detail, len(d))]...), lit
 }
 
 // frameDetail is the detail pane's lines for n, the most needed first:
