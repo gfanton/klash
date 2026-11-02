@@ -124,10 +124,29 @@ func TestChatSetMessagesForgetsTheMarks(t *testing.T) {
 	inside := reply("a2", "reading the version file", "release-v2/bump-version")
 	u.chat.SetMessages(chat.NewAssistantMessageItem(u.com.Styles, inside))
 	u.chat.MarkPopped(*inside)
+	u.chat.ShowFrame([]string{"a2"})
 
 	u.chat.SetMessages(chat.NewAssistantMessageItem(u.com.Styles, reply("a2", "reading the version file", "")))
-	_, faint := chatRows(t, u)
+	rows, faint := chatRows(t, u)
 	require.NotContains(t, faint, true)
+	require.NotContains(t, strings.Join(rows, "\n"), "▌", "nor the frame the explorer showed")
+}
+
+func TestChatShowFrameMarksItsItemsWithAGutter(t *testing.T) {
+	u := newTestUI()
+	u.chat.SetMessages(
+		chat.NewAssistantMessageItem(u.com.Styles, reply("a1", "entering bump-version", "")),
+		chat.NewAssistantMessageItem(u.com.Styles, reply("a2", "reading the version file", "")),
+	)
+
+	u.chat.ShowFrame([]string{"a2"})
+	rows, _ := chatRows(t, u)
+	require.True(t, strings.HasPrefix(rows[rowWith(rows, "reading the version file")], "▌"))
+	require.False(t, strings.HasPrefix(rows[rowWith(rows, "entering bump-version")], "▌"))
+
+	u.chat.ShowFrame(nil)
+	rows, _ = chatRows(t, u)
+	require.NotContains(t, strings.Join(rows, "\n"), "▌")
 }
 
 // A session loaded from its rows dims the ones its pops marked.

@@ -58,15 +58,32 @@ type explorer struct {
 	// flipped is the entries folded or open against their default: a
 	// finished top-level task folded, any other open.
 	flipped map[string]bool
+	// searching is whether / reads a query; query is what it read, and
+	// from the selection to put back when the search is dropped.
+	searching bool
+	query     string
+	from      explorerSelection
 	// back is the focus to give back on closing.
 	back uiFocusState
 }
 
-// explorerDrawn is the size the explorer is drawn at: half where the
-// terminal keeps two sides of about 80 columns outside compact mode, else
-// full.
+// explorerSelection is what the explorer selects: the agent's frame, or
+// the entry selected.
+type explorerSelection struct {
+	following bool
+	selected  string
+}
+
+// halfFits reports whether the terminal keeps two sides of about 80
+// columns outside compact mode.
+func (m *UI) halfFits() bool {
+	return !m.isCompact && m.width >= explorerHalfWidth
+}
+
+// explorerDrawn is the size the explorer is drawn at: half where asked
+// and where half fits, else full.
 func (m *UI) explorerDrawn() explorerSize {
-	if m.explorer.want == explorerHalf && !m.isCompact && m.width >= explorerHalfWidth {
+	if m.explorer.want == explorerHalf && m.halfFits() {
 		return explorerHalf
 	}
 	return explorerFull
@@ -89,6 +106,7 @@ func (m *UI) frameEntries() int {
 // agent for "", and gives it the keys.
 func (m *UI) openExplorer(key string) {
 	m.explorer.open = true
+	m.explorer.searching = false
 	m.explorer.following = key == ""
 	m.explorer.selected = key
 	m.explorer.seen = m.frameEntries()
@@ -106,8 +124,16 @@ func (m *UI) focusExplorer() {
 	m.chat.Blur()
 }
 
-// closeExplorer closes the explorer and gives the keys back.
+// closeExplorer closes the explorer, clears the marks it left in the
+// chat, and gives the keys back.
 func (m *UI) closeExplorer() tea.Cmd {
+	m.chat.ShowFrame(nil)
+	return m.hideExplorer()
+}
+
+// hideExplorer closes the explorer, leaving its marks in the chat, and
+// gives the keys back.
+func (m *UI) hideExplorer() tea.Cmd {
 	m.explorer.open = false
 	var cmd tea.Cmd
 	if m.focus == uiFocusExplorer {
@@ -324,11 +350,108 @@ func (m *UI) foldExplorer(fold bool) {
 	if len(r.node.children) == 0 || m.explorer.folds(r.node, r.depth) == fold {
 		return
 	}
-	if m.explorer.flipped == nil {
-		m.explorer.flipped = map[string]bool{}
-	}
-	m.explorer.flipped[r.node.key] = !m.explorer.flipped[r.node.key]
+	m.explorer.flip(r.node)
 	m.pauseExplorer(r.node.key)
+}
+
+// flip folds n's frames if they show, else opens them.
+func (e *explorer) flip(n *frameNode) {
+	if e.flipped == nil {
+		e.flipped = map[string]bool{}
+	}
+	e.flipped[n.key] = !e.flipped[n.key]
+}
+
+// ---- Search
+
+// matches reports whether n's id or purpose holds the query q, lowered.
+func matches(n *frameNode, q string) bool {
+	return strings.Contains(strings.ToLower(n.id), q) || strings.Contains(strings.ToLower(n.purpose), q)
+}
+
+// searchKey reads a key into the search: text adds to the query,
+// backspace takes from it, each selecting the first frame it matches;
+// enter keeps the selection, esc puts back the one from before.
+func (m *UI) searchKey(msg tea.KeyPressMsg) {
+	e := &m.explorer
+	switch {
+	case key.Matches(msg, m.keyMap.Explorer.Close):
+		e.searching = false
+		e.following, e.selected = e.from.following, e.from.selected
+		return
+	case key.Matches(msg, m.keyMap.Explorer.Show):
+		e.searching = false
+		return
+	case msg.Code == tea.KeyBackspace:
+		r := []rune(e.query)
+		e.query = string(r[:max(len(r)-1, 0)])
+	case msg.Text != "":
+		e.query += msg.Text
+	default:
+		return
+	}
+	m.findFrame()
+}
+
+// findFrame selects the first frame the query matches, in any case, and
+// opens the frames above it; with no query or no match, the selection
+// from before the search.
+func (m *UI) findFrame() {
+	e := &m.explorer
+	e.following, e.selected = e.from.following, e.from.selected
+	q := strings.ToLower(e.query)
+	if q == "" {
+		return
+	}
+	roots, _ := m.sessionFrames.tree()
+	var find func(nodes []*frameNode, depth int) *frameNode
+	find = func(nodes []*frameNode, depth int) *frameNode {
+		for _, n := range nodes {
+			if matches(n, q) {
+				return n
+			}
+			if found := find(n.children, depth+1); found != nil {
+				if e.folds(n, depth) {
+					e.flip(n)
+				}
+				return found
+			}
+		}
+		return nil
+	}
+	if found := find(roots, 0); found != nil {
+		m.pauseExplorer(found.key)
+	}
+}
+
+// showFrameInChat shows the selected frame's rows in the chat: the chat
+// starts at its push and marks its rows and its pop with a gutter. A full
+// explorer makes room: it turns half where half fits, else it closes,
+// leaving the marks and the keys to the chat.
+func (m *UI) showFrameInChat() tea.Cmd {
+	n := m.selectedFrame()
+	if n == nil {
+		return nil
+	}
+	var ids []string
+	for _, r := range m.sessionFrames.frameRows(n) {
+		ids = append(ids, poppedItemIDs(r)...)
+	}
+	if n.popCall != "" {
+		ids = append(ids, n.popCall)
+	}
+	m.chat.ShowFrame(ids)
+	m.chat.ScrollToItem(n.pushCall)
+	switch {
+	case m.explorerDrawn() == explorerHalf:
+		return nil
+	case m.halfFits():
+		m.explorer.want = explorerHalf
+		m.updateLayoutAndSize()
+		return nil
+	}
+	m.explorer.back = uiFocusMain
+	return m.hideExplorer()
 }
 
 // ---- Input
@@ -337,9 +460,17 @@ func (m *UI) foldExplorer(fold bool) {
 // reports false for one it leaves to the global keys.
 func (m *UI) handleExplorerKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	k, e := m.keyMap.Explorer, &m.explorer
+	if e.searching && !key.Matches(msg, m.keyMap.Chat.Frames) {
+		m.searchKey(msg)
+		return nil, true
+	}
 	switch {
 	case key.Matches(msg, k.Close), key.Matches(msg, m.keyMap.Chat.Frames):
 		return m.closeExplorer(), true
+	case key.Matches(msg, k.Search):
+		e.searching, e.query, e.from = true, "", explorerSelection{following: e.following, selected: e.selected}
+	case key.Matches(msg, k.Show):
+		return m.showFrameInChat(), true
 	case key.Matches(msg, k.Full):
 		e.want = explorerFull
 		m.updateLayoutAndSize()
@@ -611,7 +742,8 @@ func plural(n int, thing string) string {
 	return strconv.Itoa(n) + " " + thing + "s"
 }
 
-// explorerTabs is the tabs' names, the open one underlined.
+// explorerTabs is the tabs' names, the open one underlined, then the
+// search's query while / reads one.
 func (m *UI) explorerTabs() string {
 	t := m.com.Styles
 	names := make([]string, len(explorerTabNames))
@@ -622,7 +754,22 @@ func (m *UI) explorerTabs() string {
 		}
 		names[i] = style.Render(name)
 	}
-	return strings.Join(names, "   ")
+	line := strings.Join(names, "   ")
+	if !m.explorer.searching {
+		return line
+	}
+	q := strings.ToLower(m.explorer.query)
+	hint := "  enter keeps it · esc goes back"
+	if q != "" {
+		roots, _ := m.sessionFrames.tree()
+		found := false
+		eachFrame(roots, func(n *frameNode) { found = found || matches(n, q) })
+		if !found {
+			hint = "  no match · esc goes back"
+		}
+	}
+	cursor := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor).Render("▏")
+	return line + "      " + t.Files.ArtifactLabel.Render("/"+m.explorer.query) + cursor + t.Files.EmptyMessage.Render(hint)
 }
 
 // explorerTree is the Tree tab's lines, inner wide, for an explorer height

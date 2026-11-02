@@ -4422,7 +4422,7 @@ func (m *UI) ShortHelp() []key.Binding {
 
 	if m.state == uiChat && m.focus == uiFocusExplorer {
 		e := k.Explorer
-		binds = append(binds, e.Close, e.Tabs, e.Size, e.Move, e.Folding, e.Follow)
+		binds = append(binds, e.Close, e.Tabs, e.Size, e.Move, e.Folding, e.Show, e.Search, e.Follow)
 		if m.explorerBeside() {
 			binds = append(binds, e.Focus)
 		}

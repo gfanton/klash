@@ -52,6 +52,11 @@ func (m *Chat) MarkPopped(row message.Message) {
 
 // markAt is the mark of the item at idx, "" for one the model still has.
 func (m *Chat) markAt(idx int) string {
+	return m.popped[m.idAt(idx)]
+}
+
+// idAt is the id of the item at idx, "" for none.
+func (m *Chat) idAt(idx int) string {
 	if idx < 0 || idx >= m.list.Len() {
 		return ""
 	}
@@ -59,7 +64,7 @@ func (m *Chat) markAt(idx int) string {
 	if !ok {
 		return ""
 	}
-	return m.popped[item.ID()]
+	return item.ID()
 }
 
 // dimPopped is the render callback that draws an item out of the model's

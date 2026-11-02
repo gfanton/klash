@@ -308,6 +308,8 @@ func TestExplorer_KeysShowInTheStatusBar(t *testing.T) {
 	require.Contains(t, help, "esc close")
 	require.Contains(t, help, "[/] tabs")
 	require.Contains(t, help, "+/- full/half")
+	require.Contains(t, help, "enter show in chat")
+	require.Contains(t, help, "/ search")
 }
 
 func TestExplorer_IsNotOfferedWithoutFrames(t *testing.T) {
@@ -429,4 +431,68 @@ func TestContextChartScalesToItsHeight(t *testing.T) {
 
 	require.Equal(t, []string{" █ ", "██▄"}, contextChart(series, 10, 30, 3, 2, 2000))
 	require.Equal(t, []string{"   ██ ", " ████▄"}, contextChart(series, 5, 30, 6, 2, 2000), "a column shows the last point at or before its time")
+}
+
+var enter = tea.KeyPressMsg{Code: tea.KeyEnter}
+
+func TestExplorer_SearchSelectsTheFirstFrameMatching(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('/'))
+	for _, r := range "WHY" {
+		press(u, typed(r))
+	}
+	require.Equal(t, "fix-flaky-test/find-cause", u.selectedFrame().id, "its purpose matches, in any case")
+	require.GreaterOrEqual(t, at(drawn(u), u.layout.explorer, "/WHY").Y, 0, "the query shows while it is typed")
+
+	press(u, enter)
+	require.True(t, u.explorer.open)
+	require.Equal(t, "fix-flaky-test/find-cause", u.selectedFrame().id)
+	require.False(t, u.explorer.following)
+	require.Equal(t, -1, at(drawn(u), u.layout.explorer, "/WHY").Y, "enter ends the search")
+
+	press(u, typed('/'), typed('m'), typed('a'), typed('k'))
+	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
+	press(u, esc)
+	require.True(t, u.explorer.open, "esc ends the search, not the explorer")
+	require.Equal(t, "fix-flaky-test/find-cause", u.selectedFrame().id, "and puts the selection back")
+}
+
+func TestExplorer_SearchOpensTheFramesAboveItsMatch(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('k'), typed('k'), typed('k'), typed('h'))
+	require.Equal(t, "fix-flaky-test", u.selectedFrame().id)
+	require.Empty(t, lineWith(treeOf(u), "try-free-port"))
+
+	press(u, typed('/'), typed('p'), typed('o'), typed('r'), typed('t'))
+
+	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id)
+	require.NotEmpty(t, lineWith(treeOf(u), "try-free-port"))
+}
+
+func TestExplorer_EnterShowsTheFrameInTheChat(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('k'), typed('k'))
+	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
+
+	press(u, enter)
+
+	require.True(t, u.explorer.open, "beside the chat, it stays")
+	require.True(t, u.chat.framed["f3"], "the frame's rows are marked")
+	require.True(t, u.chat.framed["fc4"], "and the call that popped it")
+	require.False(t, u.chat.framed["fc2"], "not the one that pushed it")
+	top, _ := u.chat.ScrollPosition()
+	require.Equal(t, u.chat.idInxMap["fc2"], top, "the chat starts at its push")
+	require.GreaterOrEqual(t, at(drawn(u), u.layout.main, "▌").Y, 0, "the marked rows have a gutter")
+
+	press(u, typed('+'), enter)
+	require.True(t, u.explorer.open)
+	require.Equal(t, explorerHalf, u.explorerDrawn(), "full drops to half, where half fits")
+
+	narrow := explorerUI(t, 150, 50)
+	press(narrow, ctrlX, typed('k'), enter)
+	require.False(t, narrow.explorer.open, "where it does not, it closes")
+	require.True(t, narrow.chat.framed["e5"])
+
+	press(narrow, ctrlX, esc)
+	require.Empty(t, narrow.chat.framed, "closing the explorer clears the marks")
 }
