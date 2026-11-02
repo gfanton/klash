@@ -32,10 +32,14 @@ const (
 )
 
 // treeColumnsFor splits inner columns for rows: the labels as wide as the
-// widest needs, within bounds, and the bars what is left.
+// widest needs, within bounds, and the bars what is left. A result's line
+// spans the bars, so it needs no label room.
 func treeColumnsFor(rows []explorerRow, inner int) treeColumns {
 	widest := 0
 	for _, r := range rows {
+		if r.result != "" {
+			continue
+		}
 		label := lipgloss.Width(r.lead) + 2 + lipgloss.Width(r.name())
 		if r.folded {
 			label += 1 + len(r.node.children)
@@ -194,12 +198,12 @@ const (
 )
 
 // treeLayoutFor lays the Tree tab out for rows in an explorer inner wide
-// and height tall: the marks and the axis come with the bars, the chart
-// only when the explorer is tall, each only while the tree keeps
-// minTreeInView rows; the detail pane takes the rows the tree does not
-// need.
-func treeLayoutFor(rows []explorerRow, inner, height int) treeLayout {
-	l := treeLayout{cols: treeColumnsFor(rows, inner)}
+// and height tall: the columns fit all as well, so that folding moves
+// none; the marks and the axis come with the bars, the chart only when
+// the explorer is tall, each only while the tree keeps minTreeInView
+// rows; the detail pane takes the rows the tree does not need.
+func treeLayoutFor(rows, all []explorerRow, inner, height int) treeLayout {
+	l := treeLayout{cols: treeColumnsFor(slices.Concat(rows, all), inner)}
 	l.tree, l.detail = explorerTreeHeights(height)
 	if l.cols.bars > 0 {
 		switch {
@@ -243,7 +247,7 @@ func (m *UI) treeHead(l treeLayout, axis timeAxis, roots []*frameNode, slides []
 	gutter := strings.Repeat(" ", treeGutter)
 	var lines []string
 	if l.chart > 0 {
-		series := m.contextOverTime()
+		series, always := m.contextOverTime()
 		var top, now int64
 		for _, p := range series {
 			top = max(top, p.tokens)
@@ -251,15 +255,26 @@ func (m *UI) treeHead(l treeLayout, axis timeAxis, roots []*frameNode, slides []
 		if len(series) > 0 {
 			now = series[len(series)-1].tokens
 		}
+		rowsStyle, alwaysStyle := m.chartColors()
+		floor := l.chart - chartFloor(always, top, l.chart)
+		named := func(name string, tokens int64) string {
+			return muted.Render(name) + fitRight(muted.Render(shortTokens(tokens)), l.cols.label-len(name)-1)
+		}
 		for i, row := range contextChart(series, axis.from, axis.to, axis.width, l.chart, top) {
-			label, right := "", ""
-			switch i {
-			case 0:
-				label = muted.Render("model context") + fitRight(muted.Render(shortTokens(top)), l.cols.label-len("model context")-1)
-			case l.chart - 1:
+			label, right, style := "", "", rowsStyle
+			if i >= floor {
+				style = alwaysStyle
+			}
+			switch {
+			case i == 0:
+				label = named("model context", top)
+			case i == floor:
+				label = named("always sent", always)
+			}
+			if i == l.chart-1 {
 				right = muted.Render(shortTokens(now) + " now")
 			}
-			lines = append(lines, gutter+fitLeft(label, l.cols.label)+t.Files.Path.Render(row)+" "+fitLeft(right, l.cols.right))
+			lines = append(lines, gutter+fitLeft(label, l.cols.label)+style.Render(row)+" "+fitLeft(right, l.cols.right))
 		}
 	}
 	marks, labels := m.axisRows(axis, roots, slides)
@@ -281,26 +296,44 @@ func (m *UI) axisRows(axis timeAxis, roots []*frameNode, slides []frameSlide) (m
 		}
 	})
 	for _, s := range slides {
-		cells[axis.x(s.at)] = t.Files.TruncationHint.Render("⟲")
+		cells[axis.x(s.at)] = t.LSP.WarningDiagnostic.Render("⟲")
 	}
 	return strings.Join(cells, ""), t.Files.EmptyMessage.Render(axis.labels())
 }
 
-// contextOverTime is contextSeries scaled so that its last point is what
-// the provider counted for the session's last request, where it did.
-func (m *UI) contextOverTime() []contextPoint {
-	series := m.sessionFrames.contextSeries()
+// contextOverTime is contextSeries with always, what the provider counted
+// for the session's last request beyond its rows' estimate, added to each
+// point; always is 0 where it counted nothing.
+func (m *UI) contextOverTime() (series []contextPoint, always int64) {
+	series = m.sessionFrames.contextSeries()
 	if len(series) == 0 {
-		return series
+		return series, 0
 	}
-	counted, last := m.countedTokens(), series[len(series)-1].tokens
-	if counted <= 0 || last <= 0 {
-		return series
-	}
+	always = max(m.countedTokens()-series[len(series)-1].tokens, 0)
 	for i := range series {
-		series[i].tokens = series[i].tokens * counted / last
+		series[i].tokens += always
 	}
-	return series
+	return series, always
+}
+
+// chartFloor is how many of a chart's height rows, from its foot, always
+// fills whole against top.
+func chartFloor(always, top int64, height int) int {
+	if top <= 0 {
+		return 0
+	}
+	return min(int(always*int64(height)/top), height)
+}
+
+// alwaysSentDarken is how much darker than the rows what is always sent
+// is drawn.
+const alwaysSentDarken = 0.4
+
+// chartColors is the context's colors: the rows the model is sent, and
+// what it is always sent.
+func (m *UI) chartColors() (rows, always lipgloss.Style) {
+	rows = m.com.Styles.Header.Diagonals
+	return rows, lipgloss.NewStyle().Foreground(lipgloss.Darken(rows.GetForeground(), alwaysSentDarken))
 }
 
 // treeLine is row's line after the gutter, width wide: its label, then,
@@ -308,16 +341,26 @@ func (m *UI) contextOverTime() []contextPoint {
 func (r *stackRenderer) treeLine(row explorerRow, cols treeColumns, axis timeAxis, width int) string {
 	t := r.t
 	if s := row.slide; s != nil {
-		label := t.Files.TruncationHint.Render(row.lead + "⟲ " + row.name())
-		freed := t.Files.Additions.Render("−" + shortTokens(s.tokens) + " tok")
+		label := t.Files.EmptyMessage.Render(row.lead) + t.LSP.WarningDiagnostic.Render("⟲ "+row.name())
+		freed := t.LSP.WarningDiagnostic.Render("−" + shortTokens(s.tokens) + " tok")
 		if cols.bars == 0 {
 			return fitLeft(label, width-lipgloss.Width(freed)-1) + " " + freed
 		}
 		x := axis.x(s.at)
-		bar := strings.Repeat(" ", x) + t.Files.TruncationHint.Render("┃") + strings.Repeat(" ", axis.width-1-x)
+		bar := strings.Repeat(" ", x) + t.LSP.WarningDiagnostic.Render("┃") + strings.Repeat(" ", axis.width-1-x)
 		return fitLeft(label, cols.label) + bar + " " + fitRight(freed, cols.right)
 	}
 	n := row.node
+	if row.result != "" {
+		return fitLeft(t.Files.EmptyMessage.Render(row.lead+"    "+row.result), width)
+	}
+	if n == nil {
+		label, next := t.Files.EmptyMessage.Render(row.lead+"○ "+row.step), t.Files.EmptyMessage.Render("next")
+		if cols.bars == 0 {
+			return fitLeft(label, width-lipgloss.Width(next)-1) + " " + next
+		}
+		return fitLeft(label, cols.label) + strings.Repeat(" ", axis.width) + " " + fitRight(next, cols.right)
+	}
 	tail := ""
 	if row.folded {
 		tail = r.stepDots(n)

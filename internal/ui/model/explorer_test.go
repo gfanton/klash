@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"image"
 	"slices"
 	"strings"
@@ -240,13 +241,14 @@ func TestExplorer_OpensFromAClickOnTheSidebarStack(t *testing.T) {
 	click(u, heading.X+1, heading.Y)
 	require.True(t, u.explorer.open)
 	require.True(t, u.explorer.following, "the heading opens it following")
-	press(u, esc)
+	press(u, typed('3'), esc)
 
 	row := at(rows, u.layout.sidebar, "reproduce-it")
 	click(u, row.X+1, row.Y)
 	require.True(t, u.explorer.open)
 	require.False(t, u.explorer.following, "a frame's row opens it on that frame")
 	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
+	require.Equal(t, explorerTree, u.explorer.tab, "in the tree, whichever tab was last open")
 }
 
 func TestExplorer_OpensFromACompactTrailClick(t *testing.T) {
@@ -425,6 +427,30 @@ func TestExplorer_TreeShowsASlideUnderTheFrameItSlid(t *testing.T) {
 	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id, "the selection skips it")
 }
 
+func TestExplorer_TreeEndsTheGoalAtWorkWithItsStepsNotStarted(t *testing.T) {
+	for name, size := range map[string][2]int{"with bars": {200, 50}, "without": {100, 40}} {
+		t.Run(name, func(t *testing.T) {
+			u := explorerUI(t, size[0], size[1])
+			u.session.Todos = []session.Todo{
+				{Content: "reproduce it", Status: session.TodoStatusCompleted},
+				{Content: "find the cause", Status: session.TodoStatusInProgress},
+				{Content: "rerun the suite 20 times", Status: session.TodoStatusPending},
+			}
+			press(u, ctrlX, typed('+'))
+			tree := treeOf(u)
+
+			next := slices.IndexFunc(tree, func(l string) bool { return strings.Contains(l, "○ rerun the suite 20 times") })
+			require.Greater(t, next, slices.IndexFunc(tree, func(l string) bool { return strings.Contains(l, "try-free-port") }))
+			require.Contains(t, tree[next], "└ ○", "the goal's last step")
+			require.Contains(t, tree[next], "next")
+			require.Empty(t, lineWith(tree, "○ find the cause"), "only the steps not started")
+
+			press(u, typed('j'))
+			require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id, "the selection skips it")
+		})
+	}
+}
+
 func TestExplorer_TreeShowsTheContextOverTimeWhenTall(t *testing.T) {
 	tall := explorerUI(t, 200, 50)
 	press(tall, ctrlX, typed('+'))
@@ -433,6 +459,33 @@ func TestExplorer_TreeShowsTheContextOverTimeWhenTall(t *testing.T) {
 	short := explorerUI(t, 200, 34)
 	press(short, ctrlX, typed('+'))
 	require.Empty(t, lineWith(treeOf(short), "model context"), "a short terminal drops the chart")
+}
+
+func TestContextOverTime_AddsWhatTheProviderCountedBeyondTheRows(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	rows := u.sessionFrames.contextSeries()
+	always := 6_000 - rows[len(rows)-1].tokens
+	require.Positive(t, always)
+
+	series, got := u.contextOverTime()
+	require.Equal(t, always, got)
+	for i := range rows {
+		require.Equal(t, rows[i].tokens+always, series[i].tokens, "every point is its rows and what is always sent, not a multiple of its rows")
+	}
+}
+
+func TestExplorer_TreeChartShowsWhatIsAlwaysSentAtItsFoot(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	press(u, ctrlX, typed('+'))
+	tree := treeOf(u)
+
+	series, always := u.contextOverTime()
+	var top int64
+	for _, p := range series {
+		top = max(top, p.tokens)
+	}
+	require.Contains(t, lineWith(tree, "model context"), shortTokens(top))
+	require.Contains(t, lineWith(tree, "always sent"), shortTokens(always))
 }
 
 func TestContextChartScalesToItsHeight(t *testing.T) {
@@ -488,6 +541,7 @@ func TestExplorer_EnterShowsTheFrameInTheChat(t *testing.T) {
 	require.True(t, u.explorer.open, "beside the chat, it stays")
 	require.True(t, u.chat.framed["f3"], "the frame's rows are marked")
 	require.True(t, u.chat.framed["fc4"], "and the call that popped it")
+	require.True(t, u.chat.framed["e4"], "with the text its row opens with")
 	require.False(t, u.chat.framed["fc2"], "not the one that pushed it")
 	top, _ := u.chat.ScrollPosition()
 	require.Equal(t, u.chat.idInxMap["fc2"], top, "the chat starts at its push")
@@ -605,6 +659,55 @@ func TestExplorer_ContextListsTheBiggestRowsAndShowsOne(t *testing.T) {
 	require.Equal(t, explorerContext, u.explorer.tab)
 }
 
+func TestExplorer_ContextNamesWhatEachBigRowIs(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	text := func(id string, role message.MessageRole, at int64, s string) message.Message {
+		return message.Message{ID: id, SessionID: "s1", Role: role, CreatedAt: at, Parts: []message.ContentPart{message.TextContent{Text: s}}}
+	}
+	observeRows(u,
+		text("u1", message.User, 1_700_000_045, "release v2 "+strings.Repeat("and the notes ", 300)),
+		text("a9", message.Assistant, 1_700_000_046, "Both tests bind :8080.\n"+strings.Repeat("x", 3000)),
+	)
+	press(u, ctrlX, typed('+'), typed('3'))
+	body := bodyOf(u)
+
+	prompt := lineWith(body, "prompt")
+	require.Contains(t, prompt, "release v2")
+	require.NotContains(t, prompt, "│", "not the chat's border")
+	require.Contains(t, lineWith(body, "reply"), `"Both tests bind :8080."`)
+}
+
+func TestExplorer_ContextSetsItsListsSideBySideWhenWide(t *testing.T) {
+	wide := contextUI(t, 226, 50)
+	press(wide, ctrlX, typed('+'), typed('3'))
+	require.Contains(t, lineWith(bodyOf(wide), "a pop now would free"), "the biggest rows the model still has")
+
+	half := contextUI(t, 226, 50)
+	press(half, ctrlX, typed('3'))
+	require.NotContains(t, lineWith(bodyOf(half), "a pop now would free"), "the biggest rows", "one under the other when not")
+}
+
+func TestExplorer_ContextKeepsItsFootWhenShort(t *testing.T) {
+	u := contextUI(t, 100, 28)
+	press(u, ctrlX, typed('3'))
+	require.NotEmpty(t, lineWith(bodyOf(u), "provider's count"))
+}
+
+func TestExplorer_ContextListSaysWhatItHidesAbove(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	for i := range 8 {
+		observeRows(u, callRow(fmt.Sprintf("x%d", i), 1_700_000_050+int64(i), toolCall(fmt.Sprintf("v%d", i), "view", `{"file_path":"a.go"}`)))
+	}
+	press(u, ctrlX, typed('+'), typed('3'))
+	for range len(u.contextNow().biggest()) {
+		press(u, typed('j'))
+	}
+	body := bodyOf(u)
+	head := slices.IndexFunc(body, func(l string) bool { return strings.Contains(l, "the biggest rows the model still has") })
+	require.Contains(t, body[head+1], "above")
+	require.False(t, slices.ContainsFunc(body[head:], func(l string) bool { return strings.Contains(l, " more") }), "nothing is hidden under the last")
+}
+
 func TestExplorer_ContextChartsTheSessionWhenTall(t *testing.T) {
 	tall := contextUI(t, 200, 50)
 	press(tall, ctrlX, typed('+'), typed('3'))
@@ -614,7 +717,17 @@ func TestExplorer_ContextChartsTheSessionWhenTall(t *testing.T) {
 	require.True(t, slices.ContainsFunc(body, func(l string) bool { return strings.Contains(l, "slides at 25.6K") && strings.Contains(l, "┄") }),
 		"the slide point is a dashed line")
 
-	short := contextUI(t, 200, 30)
+	_, always := tall.contextOverTime()
+	require.True(t, slices.ContainsFunc(body, func(l string) bool {
+		return strings.Contains(l, "always sent "+shortTokens(always)) && strings.Contains(l, "█")
+	}), "what is always sent is the chart's foot")
+
+	over := contextUI(t, 200, 50)
+	over.session.PromptTokens = 40_000
+	press(over, ctrlX, typed('+'), typed('3'))
+	require.Empty(t, lineWith(bodyOf(over), "32K window"), "a session past its window tops the chart with its own peak")
+
+	short := contextUI(t, 170, 30)
 	press(short, ctrlX, typed('+'), typed('3'))
 	require.Empty(t, lineWith(bodyOf(short), "the model's context over the session"))
 }
@@ -675,7 +788,7 @@ func TestExplorer_PulseLanes(t *testing.T) {
 	} {
 		require.Contains(t, body, want)
 	}
-	require.Regexp(t, `4 working · 1 waits on you · updated 3[01]s ago`, body)
+	require.Regexp(t, `1 working · 1 waits on you · updated 3[01]s ago`, body)
 	require.NotContains(t, body, "reproduce the flake", "a todo done is not up next")
 	nowAt := column(lineWith(bodyOf(u), "NOW (4)"), "NOW")
 	require.Less(t, nowAt, column(lineWith(bodyOf(u), "JUST FINISHED"), "JUST FINISHED"), "the lanes stand side by side when wide")
@@ -685,6 +798,92 @@ func TestExplorer_PulseLanes(t *testing.T) {
 	lines := bodyOf(half)
 	require.Less(t, slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "NOW (4)") }),
 		slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "JUST FINISHED") }), "and one under the other when not")
+}
+
+func TestExplorer_PulseListsEachStepUpNextOnceOnALine(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	u.memPulse.Goals = append(u.memPulse.Goals, gnovm.MemPulseGoal{
+		Name: "fix-flaky-test", Title: "fix the flaky test",
+		Next: "fix-flaky-test/rerun-suite-20-times", NextTitle: "rerun the suite 20 times",
+	})
+	press(u, ctrlX, typed('+'), typed('2'))
+	body := strings.Join(bodyOf(u), "\n")
+
+	require.Contains(t, body, "UP NEXT (2)")
+	require.Equal(t, 1, strings.Count(body, "rerun the suite 20 times"), "the goal at work's next step is the session's todo")
+	require.Contains(t, lineWith(bodyOf(u), "release-v2/notes"), "write the notes")
+}
+
+func TestExplorer_PulseCountsTheSessionsAtWork(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('2'))
+	body := strings.Join(bodyOf(u), "\n")
+	require.Contains(t, body, "1 working", "an idle session is not at work, its peer is")
+	require.Contains(t, body, "this session · paused")
+
+	u.agentBusyCache.val = true
+	body = strings.Join(bodyOf(u), "\n")
+	require.Contains(t, body, "2 working")
+	require.NotContains(t, body, "paused")
+}
+
+func TestExplorer_PulseLaneSaysWhatItHidesAboveAndBelow(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	items := make([]pulseItem, 8)
+	for i := range items {
+		items[i] = pulseItem{head: fmt.Sprintf("item %d", i), sub: "sub"}
+	}
+	u.explorer.lane, u.explorer.pulse = laneDone, 7
+	lines := u.laneLines(laneDone, items, 60, 7)
+	require.LessOrEqual(t, len(lines), 7)
+	require.Contains(t, lines[1], "… 6 above")
+	require.Contains(t, strings.Join(lines, "\n"), "item 7")
+	require.NotContains(t, strings.Join(lines, "\n"), "more", "nothing is hidden under the last")
+
+	u.explorer.pulse = 3
+	lines = u.laneLines(laneDone, items, 60, 7)
+	require.LessOrEqual(t, len(lines), 7)
+	text := strings.Join(lines, "\n")
+	require.Contains(t, text, "item 3")
+	require.Contains(t, text, "above")
+	require.Contains(t, text, "more")
+}
+
+func TestExplorer_PulseOffersEnterOnAFrameBeforeTheTabsKeys(t *testing.T) {
+	help := func(u *UI) []string {
+		var descs []string
+		for _, b := range u.ShortHelp() {
+			descs = append(descs, b.Help().Desc)
+		}
+		return descs
+	}
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('2'))
+	descs := help(u)
+	require.Contains(t, descs, "open in tree")
+	require.Less(t, slices.Index(descs, "open in tree"), slices.Index(descs, "tabs"), "the tab's own keys go first, where a narrow bar keeps them")
+
+	press(u, typed('l'), typed('l'))
+	require.NotContains(t, help(u), "open in tree", "a step up next is no frame to open")
+}
+
+func TestExplorer_PulseGivesAPopWithoutResultOneRow(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	observeRows(u, toolRow("f6", 1_700_000_060, memResult(t, "fc6", popWith("fix-flaky-test/find-cause/try-free-port", ""))))
+	done := u.pulseLanes(u.pulseRenderer())[laneDone]
+	require.Equal(t, 1, itemRows(slices.DeleteFunc(done, func(it pulseItem) bool { return it.frame.id != "fix-flaky-test/find-cause/try-free-port" })))
+}
+
+func TestExplorer_PulseSummarySitsAtTheFoot(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('2'))
+	body := bodyOf(u)
+	last := len(body) - 1
+	for last > 0 && strings.TrimSpace(body[last]) == "" {
+		last--
+	}
+	require.Contains(t, body[last], "working")
+	require.Greater(t, last, len(body)-3)
 }
 
 func TestExplorer_PulseLanesShareTheRows(t *testing.T) {
@@ -700,7 +899,7 @@ func TestExplorer_PulseLanesShareTheRows(t *testing.T) {
 func TestExplorer_PulseOpensAFrameInTheTree(t *testing.T) {
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('2'))
-	require.Contains(t, lineWith(bodyOf(u), "› ● fix-flaky-test/find-cause/try-free-port"), "try-free-port", "the frame at work is selected")
+	require.Contains(t, lineWith(bodyOf(u), "› ◌ fix-flaky-test/find-cause/try-free-port"), "try-free-port", "the frame at work is selected")
 
 	press(u, typed('l'))
 	require.NotEmpty(t, lineWith(bodyOf(u), "› ✓"), "→ goes to the next lane")
@@ -736,6 +935,39 @@ func TestExplorer_AFoldedTaskShowsADotAStep(t *testing.T) {
 	press(u, ctrlX, typed('+'))
 
 	require.Contains(t, lineWith(treeOf(u), "fix-flaky-test"), "✓ fix-flaky-test ●●", "two steps, folded")
+}
+
+func TestExplorer_AFoldedTaskSaysWhatItEndedWith(t *testing.T) {
+	for name, size := range map[string][2]int{"with bars": {200, 50}, "without": {100, 40}} {
+		t.Run(name, func(t *testing.T) {
+			u := explorerUI(t, size[0], size[1])
+			observeRows(u, toolRow("f6", 1_700_000_060, memResult(t, "fc6",
+				popWith("fix-flaky-test/find-cause/try-free-port", "port 0"), popWith("fix-flaky-test/find-cause", "a shared port"), popWith("fix-flaky-test", "fixed: each test binds port 0"))))
+			press(u, ctrlX, typed('+'))
+			tree := treeOf(u)
+
+			task := slices.IndexFunc(tree, func(l string) bool { return strings.Contains(l, "✓ fix-flaky-test") })
+			require.Contains(t, tree[task+1], "fixed: each test binds port 0", "its result under it")
+
+			press(u, typed('l'))
+			require.Empty(t, lineWith(treeOf(u), "fixed: each test binds port 0"), "open, its frames show instead")
+		})
+	}
+
+	u := explorerUI(t, 200, 50)
+	observeRows(u,
+		toolRow("f6", 1_700_000_060, memResult(t, "fc6",
+			popWith("fix-flaky-test/find-cause/try-free-port", "port 0"), popWith("fix-flaky-test/find-cause", "a shared port"), popWith("fix-flaky-test", "fixed"))),
+		toolRow("f7", 1_700_000_070, memResult(t, "fc7", push("update-readme", "update the readme"))),
+		toolRow("f8", 1_700_000_080, memResult(t, "fc8", popWith("update-readme", "it already says 2.0.0"))),
+	)
+	observeRows(u, cutMsg("m9", "slide::fc7:fc8", 4000))
+	press(u, ctrlX, typed('+'))
+	tree := treeOf(u)
+	require.NotEmpty(t, lineWith(tree, "⟲ slid"), "a slide of no frame stands at the top")
+	task := slices.IndexFunc(tree, func(l string) bool { return strings.Contains(l, "✓ update-readme") })
+	require.Less(t, task+1, len(tree), "a task that entered no frames has a line under it")
+	require.Contains(t, tree[task+1], "it already says 2.0.0")
 }
 
 func TestSidebarSaysWhatWaitsOnTheUser(t *testing.T) {
@@ -828,6 +1060,77 @@ func TestExplorer_SearchFoldsBackWhatItOpened(t *testing.T) {
 	require.NotEmpty(t, lineWith(treeOf(u), "try-free-port"))
 	press(u, esc)
 	require.Empty(t, lineWith(treeOf(u), "try-free-port"), "and so does esc")
+}
+
+func TestExplorer_TreeKeepsALineARow(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	u.session.Todos = []session.Todo{{Content: "rerun the suite\n20 times", Status: session.TodoStatusPending}}
+	observeRows(u,
+		toolRow("f6", 1_700_000_060, memResult(t, "fc6",
+			popWith("fix-flaky-test/find-cause/try-free-port", "port 0"), popWith("fix-flaky-test/find-cause", "a shared port"), popWith("fix-flaky-test", "fixed\nline two\nline three"))),
+		toolRow("f7", 1_700_000_070, memResult(t, "fc7", push("update-readme", "update the readme"))),
+	)
+	press(u, ctrlX, typed('+'))
+	tree := treeOf(u)
+
+	require.NotEmpty(t, lineWith(tree, "fixed"))
+	require.Empty(t, lineWith(tree, "line two"), "a result shows its first line")
+	require.NotEmpty(t, lineWith(tree, "○ rerun the suite"))
+	require.Empty(t, lineWith(tree, "20 times"), "and so does a step")
+}
+
+func TestListWindowFitsItsRoom(t *testing.T) {
+	for _, tc := range []struct{ n, sel, room, per int }{
+		{3, 1, 3, 2}, {3, 1, 2, 1}, {8, 7, 6, 2}, {8, 3, 6, 2}, {8, 0, 6, 2}, {20, 10, 7, 1}, {2, 0, 4, 2},
+	} {
+		w := listWindow(tc.n, tc.sel, tc.room, tc.per)
+		used := w.shown * tc.per
+		if w.above != "" {
+			used++
+		}
+		if w.below != "" {
+			used++
+		}
+		require.LessOrEqual(t, used, max(tc.room, tc.per+1), "%+v", tc)
+		require.True(t, tc.sel < 0 || tc.sel >= w.first && tc.sel < w.first+w.shown, "the selection shows: %+v", tc)
+		hidden := tc.n - w.shown
+		require.Equal(t, hidden > 0, w.above != "" || w.below != "", "what it hides is said: %+v", tc)
+	}
+	require.Equal(t, "… 1 above · 1 more", listWindow(3, 1, 3, 2).below, "with no room for two, both on one row")
+}
+
+func TestExplorer_TreeColumnsHoldWhenAFrameFolds(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	observeRows(u,
+		callRow("e6", 1_700_000_050, memCall("fc6")),
+		toolRow("f6", 1_700_000_050, memResult(t, "fc6", push("fix-flaky-test/find-cause/try-free-port/bind-each-listener-to-port-zero", "bind each to port 0"))),
+	)
+	press(u, ctrlX, typed('+'))
+	before := column(lineWith(treeOf(u), "frame"), "0s")
+
+	press(u, typed('k'), typed('k'), typed('k'), typed('k'), typed('h'))
+	require.Empty(t, lineWith(treeOf(u), "try-free-port"), "fix-flaky-test is folded")
+	require.Equal(t, before, column(lineWith(treeOf(u), "frame"), "0s"), "the axis stays where it was")
+}
+
+func TestExplorer_HeaderNamesTheSession(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	u.session.Title = "release v2, then the flaky test"
+	press(u, ctrlX, typed('+'))
+	require.GreaterOrEqual(t, at(drawn(u), u.layout.explorer, `session "release v2, then the flaky test"`).Y, 0)
+}
+
+func TestExplorer_DetailTimesToTheSecondAndSaysWhatTheChatShows(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('k'), typed('k'))
+	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
+	body := strings.Join(bodyOf(u), "\n")
+	require.Regexp(t, `ran\s+\d\d:\d\d:\d\d → \d\d:\d\d:\d\d · 20s`, body)
+	require.Contains(t, body, "thoughts  none")
+	require.NotContains(t, body, "the chat shows its rows")
+
+	press(u, enter)
+	require.Contains(t, strings.Join(bodyOf(u), "\n"), "the chat shows its rows, marked ▌")
 }
 
 func TestExplorer_DetailFollowsNewWorkInTheFrame(t *testing.T) {

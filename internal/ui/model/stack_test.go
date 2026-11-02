@@ -311,9 +311,14 @@ func TestStackSection_ShowsWhatSlidOut(t *testing.T) {
 
 	got := stripANSI(stackSection(minimalFileStyles(), f, 30, stackLook{}))
 
-	require.Contains(t, got, "slid out")
+	require.Contains(t, got, "⟲ slid out of context", "whole in a narrow sidebar")
 	require.Contains(t, got, "1 msg")
 	require.Contains(t, got, "2K tokens")
+
+	view, _ := stackSectionLines(minimalFileStyles(), f, []session.Todo{{Content: "notes", Status: session.TodoStatusPending}}, 30, stackLook{})
+	lines := strings.Split(stripANSI(view), "\n")
+	require.Contains(t, lines[len(lines)-1], "○ notes")
+	require.Empty(t, strings.TrimSpace(lines[len(lines)-2]), "set apart from what slid out")
 }
 
 func TestStackSection_FitsTheSidebar(t *testing.T) {

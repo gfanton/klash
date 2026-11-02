@@ -121,9 +121,12 @@ func (m *UI) frameEntries() int {
 	return n
 }
 
-// openExplorer opens the explorer on the entry key, or following the
-// agent for "", and gives it the keys.
+// openExplorer opens the explorer on the entry key, in the Tree tab, or
+// following the agent in the tab last open for "", and gives it the keys.
 func (m *UI) openExplorer(key string) {
+	if key != "" {
+		m.explorer.tab = explorerTree
+	}
 	m.explorer.open = true
 	m.explorer.searching = false
 	m.explorer.following = key == ""
@@ -199,12 +202,21 @@ type explorerRow struct {
 	depth int
 	// folded is whether the entry hides the frames entered from it.
 	folded bool
+	// A row that shows no entry and no slide shows either step, a step of
+	// the goal at work not started, or result, what the finished task
+	// above it ended with while none of its frames show.
+	step, result string
 }
 
 // name is what the row says after its marker.
 func (r explorerRow) name() string {
-	if r.slide != nil {
+	switch {
+	case r.slide != nil:
 		return "slid · " + plural(r.slide.rows, "row")
+	case r.result != "":
+		return r.result
+	case r.node == nil:
+		return r.step
 	}
 	return shortName(r.node.id, r.parent)
 }
@@ -218,11 +230,13 @@ func (e explorer) folds(n *frameNode, depth int) bool {
 
 // rows is the tree's lines, as folded. A slide stands under the last
 // entry of the frame it slid pushed before it, among that entry's frames
-// by time; at the top where there is none.
-func (e explorer) rows(roots []*frameNode, slides []frameSlide) []explorerRow {
+// by time; at the top where there is none. steps, those of the goal at
+// work not started, stand last under its entry.
+func (e explorer) rows(roots []*frameNode, slides []frameSlide, steps []string) []explorerRow {
 	if len(roots) == 0 {
 		return nil
 	}
+	goal := slices.IndexFunc(roots, (*frameNode).open)
 	owned := map[*frameNode][]*frameSlide{}
 	var top []*frameSlide
 	for i := range slides {
@@ -240,8 +254,8 @@ func (e explorer) rows(roots []*frameNode, slides []frameSlide) []explorerRow {
 		}
 	}
 	var rows []explorerRow
-	var walk func(nodes []*frameNode, slides []*frameSlide, parent, cont string, depth int)
-	walk = func(nodes []*frameNode, slides []*frameSlide, parent, cont string, depth int) {
+	var walk func(nodes []*frameNode, slides []*frameSlide, last []string, parent, cont string, depth int)
+	walk = func(nodes []*frameNode, slides []*frameSlide, last []string, parent, cont string, depth int) {
 		var items []explorerRow
 		for _, n := range nodes {
 			for len(slides) > 0 && slides[0].at < n.since {
@@ -251,6 +265,9 @@ func (e explorer) rows(roots []*frameNode, slides []frameSlide) []explorerRow {
 		}
 		for _, s := range slides {
 			items = append(items, explorerRow{slide: s})
+		}
+		for _, s := range last {
+			items = append(items, explorerRow{step: firstLine(s)})
 		}
 		for i, item := range items {
 			lead, next := "", ""
@@ -264,19 +281,51 @@ func (e explorer) rows(roots []*frameNode, slides []frameSlide) []explorerRow {
 			n := item.node
 			item.folded = n != nil && len(n.children) > 0 && e.folds(n, depth)
 			rows = append(rows, item)
+			if n != nil && depth == 0 && n.popped && n.result != "" && (item.folded || len(n.children) == 0) {
+				rows = append(rows, explorerRow{parent: n.id, lead: next, depth: depth + 1, result: firstLine(n.result)})
+			}
 			if n != nil && !e.folds(n, depth) {
-				walk(n.children, owned[n], n.id, next, depth+1)
+				var under []string
+				if depth == 0 && goal >= 0 && n == roots[goal] {
+					under = steps
+				}
+				walk(n.children, owned[n], under, n.id, next, depth+1)
 			}
 		}
 	}
-	walk(roots, top, "", "", 0)
+	walk(roots, top, nil, "", "", 0)
 	return rows
+}
+
+// firstLine is s up to its first newline: a row draws one line.
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
 }
 
 // treeRows is the explorer's tree lines for the session's frames.
 func (m *UI) treeRows() []explorerRow {
 	roots, _ := m.sessionFrames.tree()
-	return m.explorer.rows(roots, m.sessionFrames.slides())
+	return m.explorer.rows(roots, m.sessionFrames.slides(), m.stepsNotStarted())
+}
+
+// treeLayout lays the Tree tab out for rows, inner wide and height tall.
+func (m *UI) treeLayout(rows []explorerRow, inner, height int) treeLayout {
+	roots, _ := m.sessionFrames.tree()
+	open := explorer{flipped: map[string]bool{}}
+	for _, n := range roots {
+		open.flipped[n.key] = !n.open()
+	}
+	return treeLayoutFor(rows, open.rows(roots, m.sessionFrames.slides(), m.stepsNotStarted()), inner, height)
+}
+
+// stepsNotStarted is the session's todos not started; none without a
+// session.
+func (m *UI) stepsNotStarted() []string {
+	if m.session == nil {
+		return nil
+	}
+	return notStarted(m.session.Todos)
 }
 
 // followed is the entry the agent is in: the top of the stack, or with
@@ -463,6 +512,11 @@ func (m *UI) showFrameInChat() tea.Cmd {
 	}
 	if n.popCall != "" {
 		ids = append(ids, n.popCall)
+		for _, r := range m.sessionFrames.rows {
+			if slices.ContainsFunc(r.ToolCalls(), func(c message.ToolCall) bool { return c.ID == n.popCall }) {
+				ids = append(ids, r.ID)
+			}
+		}
 	}
 	return m.showInChat(ids, n.pushCall)
 }
@@ -604,7 +658,7 @@ func (m *UI) handleExplorerClick(msg tea.MouseClickMsg) tea.Cmd {
 		}
 	case m.explorer.tab == explorerTree:
 		rows := m.treeRows()
-		l := treeLayoutFor(rows, explorerInner(area.Dx()), area.Dy())
+		l := m.treeLayout(rows, explorerInner(area.Dx()), area.Dy())
 		first := explorerBodyRow + l.head
 		i := explorerTreeTop(m.selectedRow(rows), l.tree) + y - first
 		if y >= first && y < first+l.tree && i < len(rows) && rows[i].node != nil {
@@ -690,6 +744,45 @@ func explorerTreeTop(sel, tree int) int {
 	return max(sel-tree+1, 0)
 }
 
+// listView is the entries a list shows, and the rows that say how many
+// it hides above and below them, "" for none.
+type listView struct {
+	first, shown int
+	above, below string
+}
+
+// listWindow is the view of n entries, sel selected, in room rows, each
+// entry per rows tall. Where the room holds one entry and no two counts,
+// below says both.
+func listWindow(n, sel, room, per int) listView {
+	shown := max(room/per, 1)
+	if n <= shown {
+		return listView{shown: n}
+	}
+	first := 0
+	for _, said := range []int{1, 2} {
+		shown = max((room-said)/per, 1)
+		first = min(max(sel-shown+1, 0), n-shown)
+		if first == 0 || first+shown == n {
+			break
+		}
+	}
+	v := listView{first: first, shown: shown}
+	more := n - first - shown
+	switch {
+	case first > 0 && more > 0 && shown*per+2 > room:
+		v.below = fmt.Sprintf("… %d above · %d more", first, more)
+	default:
+		if first > 0 {
+			v.above = fmt.Sprintf("… %d above", first)
+		}
+		if more > 0 {
+			v.below = fmt.Sprintf("… %d more", more)
+		}
+	}
+	return v
+}
+
 // drawExplorer draws the explorer over area, the selected frame's row
 // lit.
 func (m *UI) drawExplorer(scr uv.Screen, area uv.Rectangle) {
@@ -762,7 +855,7 @@ func (m *UI) explorerHeader(inner int) string {
 			slides[r.mark] = true
 		}
 	}
-	stats := []string{plural(pops, "pop"), plural(len(slides), "slide")}
+	stats := []string{t.Files.EmptyMessage.Render(plural(pops, "pop")), t.Files.EmptyMessage.Render(plural(len(slides), "slide"))}
 	if freed := freedLabel(t, m.sessionFrames); freed != "" {
 		stats = append([]string{freed}, stats...)
 	}
@@ -790,7 +883,7 @@ func (m *UI) explorerHeader(inner int) string {
 
 	title := ""
 	if m.session != nil {
-		title = t.Files.EmptyMessage.Render(m.session.Title)
+		title = t.Files.EmptyMessage.Render(fmt.Sprintf("session %q", m.session.Title))
 	}
 	sep := t.Files.TruncationHint.Render(" · ")
 	head := lipgloss.NewStyle().Bold(true).Render("Frames")
@@ -855,11 +948,11 @@ func (m *UI) explorerTree(inner, height int) ([]string, int) {
 	t := m.com.Styles
 	roots, stack := m.sessionFrames.tree()
 	slides := m.sessionFrames.slides()
-	rows := m.explorer.rows(roots, slides)
+	rows := m.explorer.rows(roots, slides, m.stepsNotStarted())
 	if len(rows) == 0 {
 		return nil, -1
 	}
-	l := treeLayoutFor(rows, inner, height)
+	l := m.treeLayout(rows, inner, height)
 	sel := m.selectedRow(rows)
 	top := explorerTreeTop(sel, l.tree)
 	look := m.stackLook()
@@ -1004,11 +1097,11 @@ func (m *UI) frameDetail(n *frameNode, r *stackRenderer) []string {
 		}
 		lines = append(lines, label("freed")+freed)
 		lines = append(lines, label("ran")+value.Render(fmt.Sprintf("%s → %s · %s",
-			time.Unix(n.since, 0).Format("15:04"), time.Unix(n.until, 0).Format("15:04"), runningFor(time.Duration(n.until-n.since)*time.Second))))
+			time.Unix(n.since, 0).Format(time.TimeOnly), time.Unix(n.until, 0).Format(time.TimeOnly), runningFor(time.Duration(n.until-n.since)*time.Second))))
 	} else {
 		lines = append(lines, label("result")+muted.Render("not popped yet"))
 		lines = append(lines, label("holds")+value.Render(fmt.Sprintf("≈%s tok", shortTokens(tokens)))+muted.Render(fmt.Sprintf(" in %s", plural(len(held), "row"))))
-		ran := "since " + time.Unix(n.since, 0).Format("15:04")
+		ran := "since " + time.Unix(n.since, 0).Format(time.TimeOnly)
 		if r.working() {
 			ran += " · " + runningFor(r.look.now.Sub(time.Unix(n.since, 0)))
 		}
@@ -1031,6 +1124,11 @@ func (m *UI) frameDetail(n *frameNode, r *stackRenderer) []string {
 	}
 	if n.thoughts > 0 {
 		lines = append(lines, label("thoughts")+value.Render(plural(n.thoughts, "thought")+" kept"))
+	} else {
+		lines = append(lines, label("thoughts")+muted.Render("none"))
+	}
+	if len(rows) > 0 && m.chat.framed[rows[0].ID] {
+		lines = append(lines, "", muted.Render("the chat shows its rows, marked ▌"))
 	}
 	return lines
 }

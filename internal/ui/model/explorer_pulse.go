@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/crush/internal/gnovm"
 	gnovmtools "github.com/charmbracelet/crush/internal/gnovm/tools"
 	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/session"
 )
 
 // ---- Reading
@@ -69,10 +68,19 @@ const (
 var laneNames = [laneCount]string{"NOW", "JUST FINISHED", "UP NEXT"}
 
 // pulseItem is an entry of a lane: its line, with what ends it, and the
-// line under it; frame is the session's frame it is, or nil.
+// line under it, "" for none; frame is the session's frame it is, or nil.
 type pulseItem struct {
 	head, right, sub string
 	frame            *frameNode
+}
+
+// itemRows is how many rows each of items takes: two where any has a
+// line under it, else one.
+func itemRows(items []pulseItem) int {
+	if slices.ContainsFunc(items, func(it pulseItem) bool { return it.sub != "" }) {
+		return 2
+	}
+	return 1
 }
 
 // shortSession is a session's id as the user reads it: its first 8
@@ -103,7 +111,7 @@ func (m *UI) pulseRenderer() *stackRenderer {
 // pulseLanes is what goes on now: the session's open frames, the frame at
 // work first, and the frames other sessions work on; what the session
 // finished, the last first; and what comes next: the session's todos
-// not started and each goal's next step.
+// not started, then each other goal's next step.
 func (m *UI) pulseLanes(r *stackRenderer) [laneCount][]pulseItem {
 	t := m.com.Styles
 	muted, value := t.Files.EmptyMessage, t.Files.ArtifactLabel
@@ -116,12 +124,12 @@ func (m *UI) pulseLanes(r *stackRenderer) [laneCount][]pulseItem {
 
 	for i := len(stack) - 1; i >= 0; i-- {
 		n := stack[i]
-		clock := "since " + time.Unix(n.since, 0).Format("15:04")
+		dot, clock := "◌", "paused · since "+time.Unix(n.since, 0).Format("15:04")
 		if r.working() {
-			clock = runningFor(r.look.now.Sub(time.Unix(n.since, 0)))
+			dot, clock = "●", runningFor(r.look.now.Sub(time.Unix(n.since, 0)))
 		}
 		lanes[laneNow] = append(lanes[laneNow], pulseItem{
-			head:  t.LSP.WarningDiagnostic.Render("●") + " " + r.name(n, value, n.id),
+			head:  t.LSP.WarningDiagnostic.Render(dot) + " " + r.name(n, value, n.id),
 			sub:   muted.Render("this session · " + clock),
 			frame: n,
 		})
@@ -154,24 +162,32 @@ func (m *UI) pulseLanes(r *stackRenderer) [laneCount][]pulseItem {
 	})
 	slices.SortFunc(done, func(a, b *frameNode) int { return cmp.Compare(b.popIndex, a.popIndex) })
 	for _, n := range done {
-		lanes[laneDone] = append(lanes[laneDone], pulseItem{
+		item := pulseItem{
 			head:  t.Files.Additions.Render("✓") + " " + muted.Render(time.Unix(n.until, 0).Format("15:04")) + " " + r.name(n, t.Files.Path, n.id),
 			right: r.entryRight(n),
-			sub:   muted.Render(n.result),
 			frame: n,
-		})
+		}
+		if n.result != "" {
+			item.sub = muted.Render(firstLine(n.result))
+		}
+		lanes[laneDone] = append(lanes[laneDone], item)
 	}
 
-	if m.session != nil {
-		for _, todo := range m.session.Todos {
-			if todo.Status == session.TodoStatusPending {
-				lanes[laneNext] = append(lanes[laneNext], pulseItem{head: muted.Render("○") + " " + value.Render(todo.Content), sub: muted.Render("this session's todo")})
-			}
-		}
+	// A session's todos are the steps of the goal it works on, so that
+	// goal's next step is among them.
+	steps, goal := m.stepsNotStarted(), ""
+	if len(stack) > 0 && len(steps) > 0 {
+		goal = stack[0].id
+	}
+	next := func(name, note string) {
+		lanes[laneNext] = append(lanes[laneNext], pulseItem{head: muted.Render("○") + " " + value.Render(name) + "  " + muted.Render(note)})
+	}
+	for _, s := range steps {
+		next(s, "this session")
 	}
 	for _, g := range m.memPulse.Goals {
-		if g.Next != "" {
-			lanes[laneNext] = append(lanes[laneNext], pulseItem{head: muted.Render("○") + " " + value.Render(g.Next), sub: muted.Render(g.NextTitle + " · " + g.Title)})
+		if g.Next != "" && g.Name != goal {
+			next(g.Next, g.NextTitle+" · "+g.Title)
 		}
 	}
 	return lanes
@@ -188,13 +204,14 @@ func (m *UI) pulseTab(inner, height int) []string {
 	var lines []string
 	waits := m.waitsOnUser()
 	if len(waits) > 0 {
-		lines = append(lines, t.LSP.WarningDiagnostic.Render(fmt.Sprintf("▲ WAITS ON YOU (%d)", len(waits))))
+		lines = append(lines, t.LSP.WarningDiagnostic.Bold(true).Render("▲ WAITS ON YOU")+" "+muted.Render(fmt.Sprintf("(%d)", len(waits))))
 		for _, w := range waits {
 			lines = append(lines, "   "+t.Files.ArtifactLabel.Render("`"+w.Name+"`")+"   "+muted.Render(w.Title))
 		}
 		lines = append(lines, "")
 	}
-	lanes := m.pulseLanes(m.pulseRenderer())
+	r := m.pulseRenderer()
+	lanes := m.pulseLanes(r)
 	room := max(height-len(lines)-2, 3)
 	if inner >= listBesideWidth {
 		lines = append(lines, m.lanesBeside(lanes, inner, room)...)
@@ -202,11 +219,24 @@ func (m *UI) pulseTab(inner, height int) []string {
 		lines = append(lines, m.lanesUnder(lanes, inner, room)...)
 	}
 
-	summary := fmt.Sprintf("%d working · %d waits on you", len(lanes[laneNow]), len(waits))
+	// Working counts sessions: the peers, and this one while its agent is.
+	working := 0
+	if r.working() {
+		working = 1
+	}
+	for _, it := range lanes[laneNow] {
+		if it.frame == nil {
+			working++
+		}
+	}
+	summary := fmt.Sprintf("%d working · %d waits on you", working, len(waits))
 	if at := m.memPulse.At; at > 0 {
 		summary += " · updated " + updatedAgo(time.Now().Sub(time.Unix(at, 0)))
 	}
-	return append(lines, "", muted.Render(summary))
+	for len(lines) < height-1 {
+		lines = append(lines, "")
+	}
+	return append(lines, muted.Render(summary))
 }
 
 // updatedAgo says how long ago something changed: just now, 30s ago.
@@ -224,11 +254,19 @@ const laneGap = 3
 // tall.
 func (m *UI) lanesBeside(lanes [laneCount][]pulseItem, inner, rows int) []string {
 	width := (inner - laneGap*(laneCount-1)) / laneCount
-	var cols [laneCount][]string
-	tallest := 0
+	cols := make([][]string, laneCount)
 	for i := range lanes {
 		cols[i] = m.laneLines(i, lanes[i], width, rows)
-		tallest = max(tallest, len(cols[i]))
+	}
+	return beside(cols, width)
+}
+
+// beside sets cols side by side, laneGap apart, each but the last cut or
+// padded to width.
+func beside(cols [][]string, width int) []string {
+	tallest := 0
+	for _, col := range cols {
+		tallest = max(tallest, len(col))
 	}
 	lines := make([]string, tallest)
 	for y := range lines {
@@ -238,7 +276,7 @@ func (m *UI) lanesBeside(lanes [laneCount][]pulseItem, inner, rows int) []string
 			if y < len(col) {
 				line = col[y]
 			}
-			if i < laneCount-1 {
+			if i < len(cols)-1 {
 				line = fitLeft(line, width) + strings.Repeat(" ", laneGap)
 			}
 			b.WriteString(line)
@@ -255,7 +293,7 @@ func (m *UI) lanesUnder(lanes [laneCount][]pulseItem, inner, rows int) []string 
 	var need, got [laneCount]int
 	left := rows
 	for i, items := range lanes {
-		need[i] = 1 + max(2*len(items), 1)
+		need[i] = 1 + max(itemRows(items)*len(items), 1)
 		got[i] = min(need[i], max(rows/laneCount, 3))
 		left -= got[i]
 	}
@@ -272,8 +310,8 @@ func (m *UI) lanesUnder(lanes [laneCount][]pulseItem, inner, rows int) []string 
 }
 
 // laneLines draws lane i, width wide and at most rows tall: its name and
-// how many entries it has, then two lines an entry, the one selected
-// marked, and how many more there are where they do not fit.
+// how many entries it has, then the entries that fit around the one
+// selected, it marked, and how many are hidden above and below them.
 func (m *UI) laneLines(i int, items []pulseItem, width, rows int) []string {
 	t := m.com.Styles
 	muted := t.Files.EmptyMessage
@@ -286,26 +324,28 @@ func (m *UI) laneLines(i int, items []pulseItem, width, rows int) []string {
 	if m.explorer.lane == i {
 		sel = min(max(m.explorer.pulse, 0), len(items)-1)
 	}
-	fits := max((rows-1)/2, 1)
-	first := 0
-	if len(items) > fits {
-		fits = max((rows-2)/2, 1)
-		first = min(max(sel-fits+1, 0), len(items)-fits)
+	per := itemRows(items)
+	w := listWindow(len(items), sel, rows-1, per)
+	if w.above != "" {
+		lines = append(lines, "  "+muted.Render(w.above))
 	}
 	gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
-	for j, item := range items[first:min(first+fits, len(items))] {
+	for j, item := range items[w.first : w.first+w.shown] {
 		mark := "  "
-		if first+j == sel {
+		if w.first+j == sel {
 			mark = gutter.Render("›") + " "
 		}
 		line := mark + item.head
 		if item.right != "" {
 			line = fitLeft(line, width-lipgloss.Width(item.right)-1) + " " + item.right
 		}
-		lines = append(lines, line, "    "+item.sub)
+		lines = append(lines, line)
+		if per == 2 {
+			lines = append(lines, "    "+item.sub)
+		}
 	}
-	if more := len(items) - fits; more > 0 {
-		lines = append(lines, "  "+muted.Render(fmt.Sprintf("… %d more", more)))
+	if w.below != "" {
+		lines = append(lines, "  "+muted.Render(w.below))
 	}
 	return lines
 }
@@ -327,12 +367,18 @@ func (m *UI) changeLane(delta int) {
 // openPulseFrame opens the selected entry in the Tree tab, where it is
 // one of the session's frames.
 func (m *UI) openPulseFrame() {
-	items := m.pulseLanes(m.pulseRenderer())[m.explorer.lane]
-	if len(items) == 0 {
-		return
-	}
-	if n := items[min(max(m.explorer.pulse, 0), len(items)-1)].frame; n != nil {
+	if n := m.pulseFrame(); n != nil {
 		m.explorer.tab = explorerTree
 		m.pauseExplorer(n.key)
 	}
+}
+
+// pulseFrame is the session's frame the selected entry is; nil for an
+// entry that is none.
+func (m *UI) pulseFrame() *frameNode {
+	items := m.pulseLanes(m.pulseRenderer())[m.explorer.lane]
+	if len(items) == 0 {
+		return nil
+	}
+	return items[min(max(m.explorer.pulse, 0), len(items)-1)].frame
 }

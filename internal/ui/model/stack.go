@@ -371,6 +371,18 @@ func stackSection(t *styles.Styles, f sessionFrames, width int, look stackLook) 
 	return view
 }
 
+// notStarted is what todos holds not started: the steps of the goal at
+// work after the one in progress, since mem writes a session's todos.
+func notStarted(todos []session.Todo) []string {
+	var steps []string
+	for _, todo := range todos {
+		if todo.Status == session.TodoStatusPending {
+			steps = append(steps, todo.Content)
+		}
+	}
+	return steps
+}
+
 // stackSectionLines is stackSection with, for each of its lines, the key
 // of the frame entry it shows, "" for a line that shows none.
 func stackSectionLines(t *styles.Styles, f sessionFrames, todos []session.Todo, width int, look stackLook) (string, []string) {
@@ -395,13 +407,15 @@ func stackSectionLines(t *styles.Styles, f sessionFrames, todos []session.Todo, 
 	lines := append([]string{common.Section(t, title, width, info...), ""}, body...)
 	keys = append([]string{"", ""}, keys...)
 	var next []string
-	for _, todo := range todos {
-		if todo.Status == session.TodoStatusPending {
-			next = append(next, "○ "+todo.Content)
-		}
+	for _, step := range notStarted(todos) {
+		next = append(next, "○ "+step)
 	}
 	if len(next) > 0 {
-		lines = append(lines, ansi.Truncate("  "+t.Files.EmptyMessage.Render(strings.Join(next, " · ")), width, "…"))
+		// The body ends on a line of no frame where it ends on what slid.
+		if keys[len(keys)-1] == "" {
+			lines, keys = append(lines, ""), append(keys, "")
+		}
+		lines = append(lines, ansi.Truncate("   "+t.Files.EmptyMessage.Render(strings.Join(next, " · ")), width, "…"))
 		keys = append(keys, "")
 	}
 	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n")), keys
@@ -486,7 +500,7 @@ func stackBody(t *styles.Styles, f sessionFrames, width int, fit stackFit, look 
 			unit = "msg"
 		}
 		r.add("")
-		r.add(t.Files.Path.Render("slid out of the model's context"))
+		r.add(t.LSP.WarningDiagnostic.Render("⟲") + " " + t.Files.Path.Render("slid out of context"))
 		r.add("  " + t.Files.EmptyMessage.Render(fmt.Sprintf("%d %s · ≈%s tokens", slidRows, unit, shortTokens(slidTokens))))
 	}
 	r.markTop()
