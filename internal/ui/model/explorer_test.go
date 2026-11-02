@@ -1395,3 +1395,24 @@ func TestExplorer_BesideTheChatAQuestionFitsTheEditor(t *testing.T) {
 
 	require.GreaterOrEqual(t, at(drawn(u), u.layout.editor, "Yes").Y, 0, "the question's buttons are drawn")
 }
+
+func TestExplorer_FullHelpListsItsKeys(t *testing.T) {
+	ctrlG := tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl}
+	for name, asking := range map[string]bool{"alone": false, "over a question": true} {
+		t.Run(name, func(t *testing.T) {
+			u := explorerUI(t, 150, 50)
+			press(u, ctrlX)
+			if asking {
+				askYesNo(t, u, "Ship it?")
+			}
+			require.Equal(t, uiFocusExplorer, u.focus)
+			press(u, ctrlG)
+
+			rows := drawn(u)
+			for _, want := range []string{"close", "tabs", "full/half", "less"} {
+				require.GreaterOrEqual(t, at(rows, u.layout.status, want).Y, 0, "the help lists %q", want)
+			}
+			require.Equal(t, -1, at(rows, u.layout.status, "commands").Y, "and none of the chat's keys")
+		})
+	}
+}
