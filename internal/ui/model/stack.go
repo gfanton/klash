@@ -588,6 +588,12 @@ func (r *stackRenderer) working() bool {
 	return r.look.busy && !r.look.now.IsZero()
 }
 
+// atWork reports whether n is the entry of the frame the agent is in,
+// whichever tree() of the session n comes from.
+func (r *stackRenderer) atWork(n *frameNode) bool {
+	return r.top != nil && n.key == r.top.key
+}
+
 // clock is how long open frame n has run while the agent works, else when
 // the agent entered it.
 func (r *stackRenderer) clock(n *frameNode) string {
@@ -602,7 +608,7 @@ func (r *stackRenderer) clock(n *frameNode) string {
 func (r *stackRenderer) name(n *frameNode, style lipgloss.Style, name string) string {
 	switch {
 	case r.look.still:
-	case n == r.top && r.working():
+	case r.atWork(n) && r.working():
 		return r.paint(style, name, int(r.look.now.UnixMilli()/shimmerStep.Milliseconds()))
 	case flashed(n.poppedAt, r.look.now) < 1:
 		return r.paint(style, name, 0)
@@ -636,7 +642,7 @@ func (r *stackRenderer) path(stack []*frameNode, fold bool) string {
 		if i > 0 {
 			parent = stack[i-1].id
 		}
-		if n == r.top {
+		if r.atWork(n) {
 			style = t.Files.ArtifactLabel
 		}
 		parts = append(parts, r.name(n, style, shortName(n.id, parent)))
@@ -706,7 +712,7 @@ func (r *stackRenderer) node(n *frameNode, parent, lead, cont string) {
 
 	detail := t.Files.TruncationHint.Render(cont + "  ")
 	switch {
-	case n == r.top:
+	case r.atWork(n):
 		r.add(detail + t.Files.EmptyMessage.Render(strconv.Quote(n.purpose)))
 	case !open && n.result != "" && r.showsResult(n):
 		r.add(detail + t.Files.EmptyMessage.Render(n.result))
