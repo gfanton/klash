@@ -4056,7 +4056,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				// Tab cycles editor → chat → sidebar → editor. From the
 				// chat, step onto the sidebar when it is shown and long
 				// enough to scroll; otherwise fall back to the editor.
-				if m.state == uiChat && !m.isCompact && m.hasSession() && m.sidebarScrollable {
+				if m.state == uiChat && !m.isCompact && !m.explorerBeside() && m.hasSession() && m.sidebarScrollable {
 					m.focus = uiFocusSidebar
 					m.chat.Blur()
 				} else {
@@ -4066,7 +4066,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					m.chat.Blur()
 				}
 			case key.Matches(msg, m.keyMap.Chat.FocusSidebar):
-				if m.state == uiChat && !m.isCompact && m.hasSession() && m.sidebarScrollable {
+				if m.state == uiChat && !m.isCompact && !m.explorerBeside() && m.hasSession() && m.sidebarScrollable {
 					m.focus = uiFocusSidebar
 					m.chat.Blur()
 				}
