@@ -1696,6 +1696,24 @@ func TestExplorer_DetailTimesToTheSecondAndSaysWhatTheChatShows(t *testing.T) {
 	require.Contains(t, strings.Join(bodyOf(u), "\n"), "the chat shows its rows, marked ▌")
 }
 
+func TestExplorer_DetailSaysWhatTheChatShowsUnderAFullTree(t *testing.T) {
+	t.Parallel()
+
+	u := explorerUI(t, 200, 50)
+	for i := range 40 {
+		id := fmt.Sprintf("fix-flaky-test/find-cause/try-free-port/step-%d", i)
+		at := 1_700_000_050 + int64(i)
+		call := fmt.Sprintf("s%d", i)
+		observeRows(u, callRow("c"+call, at, memCall(call)), toolRow("t"+call, at, memResult(t, call, push(id, "a step"), popWith(id, "done"))))
+	}
+	press(u, ctrlX, typed('k'), typed('k'), enter)
+	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
+
+	tree := treeOf(u)
+	require.NotEmpty(t, strings.TrimSpace(tree[len(tree)-1]), "the tree has no row to spare")
+	require.Contains(t, strings.Join(bodyOf(u), "\n"), "the chat shows its rows, marked ▌")
+}
+
 func TestExplorer_DetailFollowsNewWorkInTheFrame(t *testing.T) {
 	t.Parallel()
 
