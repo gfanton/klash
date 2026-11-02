@@ -128,8 +128,10 @@ func (m *UI) frameWorkOf(n *frameNode, rows []message.Message) ([]toolUse, []str
 	}
 	c := &m.explorer.work
 	if c.key != n.key || c.rows != len(rows) || c.calls != calls || c.results != results {
-		*c = frameWorkCache{key: n.key, rows: len(rows), calls: calls, results: results,
-			work: frameWork(rows), edits: agent.EditedFiles(rows, m.com.Workspace.WorkingDir())}
+		*c = frameWorkCache{
+			key: n.key, rows: len(rows), calls: calls, results: results,
+			work: frameWork(rows), edits: agent.EditedFiles(rows, m.com.Workspace.WorkingDir()),
+		}
 	}
 	return c.work, c.edits
 }
