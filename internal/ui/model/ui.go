@@ -7417,7 +7417,7 @@ func (m *UI) sessionDetailsIn(area uv.Rectangle) sessionDetails {
 	}
 	// A column over its rows, as a title wrapped in a narrow one makes it,
 	// would push the panel's frame off its area.
-	sections = lipgloss.NewStyle().MaxHeight(maxItemsPerSection + 2).Render(sections)
+	sections = lipgloss.NewStyle().MaxHeight(remainingHeight).Render(sections)
 	view := s.CompactDetails.View.
 		Width(area.Dx()).
 		Render(

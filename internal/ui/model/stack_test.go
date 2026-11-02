@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/gnovm"
@@ -679,4 +680,15 @@ func TestCompactDetailsKeepTheirFrameWhenNarrow(t *testing.T) {
 	got := screenRows(scr, u.layout.sessionDetails)
 
 	require.True(t, slices.ContainsFunc(got, func(row string) bool { return strings.HasPrefix(row, "╰") }), "the panel's bottom edge is cut:\n%s", strings.Join(got, "\n"))
+}
+
+func TestCompactDetailsSayHowManyFilesTheyHide(t *testing.T) {
+	u := compactUI(t)
+	for i := range 12 {
+		path := fmt.Sprintf("internal/pkg%d/file.go", i)
+		u.sessionFiles = append(u.sessionFiles, SessionFile{FirstVersion: history.File{Path: path}, LatestVersion: history.File{Path: path}, Additions: 3})
+	}
+	press(u, tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
+
+	require.GreaterOrEqual(t, at(drawn(u), u.layout.sessionDetails, "…and 4 more").Y, 0, "8 files shown, then the 4 hidden counted")
 }
