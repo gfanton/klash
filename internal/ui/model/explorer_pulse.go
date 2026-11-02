@@ -55,6 +55,40 @@ func (m *UI) waitsOnUser() []gnovm.MemPulseItem {
 	return waits
 }
 
+// showAsk shows the first thing that waits on the user: the call of the
+// session that asked it, marked in the chat, the keys in the editor for
+// the answer; with no such call, the Pulse tab, which lists it.
+func (m *UI) showAsk() tea.Cmd {
+	waits := m.waitsOnUser()
+	if len(waits) == 0 {
+		return nil
+	}
+	if call := m.askCall(waits[0].Name); call != "" {
+		m.chat.ShowFrame([]string{call})
+		m.chat.ScrollToItem(call)
+		m.chat.Blur()
+		m.focus = uiFocusEditor
+		return m.textarea.Focus()
+	}
+	m.openExplorer("")
+	return m.setTab(explorerPulse)
+}
+
+// askCall is the session's mem call that asked name, "" for none.
+// ceiling: finds mem's output line `asked <name>`; an ask kept in the
+// run's metadata, as pushes and pops are, would not hang on its wording.
+func (m *UI) askCall(name string) string {
+	said := "asked `" + name + "`"
+	for _, r := range slices.Backward(m.sessionFrames.rows) {
+		for _, res := range r.ToolResults() {
+			if res.Name == gnovmtools.RunToolName && strings.Contains(res.Content, said) {
+				return res.ToolCallID
+			}
+		}
+	}
+	return ""
+}
+
 // ---- Lanes
 
 // The Pulse tab's lanes.
