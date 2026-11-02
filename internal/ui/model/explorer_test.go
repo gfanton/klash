@@ -496,3 +496,30 @@ func TestExplorer_EnterShowsTheFrameInTheChat(t *testing.T) {
 	press(narrow, ctrlX, esc)
 	require.Empty(t, narrow.chat.framed, "closing the explorer clears the marks")
 }
+
+func TestExplorer_DetailListsWhatTheModelNoLongerHas(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('k'), typed('k'))
+	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
+
+	rows := drawn(u)
+	head := at(rows, u.layout.explorer, "what the model no longer has · 1 row")
+	require.Equal(t, at(rows, u.layout.explorer, "fix-flaky-test/reproduce-it").Y, head.Y, "beside the detail")
+	require.Equal(t, head.Y+1, at(rows, u.layout.explorer, "xxxxxxxx").Y, "the row it took, as the chat shows it")
+	require.GreaterOrEqual(t, at(rows, u.layout.explorer, "enter: show these rows in the chat").Y, 0)
+
+	press(u, typed('G'))
+	require.GreaterOrEqual(t, at(drawn(u), u.layout.explorer, "what the model holds").Y, 0, "an open frame lists what it holds")
+
+	half := explorerUI(t, 200, 50)
+	press(half, ctrlX)
+	require.Equal(t, -1, at(drawn(half), half.layout.explorer, "what the model").Y, "a half explorer has no room for it")
+}
+
+func TestExplorer_DetailComesUnderAShortTree(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('+'))
+
+	tree := treeOf(u)
+	require.NotEmpty(t, strings.TrimSpace(tree[len(tree)-1]), "no blank rows between the tree and its detail")
+}
