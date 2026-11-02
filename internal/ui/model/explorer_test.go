@@ -1012,6 +1012,35 @@ func TestExplorer_MemPulseIsReadThroughTheWorkspace(t *testing.T) {
 	require.False(t, callsMem(toolRow("r", 1, viewResult("c"))))
 }
 
+// pulseReads is exportWorkspace counting the reads of mem's pulse.
+type pulseReads struct {
+	*exportWorkspace
+	n int
+}
+
+func (w *pulseReads) MemPulse(context.Context) (gnovm.MemPulse, error) {
+	w.n++
+	return gnovm.MemPulse{}, nil
+}
+
+// A pop marks every row it takes out, the gnovm_run rows among them, and
+// each comes again with its mark: none is a new call to mem.
+func TestExplorer_APopsMarksReadNoPulse(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	ws := &pulseReads{exportWorkspace: u.com.Workspace.(*exportWorkspace)}
+	u.com.Workspace = ws
+
+	marked := toolRow("f2", 1_700_000_010, memResult(t, "fc2", push("fix-flaky-test/reproduce-it", "make it fail")))
+	marked.Popped = "fix-flaky-test/reproduce-it"
+	_, cmd := u.Update(pubsub.Event[message.Message]{Type: pubsub.UpdatedEvent, Payload: marked})
+	messagesOf(cmd)
+	require.Zero(t, ws.n)
+
+	_, cmd = u.Update(pubsub.Event[message.Message]{Type: pubsub.CreatedEvent, Payload: toolRow("f6", 1_700_000_060, memResult(t, "fc6"))})
+	messagesOf(cmd)
+	require.Equal(t, 1, ws.n, "a call's result is read after")
+}
+
 // pulseWorkspace is exportWorkspace whose mem says pulse.
 type pulseWorkspace struct {
 	*exportWorkspace
