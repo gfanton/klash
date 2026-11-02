@@ -461,17 +461,40 @@ func TestExplorer_TreeShowsTheContextOverTimeWhenTall(t *testing.T) {
 	require.Empty(t, lineWith(treeOf(short), "model context"), "a short terminal drops the chart")
 }
 
+// whole is row with the finish part a reply gets once it is whole.
+func whole(row message.Message) message.Message {
+	row.Parts = append(slices.Clone(row.Parts), message.Finish{Reason: message.FinishReasonToolUse})
+	return row
+}
+
 func TestContextOverTime_AddsWhatTheProviderCountedBeyondTheRows(t *testing.T) {
 	u := contextUI(t, 200, 50)
+	observeRows(u, whole(callRow("e5", 1_700_000_040, memCall("fc5"))))
 	rows := u.sessionFrames.contextSeries()
-	always := 6_000 - rows[len(rows)-1].tokens
-	require.Positive(t, always)
+	reply := slices.IndexFunc(u.sessionFrames.rows, func(r message.Message) bool { return r.ID == "e5" })
+	always := 6_000 - rows[reply].tokens
+	require.Positive(t, always, "beyond the rows as they stood at the last reply, the one counted")
 
 	series, got := u.contextOverTime()
 	require.Equal(t, always, got)
 	for i := range rows {
 		require.Equal(t, rows[i].tokens+always, series[i].tokens, "every point is its rows and what is always sent, not a multiple of its rows")
 	}
+}
+
+func TestContextOverTime_APopAfterTheCountLeavesWhatIsAlwaysSent(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	observeRows(u, whole(callRow("e6", 1_700_000_050, memCall("fc6"))))
+	_, before := u.contextOverTime()
+
+	observeRows(u,
+		toolRow("f6", 1_700_000_051, memResult(t, "fc6",
+			popWith("fix-flaky-test/find-cause/try-free-port", "port 0"), popWith("fix-flaky-test/find-cause", "a shared port"))),
+		callRow("e7", 1_700_000_052), // the next reply, still streaming
+	)
+	_, after := u.contextOverTime()
+	require.Equal(t, before, after, "the count is of the request before the pop")
+	require.Equal(t, before, u.contextNow().always, "and the now bar says the same")
 }
 
 func TestExplorer_TreeChartShowsWhatIsAlwaysSentAtItsFoot(t *testing.T) {
