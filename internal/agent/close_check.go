@@ -754,7 +754,7 @@ func closePrompt(cl gnovm.MemClose, w closeWindow, workingDir string) string {
 			calls[c.ID] = c
 		}
 	}
-	edited := editedFiles(w.rows, calls, workingDir)
+	edited := EditedFiles(w.rows, calls, workingDir)
 	fmt.Fprintf(&b, "Files the agent's edits and writes changed in the todo: %s\n", cmp.Or(strings.Join(edited, ", "), "none"))
 	if ran := commandsRun(w.rows, calls); len(ran) > 0 {
 		fmt.Fprintf(&b, "Commands it ran in the todo: %s\n", strings.Join(ran, "; "))
