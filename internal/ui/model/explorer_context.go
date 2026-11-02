@@ -523,20 +523,20 @@ func (m *UI) contextChartLines(c contextNow, inner, height int) []string {
 	for _, p := range series {
 		top = max(top, p.tokens)
 	}
+	// What is always sent, near constant, takes one row at the foot; the
+	// rows above run from it to the top.
 	rows := height - 3
+	if always > 0 {
+		rows--
+	}
 	slide := -1
-	if c.slideAt > 0 && top > 0 {
-		slide = min(max(rows-1-int(c.slideAt*int64(rows)/top), 0), rows-1)
+	if c.slideAt > always && top > always {
+		slide = min(max(rows-1-int((c.slideAt-always)*int64(rows)/(top-always)), 0), rows-1)
 	}
 	rowsStyle, alwaysStyle := m.chartColors()
-	floor := rows - chartFloor(always, max(top, 1), rows)
 	lines := []string{t.Files.ArtifactLabel.Bold(true).Render("the model's context over the session")}
-	for i, row := range contextChart(series, axis.from, axis.to, width, rows, max(top, 1)) {
-		label, style := "", rowsStyle
-		if i >= floor {
-			style = alwaysStyle
-		}
-		labelStyle := muted
+	for i, row := range contextChart(series, axis.from, axis.to, width, rows, always, max(top, 1)) {
+		label, labelStyle := "", muted
 		switch {
 		case i == slide:
 			label, labelStyle = "slides at "+shortTokens(c.slideAt), t.LSP.WarningDiagnostic
@@ -544,16 +544,18 @@ func (m *UI) contextChartLines(c contextNow, inner, height int) []string {
 			label = shortTokens(c.window) + " window"
 		case i == 0:
 			label = shortTokens(top)
-		case i == floor:
-			label = "always sent " + shortTokens(always)
-		case i == rows-1:
+		case i == rows-1 && always == 0:
 			label = "0"
 		}
-		drawn := style.Render(row)
+		drawn := rowsStyle.Render(row)
 		if i == slide {
-			drawn = dashBlanks(row, style, t.LSP.WarningDiagnostic)
+			drawn = dashBlanks(row, rowsStyle, t.LSP.WarningDiagnostic)
 		}
 		lines = append(lines, fitLeft(labelStyle.Render(label), chartLabel)+drawn)
+	}
+	if always > 0 {
+		band := contextChart(series, axis.from, axis.to, width, 1, 0, always)[0]
+		lines = append(lines, fitLeft(muted.Render("always sent "+shortTokens(always)), chartLabel)+alwaysStyle.Render(band))
 	}
 	marks, labels := m.axisRows(axis, roots, m.sessionFrames.slides())
 	return append(lines, fitLeft(muted.Render("▴ pop  ⟲ slide"), chartLabel)+marks, fitLeft(muted.Render("time"), chartLabel)+labels)

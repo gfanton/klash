@@ -142,7 +142,9 @@ func (m *UI) updateSidebarScrollState() {
 		parts = append(parts, sees)
 	}
 	parts = append(parts, "")
+	m.sidebarWaits = lineSpan{}
 	if waits := m.waitsLines(contentWidth); len(waits) > 0 {
+		m.sidebarWaits = lineSpan{first: lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, parts...)), n: len(waits)}
 		parts = append(append(parts, waits...), "")
 	}
 	m.sidebarStack = stackLines{}

@@ -1146,6 +1146,14 @@ func (m *UI) explorerAt(x, y int) bool {
 	return m.explorer.open && image.Pt(x, y).In(m.layout.explorer)
 }
 
+// lineSpan is n lines of a view from its line first.
+type lineSpan struct{ first, n int }
+
+// holds reports whether line is one of the span's.
+func (s lineSpan) holds(line int) bool {
+	return line >= s.first && line < s.first+s.n
+}
+
 // stackLines is where the Stack's lines start in a view, and the frame
 // entry each line shows, "" for a line that shows none.
 type stackLines struct {

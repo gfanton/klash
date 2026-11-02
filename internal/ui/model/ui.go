@@ -225,6 +225,9 @@ type UI struct {
 	// sidebarStack is where the sidebar's Stack section is in
 	// sidebarContent, and the frame entry each of its lines shows.
 	sidebarStack stackLines
+	// sidebarWaits is the lines of sidebarContent that say what waits on
+	// the user.
+	sidebarWaits lineSpan
 	// memPulse is what mem last said goes on, read after each call to mem.
 	memPulse gnovm.MemPulse
 	// artifactAnims is the animation shown in place of each pending
@@ -1633,6 +1636,10 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key, ok := m.stackFrameAt(msg.X, msg.Y); ok {
 				m.detailsOpen = false
 				m.openExplorer(key)
+				return m, tea.Batch(cmds...)
+			}
+			if line, ok := m.sidebarLineAt(msg.X, msg.Y); ok && m.sidebarWaits.holds(line) {
+				cmds = append(cmds, m.showAsk())
 				return m, tea.Batch(cmds...)
 			}
 		}

@@ -509,13 +509,21 @@ func TestExplorer_TreeChartShowsWhatIsAlwaysSentAtItsFoot(t *testing.T) {
 	}
 	require.Contains(t, lineWith(tree, "model context"), shortTokens(top))
 	require.Contains(t, lineWith(tree, "always sent"), shortTokens(always))
+	band := slices.IndexFunc(tree, func(l string) bool { return strings.Contains(l, "always sent") })
+	require.Contains(t, tree[band+1], "▴ pop", "what is always sent takes one row, at the foot, whatever its size")
+}
+
+func TestContextChartDrawsFromItsFloor(t *testing.T) {
+	series := []contextPoint{{at: 10, tokens: 9000}, {at: 20, tokens: 10_000}, {at: 30, tokens: 9500}}
+
+	require.Equal(t, []string{" █ ", " ██"}, contextChart(series, 10, 30, 3, 2, 9000, 10_000), "the rows from the floor to the top")
 }
 
 func TestContextChartScalesToItsHeight(t *testing.T) {
 	series := []contextPoint{{at: 10, tokens: 1000}, {at: 20, tokens: 2000}, {at: 30, tokens: 500}}
 
-	require.Equal(t, []string{" █ ", "██▄"}, contextChart(series, 10, 30, 3, 2, 2000))
-	require.Equal(t, []string{"   ██ ", " ████▄"}, contextChart(series, 5, 30, 6, 2, 2000), "a column shows the last point at or before its time")
+	require.Equal(t, []string{" █ ", "██▄"}, contextChart(series, 10, 30, 3, 2, 0, 2000))
+	require.Equal(t, []string{"   ██ ", " ████▄"}, contextChart(series, 5, 30, 6, 2, 0, 2000), "a column shows the last point at or before its time")
 }
 
 var enter = tea.KeyPressMsg{Code: tea.KeyEnter}
@@ -741,9 +749,11 @@ func TestExplorer_ContextChartsTheSessionWhenTall(t *testing.T) {
 		"the slide point is a dashed line")
 
 	_, always := tall.contextOverTime()
-	require.True(t, slices.ContainsFunc(body, func(l string) bool {
+	band := slices.IndexFunc(body, func(l string) bool {
 		return strings.Contains(l, "always sent "+shortTokens(always)) && strings.Contains(l, "█")
-	}), "what is always sent is the chart's foot")
+	})
+	require.Positive(t, band, "what is always sent is the chart's foot")
+	require.Contains(t, body[band+1], "▴ pop", "one row, whatever its size")
 
 	over := contextUI(t, 200, 50)
 	over.session.PromptTokens = 40_000
@@ -991,6 +1001,28 @@ func TestExplorer_AFoldedTaskSaysWhatItEndedWith(t *testing.T) {
 	task := slices.IndexFunc(tree, func(l string) bool { return strings.Contains(l, "✓ update-readme") })
 	require.Less(t, task+1, len(tree), "a task that entered no frames has a line under it")
 	require.Contains(t, tree[task+1], "it already says 2.0.0")
+}
+
+func TestSidebar_AClickOnWhatWaitsShowsTheCallThatAskedIt(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	asked := toolRow("f9", 1_700_000_090, memResult(t, "fc9"))
+	asked.Parts[0] = message.ToolResult{ToolCallID: "fc9", Name: "gnovm_run",
+		Content: "asked `release-v2/ci-green/which-runner` \"which CI runner is the release one?\" (for the user)"}
+	observeRows(u, callRow("e9", 1_700_000_090, memCall("fc9")), asked)
+
+	question := at(drawn(u), u.layout.sidebar, "which CI runner")
+	click(u, question.X+1, question.Y)
+	require.True(t, u.chat.framed["fc9"], "the call that asked is marked in the chat")
+	require.Equal(t, uiFocusEditor, u.focus, "and the keys go to the editor, for the answer")
+	require.False(t, u.explorer.open)
+}
+
+func TestSidebar_AClickOnWhatWaitsFromElsewhereOpensPulse(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	waits := at(drawn(u), u.layout.sidebar, "▲ 1 waits on you")
+	click(u, waits.X+1, waits.Y)
+	require.True(t, u.explorer.open, "no call of this session asked it")
+	require.Equal(t, explorerPulse, u.explorer.tab)
 }
 
 func TestSidebarSaysWhatWaitsOnTheUser(t *testing.T) {

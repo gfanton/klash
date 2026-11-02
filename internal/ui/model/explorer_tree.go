@@ -257,25 +257,31 @@ func (m *UI) treeHead(l treeLayout, axis timeAxis, roots []*frameNode, slides []
 			now = series[len(series)-1].tokens
 		}
 		rowsStyle, alwaysStyle := m.chartColors()
-		floor := l.chart - chartFloor(always, top, l.chart)
 		named := func(name string, tokens int64) string {
 			return muted.Render(name) + fitRight(muted.Render(shortTokens(tokens)), l.cols.label-len(name)-1)
 		}
-		for i, row := range contextChart(series, axis.from, axis.to, axis.width, l.chart, top) {
-			label, right, style := "", "", rowsStyle
-			if i >= floor {
-				style = alwaysStyle
-			}
-			switch {
-			case i == 0:
+		rows := l.chart
+		if always > 0 {
+			rows--
+		}
+		chart := make([]string, 0, l.chart)
+		for i, row := range contextChart(series, axis.from, axis.to, axis.width, rows, always, top) {
+			label := ""
+			if i == 0 {
 				label = named("model context", top)
-			case i == floor:
-				label = named("always sent", always)
 			}
-			if i == l.chart-1 {
+			chart = append(chart, gutter+fitLeft(label, l.cols.label)+rowsStyle.Render(row))
+		}
+		if always > 0 {
+			band := contextChart(series, axis.from, axis.to, axis.width, 1, 0, always)[0]
+			chart = append(chart, gutter+fitLeft(named("always sent", always), l.cols.label)+alwaysStyle.Render(band))
+		}
+		for i := range chart {
+			right := ""
+			if i == len(chart)-1 {
 				right = muted.Render(shortTokens(now) + " now")
 			}
-			lines = append(lines, gutter+fitLeft(label, l.cols.label)+style.Render(row)+" "+fitLeft(right, l.cols.right))
+			lines = append(lines, chart[i]+" "+fitLeft(right, l.cols.right))
 		}
 	}
 	marks, labels := m.axisRows(axis, roots, slides)
@@ -332,15 +338,6 @@ func (m *UI) alwaysSent(series []contextPoint) int64 {
 		}
 	}
 	return max(counted-series[reply].tokens, 0)
-}
-
-// chartFloor is how many of a chart's height rows, from its foot, always
-// fills whole against top.
-func chartFloor(always, top int64, height int) int {
-	if top <= 0 {
-		return 0
-	}
-	return min(int(always*int64(height)/top), height)
 }
 
 // alwaysSentDarken is how much darker than the rows what is always sent
@@ -407,9 +404,10 @@ func (r *stackRenderer) bar(n *frameNode, axis timeAxis) string {
 var chartLevels = []rune(" ▁▂▃▄▅▆▇█")
 
 // contextChart draws series, the tokens the model was sent over time,
-// height rows by width columns from Unix second from to to, top at its
-// top: each column the last point at or before its time.
-func contextChart(series []contextPoint, from, to int64, width, height int, top int64) []string {
+// height rows by width columns from Unix second from to to, floor at its
+// foot and top at its top: each column the last point at or before its
+// time.
+func contextChart(series []contextPoint, from, to int64, width, height int, floor, top int64) []string {
 	a := timeAxis{from: from, to: to, width: width}
 	heights := make([]int, width)
 	for x := range heights {
@@ -420,8 +418,8 @@ func contextChart(series []contextPoint, from, to int64, width, height int, top 
 			}
 			tokens = p.tokens
 		}
-		if top > 0 {
-			heights[x] = int(math.Round(float64(tokens) * float64(height*8) / float64(top)))
+		if top > floor {
+			heights[x] = int(math.Round(float64(max(tokens-floor, 0)) * float64(height*8) / float64(top-floor)))
 		}
 	}
 	rows := make([]string, height)
