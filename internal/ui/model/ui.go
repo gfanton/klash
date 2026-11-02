@@ -4438,35 +4438,40 @@ func (m *UI) applyTerminalStatus(v *tea.View) {
 	}
 }
 
+// explorerHelp is the help for the explorer's keys on its open tab.
+func (m *UI) explorerHelp() []key.Binding {
+	e := m.keyMap.Explorer
+	binds := []key.Binding{e.Close, e.Move}
+	switch m.explorer.tab {
+	case explorerTree:
+		binds = append(binds, e.Folding, e.Show, e.Search, e.Follow)
+	case explorerPulse:
+		binds = append(binds, e.Lanes)
+		switch {
+		case m.selectedWait() >= 0:
+			if m.askCall(m.waitsOnUser()[m.selectedWait()].Name) != "" {
+				binds = append(binds, e.Answer)
+			}
+		case m.pulseFrame() != nil:
+			binds = append(binds, e.Open)
+		}
+	default:
+		binds = append(binds, e.Show)
+	}
+	binds = append(binds, e.Tabs, e.Size)
+	if m.explorerBeside() {
+		binds = append(binds, e.Focus)
+	}
+	return binds
+}
+
 // ShortHelp implements [help.KeyMap].
 func (m *UI) ShortHelp() []key.Binding {
 	var binds []key.Binding
 	k := &m.keyMap
 
 	if m.state == uiChat && m.focus == uiFocusExplorer {
-		e := k.Explorer
-		binds = append(binds, e.Close, e.Move)
-		switch m.explorer.tab {
-		case explorerTree:
-			binds = append(binds, e.Folding, e.Show, e.Search, e.Follow)
-		case explorerPulse:
-			binds = append(binds, e.Lanes)
-			switch {
-			case m.selectedWait() >= 0:
-				if m.askCall(m.waitsOnUser()[m.selectedWait()].Name) != "" {
-					binds = append(binds, e.Answer)
-				}
-			case m.pulseFrame() != nil:
-				binds = append(binds, e.Open)
-			}
-		default:
-			binds = append(binds, e.Show)
-		}
-		binds = append(binds, e.Tabs, e.Size)
-		if m.explorerBeside() {
-			binds = append(binds, e.Focus)
-		}
-		return append(binds, k.Quit, k.Help)
+		return append(m.explorerHelp(), k.Quit, k.Help)
 	}
 
 	// When an inline editor is active, show its help.
@@ -4569,6 +4574,14 @@ func (m *UI) ShortHelp() []key.Binding {
 
 // FullHelp implements [help.KeyMap].
 func (m *UI) FullHelp() [][]key.Binding {
+	k := &m.keyMap
+	help := k.Help
+	help.SetHelp("ctrl+g", "less")
+
+	if m.state == uiChat && m.focus == uiFocusExplorer {
+		return [][]key.Binding{m.explorerHelp(), {help, k.Quit}}
+	}
+
 	// When an inline editor is active, show its help.
 	if m.activeInline != nil {
 		if m.focus == uiFocusEditor {
@@ -4592,9 +4605,6 @@ func (m *UI) FullHelp() [][]key.Binding {
 	}
 
 	var binds [][]key.Binding
-	k := &m.keyMap
-	help := k.Help
-	help.SetHelp("ctrl+g", "less")
 	hasAttachments := len(m.attachments.List()) > 0
 	hasSession := m.hasSession()
 	commands := k.Commands
