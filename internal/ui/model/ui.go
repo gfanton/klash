@@ -6829,7 +6829,11 @@ func (m *UI) handleQuestionNotification(_ question.Notification) {
 func (m *UI) editorContentWidth() int {
 	width := m.width - 2 // appRect horizontal margins
 	if m.state == uiChat && !m.isCompact {
-		width -= 30 // sidebar column
+		if m.explorerBeside() {
+			width /= 2 // the explorer takes the other half
+		} else {
+			width -= 30 // sidebar column
+		}
 	}
 	return width
 }

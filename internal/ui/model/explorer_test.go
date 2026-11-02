@@ -1386,3 +1386,12 @@ func TestExplorer_BesideTheChatItLeavesTheSidebarNoFocus(t *testing.T) {
 	press(u, tab)
 	require.Equal(t, uiFocusEditor, u.focus, "tab goes round to the editor")
 }
+
+func TestExplorer_BesideTheChatAQuestionFitsTheEditor(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX)
+	askYesNo(t, u, strings.Repeat("Should the release wait for the flaky test? ", 9))
+	require.True(t, u.explorerBeside())
+
+	require.GreaterOrEqual(t, at(drawn(u), u.layout.editor, "Yes").Y, 0, "the question's buttons are drawn")
+}
