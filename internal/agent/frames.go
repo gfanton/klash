@@ -127,7 +127,7 @@ func (f *frameStacks) record(ctx context.Context, sessionID string) *sessionFram
 			continue
 		}
 		for _, result := range msg.ToolResults() {
-			for _, ev := range frameEvents(result) {
+			for _, ev := range FrameEvents(result) {
 				if ev.Session == sessionID {
 					rec.apply(ev, result.ToolCallID, tokens)
 				}
@@ -150,6 +150,14 @@ func slideMarkOf(r poppedRange) string {
 	return "slide:" + r.frame + ":" + r.pushCallID + ":" + r.popCallID
 }
 
+// SlidFrame is the frame whose rounds the slide that marked a row with
+// mark took out of the model's context, "" for the rounds before the first
+// frame; false for a mark no slide made.
+func SlidFrame(mark string) (string, bool) {
+	r, ok := slideMark(mark)
+	return r.frame, ok
+}
+
 func slideMark(mark string) (poppedRange, bool) {
 	rest, ok := strings.CutPrefix(mark, "slide:")
 	if !ok {
@@ -162,8 +170,9 @@ func slideMark(mark string) (poppedRange, bool) {
 	return poppedRange{frame: parts[0], pushCallID: parts[1], popCallID: parts[2]}, true
 }
 
-// frameEvents is the frames a gnovm_run result's metadata carries.
-func frameEvents(result message.ToolResult) []gnovm.MemFrame {
+// FrameEvents is the frames a gnovm_run result's metadata carries, every
+// session's; none for a result that failed.
+func FrameEvents(result message.ToolResult) []gnovm.MemFrame {
 	if result.Name != gnovmtools.RunToolName || result.IsError || result.Metadata == "" {
 		return nil
 	}

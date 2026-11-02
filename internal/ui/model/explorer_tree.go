@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -154,7 +155,7 @@ type frameSlide struct {
 func (f sessionFrames) slideEnds() map[string]int {
 	ends := map[string]int{}
 	for i, r := range f.rows {
-		if strings.HasPrefix(r.Popped, slideMarkPrefix) {
+		if _, slid := agent.SlidFrame(r.Popped); slid {
 			ends[r.Popped] = i + 1
 		}
 	}
@@ -165,7 +166,7 @@ func (f sessionFrames) slideEnds() map[string]int {
 func (f sessionFrames) slides() []frameSlide {
 	var slides []frameSlide
 	for mark, end := range f.slideEnds() {
-		frame, _, _ := strings.Cut(strings.TrimPrefix(mark, slideMarkPrefix), ":")
+		frame, _ := agent.SlidFrame(mark)
 		s := frameSlide{mark: mark, frame: frame, at: f.rows[min(end, len(f.rows)-1)].CreatedAt}
 		for _, r := range f.rows[:end] {
 			if r.Popped == mark {
