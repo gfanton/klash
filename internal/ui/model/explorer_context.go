@@ -30,9 +30,10 @@ func (s *contextShare) add(r message.Message) {
 
 // contextNow is what the model is sent now, in parts.
 type contextNow struct {
-	// total is the provider's count for the last request, or the rows'
-	// estimates without one; always is what it counted beyond the rows:
-	// the system prompt, the tools, the files given.
+	// total is what the next request sends: the estimates of the rows
+	// still sent, plus always, what the provider's last count holds beyond
+	// the rows (the system prompt, the tools, the files given), 0 with no
+	// count.
 	total, always int64
 	// sent is the rows the model is still sent, and owner where the
 	// deepest open frame holding a row stands in stack, by row id.
@@ -116,10 +117,8 @@ func (m *UI) contextNow() contextNow {
 			c.outside.add(r)
 		}
 	}
-	c.total = estimated
-	if counted := m.countedTokens(); counted > 0 {
-		c.total, c.always = max(counted, estimated), max(counted-estimated, 0)
-	}
+	c.always = m.alwaysSent(m.sessionFrames.contextSeries())
+	c.total = estimated + c.always
 	return c
 }
 

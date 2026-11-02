@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -301,19 +302,36 @@ func (m *UI) axisRows(axis timeAxis, roots []*frameNode, slides []frameSlide) (m
 	return strings.Join(cells, ""), t.Files.EmptyMessage.Render(axis.labels())
 }
 
-// contextOverTime is contextSeries with always, what the provider counted
-// for the session's last request beyond its rows' estimate, added to each
-// point; always is 0 where it counted nothing.
+// contextOverTime is contextSeries with what is always sent added to each
+// point, and that figure.
 func (m *UI) contextOverTime() (series []contextPoint, always int64) {
 	series = m.sessionFrames.contextSeries()
-	if len(series) == 0 {
-		return series, 0
-	}
-	always = max(m.countedTokens()-series[len(series)-1].tokens, 0)
+	always = m.alwaysSent(series)
 	for i := range series {
 		series[i].tokens += always
 	}
 	return series, always
+}
+
+// alwaysSent is what the provider counted for the session's last request
+// beyond the rows' estimate at its reply, series' point for the last
+// finished assistant row: the system prompt, the tools, the files given.
+// A pop after that reply, and the next reply while it streams, are in a
+// later request, not in the count. 0 where it counted nothing.
+func (m *UI) alwaysSent(series []contextPoint) int64 {
+	counted := m.countedTokens()
+	if counted <= 0 || len(series) == 0 {
+		return 0
+	}
+	rows := m.sessionFrames.rows
+	reply := len(series) - 1
+	for i := min(len(rows), len(series)) - 1; i >= 0; i-- {
+		if rows[i].Role == message.Assistant && rows[i].IsFinished() {
+			reply = i
+			break
+		}
+	}
+	return max(counted-series[reply].tokens, 0)
 }
 
 // chartFloor is how many of a chart's height rows, from its foot, always
