@@ -115,6 +115,7 @@ const (
 	uiFocusEditor
 	uiFocusMain
 	uiFocusSidebar
+	uiFocusExplorer
 )
 
 type uiState uint8
@@ -219,6 +220,10 @@ type UI struct {
 	sessionFiles     []SessionFile
 	sessionArtifacts []SessionArtifact
 	sessionFrames    sessionFrames
+	explorer         explorer
+	// sidebarStack is where the sidebar's Stack section is in
+	// sidebarContent, and the frame entry each of its lines shows.
+	sidebarStack stackLines
 	// artifactAnims is the animation shown in place of each pending
 	// artifact's target, by label. Made on first sight and dropped when
 	// the deliverable arrives (see advancePendingArtifacts).
@@ -1270,6 +1275,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd := m.resetPlanModeState(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+			if m.explorer.open {
+				cmds = append(cmds, m.closeExplorer())
+			}
 			m.turnOutcome = ""
 		}
 		m.setState(uiChat, m.focus)
@@ -1600,6 +1608,20 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		if m.state == uiChat && m.explorerAt(msg.X, msg.Y) {
+			if msg.Button == uv.MouseLeft {
+				cmds = append(cmds, m.handleExplorerClick(msg))
+			}
+			return m, tea.Batch(cmds...)
+		}
+		if m.state == uiChat && msg.Button == uv.MouseLeft {
+			if key, ok := m.stackFrameAt(msg.X, msg.Y); ok {
+				m.detailsOpen = false
+				m.openExplorer(key)
+				return m, tea.Batch(cmds...)
+			}
+		}
+
 		if cmd := m.handleClickFocus(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -1765,6 +1787,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// others send DeltaY=1.
 		switch m.state {
 		case uiChat:
+			// Over the frame explorer, the wheel moves its selection.
+			if m.explorerAt(msg.Mouse.X, msg.Mouse.Y) {
+				if lines := int(msg.DeltaY); lines != 0 {
+					m.moveExplorer(lines)
+				}
+				break
+			}
 			// When sidebar is focused, route wheel events to sidebar scrolling.
 			if m.focus == uiFocusSidebar {
 				lines := int(msg.DeltaY)
@@ -3573,6 +3602,10 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			m.detailsOpen = !m.detailsOpen
 			m.updateLayoutAndSize()
 			return true
+		case key.Matches(msg, m.keyMap.Chat.Frames) && m.state == uiChat && m.hasSession():
+			cmd, ok := m.toggleExplorer()
+			cmds = append(cmds, cmd)
+			return ok
 		case key.Matches(msg, m.keyMap.Chat.ToggleSidebar):
 			if m.canToggleSidebar() {
 				cmds = append(cmds, m.toggleCompactMode())
@@ -3645,6 +3678,16 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		if cmd := m.handleDialogMsg(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		return tea.Batch(cmds...)
+	}
+
+	// The frame explorer with the keys takes them before anything else,
+	// esc included: closing it never cancels the agent.
+	if m.state == uiChat && m.explorer.open && m.focus == uiFocusExplorer {
+		if cmd, ok := m.handleExplorerKey(msg); ok {
+			return tea.Batch(append(cmds, cmd)...)
+		}
+		handleGlobalKeys(msg)
 		return tea.Batch(cmds...)
 	}
 
@@ -4149,7 +4192,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		m.renderPills()
 	}
 
-	if m.state == uiChat && m.hasSession() && !m.isCompact {
+	if m.state == uiChat && m.hasSession() && !m.isCompact && !m.explorerBeside() {
 		m.updateSidebarScrollState()
 	}
 
@@ -4183,10 +4226,11 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		}
 
 	case uiChat:
-		if m.isCompact {
+		switch {
+		case m.isCompact:
 			m.drawHeader(scr, layout.header)
 			m.drawStackTrail(scr, layout.stackTrail)
-		} else {
+		case !m.explorerBeside():
 			m.drawSidebar(scr, layout.sidebar)
 		}
 
@@ -4208,6 +4252,9 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			if !m.isCompact {
 				editorWidth -= layout.sidebar.Dx()
 			}
+			if m.explorerBeside() {
+				editorWidth -= layout.explorer.Dx()
+			}
 			editor := uv.NewStyledString(m.renderEditorView(editorWidth))
 			editor.Draw(scr, layout.editor)
 			m.inlineCursor = nil
@@ -4216,6 +4263,9 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		// Draw details overlay in compact mode when open
 		if m.isCompact && m.detailsOpen {
 			m.drawSessionDetails(scr, layout.sessionDetails)
+		}
+		if m.explorer.open {
+			m.drawExplorer(scr, layout.explorer)
 		}
 	}
 
@@ -4369,6 +4419,15 @@ func (m *UI) applyTerminalStatus(v *tea.View) {
 func (m *UI) ShortHelp() []key.Binding {
 	var binds []key.Binding
 	k := &m.keyMap
+
+	if m.state == uiChat && m.focus == uiFocusExplorer {
+		e := k.Explorer
+		binds = append(binds, e.Close, e.Tabs, e.Size, e.Move, e.Folding, e.Follow)
+		if m.explorerBeside() {
+			binds = append(binds, e.Focus)
+		}
+		return append(binds, k.Quit, k.Help)
+	}
 
 	// When an inline editor is active, show its help.
 	if m.activeInline != nil {
@@ -5027,9 +5086,15 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 			// ----------
 			// help
 
+			// The frame explorer beside the chat takes the sidebar's place,
+			// and half the width.
+			side := sidebarWidth
+			if m.explorerBeside() {
+				side = appRect.Dx() - appRect.Dx()/2
+			}
 			var mainRect, sideRect image.Rectangle
 			layout.Horizontal(
-				layout.Len(appRect.Dx()-sidebarWidth),
+				layout.Len(appRect.Dx()-side),
 				layout.Fill(1),
 			).Split(appRect).Assign(&mainRect, &sideRect)
 			// Add padding left
@@ -5040,7 +5105,11 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 				layout.Fill(1),
 			).Split(mainRect).Assign(&mainRect, &editorRect)
 			mainRect.Max.X -= 1 // Add padding right
-			uiLayout.sidebar = sideRect
+			if m.explorerBeside() {
+				uiLayout.explorer = sideRect
+			} else {
+				uiLayout.sidebar = sideRect
+			}
 			pillsHeight := m.pillsAreaHeight()
 			if pillsHeight > 0 {
 				pillsHeight = min(pillsHeight, mainRect.Dy())
@@ -5057,6 +5126,9 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 			// Add bottom margin to main
 			uiLayout.main.Max.Y -= 1
 			uiLayout.editor = editorRect
+		}
+		if m.explorer.open && m.explorerDrawn() == explorerFull {
+			uiLayout.explorer = appRect
 		}
 	}
 
@@ -5095,6 +5167,10 @@ type uiLayout struct {
 	// stackTrail is the row under the compact header, which shows the
 	// Stack's trail.
 	stackTrail uv.Rectangle
+
+	// explorer is the frame explorer's area when it is open: beside the
+	// chat in place of the sidebar, or over everything but the status bar.
+	explorer uv.Rectangle
 }
 
 func (m *UI) openEditor(value string) tea.Cmd {
@@ -6969,6 +7045,7 @@ func (m *UI) newSession() tea.Cmd {
 	m.sessionFiles = nil
 	m.sessionArtifacts = nil
 	m.sessionFrames = sessionFrames{}
+	m.explorer.open = false
 	m.sessionFileReads = nil
 	m.setState(uiLanding, uiFocusEditor)
 	m.textarea.Focus()
@@ -7233,7 +7310,20 @@ func (m *UI) drawSessionDetails(scr uv.Screen, area uv.Rectangle) {
 	if m.session == nil {
 		return
 	}
+	uv.NewStyledString(m.sessionDetailsIn(area).view).Draw(scr, area)
+}
 
+// sessionDetails is compact mode's details panel in an area: what it
+// draws, and where its Stack column is on the screen, a row per line, with
+// the frame entry each line shows.
+type sessionDetails struct {
+	view  string
+	stack image.Rectangle
+	keys  []string
+}
+
+// sessionDetailsIn lays out the session details in area.
+func (m *UI) sessionDetailsIn(area uv.Rectangle) sessionDetails {
 	s := m.com.Styles
 
 	width := area.Dx() - s.CompactDetails.View.GetHorizontalFrameSize()
@@ -7262,7 +7352,7 @@ func (m *UI) drawSessionDetails(scr uv.Screen, area uv.Rectangle) {
 
 	// The Stack, which compact mode has no sidebar for, comes first.
 	stackWidth := min(width/3, stackColumnWidth)
-	stack := stackColumn(s, m.sessionFrames, stackWidth, maxItemsPerSection+2, stackLook{now: time.Now(), busy: m.isAgentBusy()})
+	stack, keys := stackColumnLines(s, m.sessionFrames, stackWidth, maxItemsPerSection+2, stackLook{now: time.Now(), busy: m.isAgentBusy()})
 	if stack != "" {
 		// The four sections share what it leaves, a space between columns.
 		sectionWidth = max(1, min(maxSectionWidth, (width-stackWidth-4)/4))
@@ -7279,18 +7369,22 @@ func (m *UI) drawSessionDetails(scr uv.Screen, area uv.Rectangle) {
 	// A column over its rows, as a title wrapped in a narrow one makes it,
 	// would push the panel's frame off its area.
 	sections = lipgloss.NewStyle().MaxHeight(maxItemsPerSection + 2).Render(sections)
-	uv.NewStyledString(
-		s.CompactDetails.View.
-			Width(area.Dx()).
-			Render(
-				lipgloss.JoinVertical(
-					lipgloss.Left,
-					detailsHeader,
-					sections,
-					version,
-				),
+	view := s.CompactDetails.View.
+		Width(area.Dx()).
+		Render(
+			lipgloss.JoinVertical(
+				lipgloss.Left,
+				detailsHeader,
+				sections,
+				version,
 			),
-	).Draw(scr, area)
+		)
+	at := image.Pt(
+		area.Min.X+s.CompactDetails.View.GetBorderLeftSize()+s.CompactDetails.View.GetPaddingLeft(),
+		area.Min.Y+s.CompactDetails.View.GetBorderTopSize()+s.CompactDetails.View.GetPaddingTop()+lipgloss.Height(detailsHeader),
+	)
+	keys = keys[:min(len(keys), max(maxItemsPerSection+2, 0))]
+	return sessionDetails{view: view, stack: image.Rectangle{Min: at, Max: at.Add(image.Pt(stackWidth, len(keys)))}, keys: keys}
 }
 
 func (m *UI) runMCPPrompt(clientID, promptID string, arguments map[string]string) tea.Cmd {

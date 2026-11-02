@@ -108,6 +108,41 @@ func TestFrameRows_AreWhatItsPopTookOrWouldTake(t *testing.T) {
 	require.Equal(t, []string{"a2", "t2", "a3", "t3"}, rowIDsOf(open.frameRows(roots[0])), "open, up to the last row")
 }
 
+// A parent's pop marks its children's rows as its own; each frame still
+// holds what its own pop took out.
+func TestHeldRows_AreWhatItsOwnPopTookOrAPopNowWould(t *testing.T) {
+	rows := []message.Message{
+		callRow("a1", 1, memCall("c1")),
+		toolRow("t1", 2, memResult(t, "c1", push("p", "p"))),
+		callRow("a2", 3, memCall("c2")),
+		toolRow("t2", 4, memResult(t, "c2", push("p/c", "c"))),
+		textRow("x1", message.Assistant, 5, 4000),
+		callRow("a3", 6, memCall("c3")),
+		toolRow("t3", 7, memResult(t, "c3", pop("p/c"))),
+		textRow("x2", message.Assistant, 8, 400),
+		callRow("a4", 9, memCall("c4")),
+		toolRow("t4", 10, memResult(t, "c4", pop("p"))),
+	}
+	for i := 2; i < 8; i++ {
+		rows[i].Popped = "p"
+	}
+	rows[7].Popped = "slide:p:c1:c4"
+
+	done := deriveFrames("s1", rows)
+	roots, _ := done.tree()
+	require.Equal(t, []string{"x1"}, rowIDsOf(done.heldRows(roots[0].children[0])), "the child's own pop took x1, whatever mark it bears now")
+	require.Equal(t, []string{"a2", "t2", "x1", "a3", "t3"}, rowIDsOf(done.heldRows(roots[0])), "a slide's rows are not the pop's")
+
+	open := rows[:8]
+	for i := range open {
+		open[i].Popped = ""
+	}
+	open[4].Popped = "p/c"
+	running := deriveFrames("s1", open)
+	roots, _ = running.tree()
+	require.Equal(t, []string{"a2", "t2", "a3", "t3", "x2"}, rowIDsOf(running.heldRows(roots[0])), "open: what is still sent, which a pop now would take")
+}
+
 func TestFrameWork_CountsItsToolCallsMostUsedFirst(t *testing.T) {
 	f := deriveFrames("s1", flakySession(t))
 	roots, _ := f.tree()

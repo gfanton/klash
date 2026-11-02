@@ -24,6 +24,30 @@ func (f sessionFrames) frameRows(n *frameNode) []message.Message {
 	return agent.FrameRows(f.rows, n.pushCall, n.popCall)
 }
 
+// heldRows is the rows frame n held in the model's context: once it is
+// popped, those its own pop took out, whatever mark a parent's pop gave
+// them since, and less what a slide took; while it is open, those still
+// sent, which a pop now would take out.
+func (f sessionFrames) heldRows(n *frameNode) []message.Message {
+	var held []message.Message
+	for _, r := range f.frameRows(n) {
+		if strings.HasPrefix(r.Popped, slideMarkPrefix) || !n.popped && r.Popped != "" {
+			continue
+		}
+		held = append(held, r)
+	}
+	return held
+}
+
+// tokensOf is about how many tokens rows hold.
+func tokensOf(rows []message.Message) int64 {
+	var n int64
+	for _, r := range rows {
+		n += rowTokens(r)
+	}
+	return n
+}
+
 // toolUse is how many calls rows made to the tool name.
 type toolUse struct {
 	name string
