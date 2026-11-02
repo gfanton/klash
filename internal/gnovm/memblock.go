@@ -324,23 +324,17 @@ type MemPulseHeld struct {
 // mem last wrote; empty when there is none. It reads a file, and starts
 // nothing.
 func ReadMemPulse(dir, project string) MemPulse {
-	p, _ := memPulseOf(memDir(dir, project))
+	var p MemPulse
+	st, ok := readMemStatus(memDir(dir, project))
+	if !ok || json.Unmarshal(st.Mem, &p) != nil {
+		return MemPulse{}
+	}
+	p.At = st.At
 	return p
 }
 
 // MemPulse is ReadMemPulse for this Lazy's directory.
 func (l *Lazy) MemPulse(project string) MemPulse { return ReadMemPulse(l.opts.Dir, project) }
-
-// memPulseOf reads the MemPulse of the mem in dir; ok is false when there
-// is no status.json, or it cannot be read.
-func memPulseOf(dir string) (p MemPulse, ok bool) {
-	st, ok := readMemStatus(dir)
-	if !ok || json.Unmarshal(st.Mem, &p) != nil {
-		return MemPulse{}, false
-	}
-	p.At = st.At
-	return p, true
-}
 
 func memNotice(st memStatus, now time.Time) string {
 	var m memJSON
