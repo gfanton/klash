@@ -39,8 +39,12 @@ func (m *Chat) ScrollToItem(id string) {
 
 // frameGutter is the render callback that marks the items ShowFrame
 // marked.
-func (m *Chat) frameGutter(idx, _ int, item list.Item) list.Item {
+func (m *Chat) frameGutter(idx, selectedIdx int, item list.Item) list.Item {
 	if len(m.framed) == 0 || !m.framed[m.idAt(idx)] {
+		return item
+	}
+	// A focused item draws its focus bar in the gutter's column.
+	if _, ok := m.list.ItemAt(idx).(list.Focusable); ok && m.list.Focused() && idx == selectedIdx {
 		return item
 	}
 	gutter := lipgloss.NewStyle().Foreground(m.com.Styles.Header.LogoGradToColor).Render("▌")
