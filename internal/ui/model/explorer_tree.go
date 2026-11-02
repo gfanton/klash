@@ -258,30 +258,38 @@ func (m *UI) treeHead(l treeLayout, axis timeAxis, roots []*frameNode, slides []
 			lines = append(lines, gutter+fitLeft(label, l.cols.label)+t.Files.Path.Render(row)+" "+fitLeft(right, l.cols.right))
 		}
 	}
-	marks := make([]string, axis.width)
-	for i := range marks {
-		marks[i] = " "
+	marks, labels := m.axisRows(axis, roots, slides)
+	lines = append(lines, gutter+fitLeft(muted.Render("▴ pop  ⟲ slide"), l.cols.label)+marks)
+	return append(lines, gutter+fitLeft(muted.Render("frame"), l.cols.label)+labels+" "+fitRight(muted.Render("freed"), l.cols.right))
+}
+
+// axisRows is, axis wide, the pops marked ▴ and the slides ⟲ at their
+// times, and the axis's labels.
+func (m *UI) axisRows(axis timeAxis, roots []*frameNode, slides []frameSlide) (marks, labels string) {
+	t := m.com.Styles
+	cells := make([]string, axis.width)
+	for i := range cells {
+		cells[i] = " "
 	}
 	eachFrame(roots, func(n *frameNode) {
 		if n.popped {
-			marks[axis.x(n.until)] = t.Files.Additions.Render("▴")
+			cells[axis.x(n.until)] = t.Files.Additions.Render("▴")
 		}
 	})
 	for _, s := range slides {
-		marks[axis.x(s.at)] = t.Files.TruncationHint.Render("⟲")
+		cells[axis.x(s.at)] = t.Files.TruncationHint.Render("⟲")
 	}
-	lines = append(lines, gutter+fitLeft(muted.Render("▴ pop  ⟲ slide"), l.cols.label)+strings.Join(marks, ""))
-	return append(lines, gutter+fitLeft(muted.Render("frame"), l.cols.label)+muted.Render(axis.labels())+" "+fitRight(muted.Render("freed"), l.cols.right))
+	return strings.Join(cells, ""), t.Files.EmptyMessage.Render(axis.labels())
 }
 
 // contextOverTime is contextSeries scaled so that its last point is what
 // the provider counted for the session's last request, where it did.
 func (m *UI) contextOverTime() []contextPoint {
 	series := m.sessionFrames.contextSeries()
-	if m.session == nil || len(series) == 0 {
+	if len(series) == 0 {
 		return series
 	}
-	counted, last := m.session.PromptTokens+m.session.CompletionTokens, series[len(series)-1].tokens
+	counted, last := m.countedTokens(), series[len(series)-1].tokens
 	if counted <= 0 || last <= 0 {
 		return series
 	}

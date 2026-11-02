@@ -9,7 +9,8 @@ import (
 )
 
 // ShowFrame marks the items ids with a gutter, in place of those marked
-// before: the rows of the frame the explorer shows. nil clears the marks.
+// before: the rows the explorer shows, a frame's or one. nil clears the
+// marks.
 func (m *Chat) ShowFrame(ids []string) {
 	old := m.framed
 	m.framed = nil

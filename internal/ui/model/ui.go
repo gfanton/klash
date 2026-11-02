@@ -1790,7 +1790,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Over the frame explorer, the wheel moves its selection.
 			if m.explorerAt(msg.Mouse.X, msg.Mouse.Y) {
 				if lines := int(msg.DeltaY); lines != 0 {
-					m.moveExplorer(lines)
+					m.moveOnTab(lines)
 				}
 				break
 			}
@@ -4422,7 +4422,12 @@ func (m *UI) ShortHelp() []key.Binding {
 
 	if m.state == uiChat && m.focus == uiFocusExplorer {
 		e := k.Explorer
-		binds = append(binds, e.Close, e.Tabs, e.Size, e.Move, e.Folding, e.Show, e.Search, e.Follow)
+		binds = append(binds, e.Close, e.Tabs, e.Size, e.Move)
+		if m.explorer.tab == explorerTree {
+			binds = append(binds, e.Folding, e.Show, e.Search, e.Follow)
+		} else {
+			binds = append(binds, e.Show)
+		}
 		if m.explorerBeside() {
 			binds = append(binds, e.Focus)
 		}
