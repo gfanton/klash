@@ -548,14 +548,14 @@ func TestExplorer_TreeChartShowsWhatIsAlwaysSentAtItsFoot(t *testing.T) {
 func TestContextChartDrawsFromItsFloor(t *testing.T) {
 	series := []contextPoint{{at: 10, tokens: 9000}, {at: 20, tokens: 10_000}, {at: 30, tokens: 9500}}
 
-	require.Equal(t, []string{" █ ", " ██"}, contextChart(series, 10, 30, 3, 2, 9000, 10_000), "the rows from the floor to the top")
+	require.Equal(t, []string{" █ ", " ██"}, contextChart(series, timeAxis{from: 10, to: 30, width: 3}, 2, 9000, 10_000), "the rows from the floor to the top")
 }
 
 func TestContextChartScalesToItsHeight(t *testing.T) {
 	series := []contextPoint{{at: 10, tokens: 1000}, {at: 20, tokens: 2000}, {at: 30, tokens: 500}}
 
-	require.Equal(t, []string{" █ ", "██▄"}, contextChart(series, 10, 30, 3, 2, 0, 2000))
-	require.Equal(t, []string{"   ██ ", " ████▄"}, contextChart(series, 5, 30, 6, 2, 0, 2000), "a column shows the last point at or before its time")
+	require.Equal(t, []string{" █ ", "██▄"}, contextChart(series, timeAxis{from: 10, to: 30, width: 3}, 2, 0, 2000))
+	require.Equal(t, []string{"   ██ ", " ████▄"}, contextChart(series, timeAxis{from: 5, to: 30, width: 6}, 2, 0, 2000), "a column shows the last point at or before its time")
 }
 
 var enter = tea.KeyPressMsg{Code: tea.KeyEnter}

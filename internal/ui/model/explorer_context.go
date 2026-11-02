@@ -537,7 +537,7 @@ func (m *UI) contextChartLines(c contextNow, inner, height int) []string {
 	}
 	rowsStyle, alwaysStyle := m.chartColors()
 	lines := []string{t.Files.ArtifactLabel.Bold(true).Render("the model's context over the session")}
-	for i, row := range contextChart(series, axis.from, axis.to, width, rows, always, max(top, 1)) {
+	for i, row := range contextChart(series, axis, rows, always, max(top, 1)) {
 		label, labelStyle := "", muted
 		switch {
 		case i == slide:
@@ -556,7 +556,7 @@ func (m *UI) contextChartLines(c contextNow, inner, height int) []string {
 		lines = append(lines, fitLeft(labelStyle.Render(label), chartLabel)+drawn)
 	}
 	if always > 0 {
-		band := contextChart(series, axis.from, axis.to, width, 1, 0, always)[0]
+		band := contextChart(series, axis, 1, 0, always)[0]
 		lines = append(lines, fitLeft(muted.Render("always sent "+shortTokens(always)), chartLabel)+alwaysStyle.Render(band))
 	}
 	marks, labels := m.axisRows(axis, roots, m.sessionFrames.slides())

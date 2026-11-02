@@ -271,7 +271,7 @@ func (m *UI) treeHead(l treeLayout, axis timeAxis, roots []*frameNode, slides []
 			rows--
 		}
 		chart := make([]string, 0, l.chart)
-		for i, row := range contextChart(series, axis.from, axis.to, axis.width, rows, always, top) {
+		for i, row := range contextChart(series, axis, rows, always, top) {
 			label := ""
 			if i == 0 {
 				label = named("model context", top)
@@ -279,7 +279,7 @@ func (m *UI) treeHead(l treeLayout, axis timeAxis, roots []*frameNode, slides []
 			chart = append(chart, gutter+fitLeft(label, l.cols.label)+rowsStyle.Render(row))
 		}
 		if always > 0 {
-			band := contextChart(series, axis.from, axis.to, axis.width, 1, 0, always)[0]
+			band := contextChart(series, axis, 1, 0, always)[0]
 			chart = append(chart, gutter+fitLeft(named("always sent", always), l.cols.label)+alwaysStyle.Render(band))
 		}
 		for i := range chart {
@@ -438,14 +438,12 @@ func (r *stackRenderer) bar(n *frameNode, axis timeAxis) string {
 var chartLevels = []rune(" ▁▂▃▄▅▆▇█")
 
 // contextChart draws series, the tokens the model was sent over time,
-// height rows by width columns from Unix second from to to, floor at its
-// foot and top at its top: each column the last point at or before its
-// time.
-func contextChart(series []contextPoint, from, to int64, width, height int, floor, top int64) []string {
-	a := timeAxis{from: from, to: to, width: width}
-	heights := make([]int, width)
+// height rows tall on axis, floor at its foot and top at its top: each
+// column the last point at or before its time.
+func contextChart(series []contextPoint, axis timeAxis, height int, floor, top int64) []string {
+	heights := make([]int, axis.width)
 	for x := range heights {
-		t, tokens := a.at(x), int64(0)
+		t, tokens := axis.at(x), int64(0)
 		for _, p := range series {
 			if p.at > t {
 				break
@@ -458,7 +456,7 @@ func contextChart(series []contextPoint, from, to int64, width, height int, floo
 	}
 	rows := make([]string, height)
 	for r := range rows {
-		line := make([]rune, width)
+		line := make([]rune, axis.width)
 		for x, h := range heights {
 			line[x] = chartLevels[min(max(h-(height-1-r)*8, 0), 8)]
 		}
