@@ -8,7 +8,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/catwalk/pkg/catwalk"
+	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/stretchr/testify/require"
 )
@@ -514,6 +518,109 @@ func TestExplorer_DetailListsWhatTheModelNoLongerHas(t *testing.T) {
 	half := explorerUI(t, 200, 50)
 	press(half, ctrlX)
 	require.Equal(t, -1, at(drawn(half), half.layout.explorer, "what the model").Y, "a half explorer has no room for it")
+}
+
+// modelWorkspace is exportWorkspace with a config that has providers, as
+// the sidebar needs for a model.
+type modelWorkspace struct{ *exportWorkspace }
+
+func (modelWorkspace) Config() *config.Config {
+	return &config.Config{Providers: csync.NewMap[string, config.ProviderConfig](), Options: &config.Options{TUI: &config.TUIOptions{}}}
+}
+
+// contextUI is explorerUI on a model with a 32K window, which slides at
+// 25.6K, the provider having counted 6K tokens for the last request.
+func contextUI(t *testing.T, width, height int) *UI {
+	t.Helper()
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	u := explorerUI(t, width, height)
+	u.com.Workspace = modelWorkspace{u.com.Workspace.(*exportWorkspace)}
+	u.agentReady = true
+	u.agentModel = workspace.AgentModel{CatwalkCfg: catwalk.Model{ContextWindow: 32_000}}
+	u.session.PromptTokens = 6_000
+	return u
+}
+
+// bodyOf is the explorer's lines under its tabs, each cut to it.
+func bodyOf(u *UI) []string {
+	rows := drawn(u)
+	area := u.layout.explorer
+	var body []string
+	for y := area.Min.Y + explorerBodyRow; y < area.Max.Y; y++ {
+		cells := []rune(rows[y])
+		body = append(body, string(cells[min(area.Min.X, len(cells)):min(area.Max.X, len(cells))]))
+	}
+	return body
+}
+
+func TestExplorer_ContextShowsWhatTheModelIsSentNow(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('3'))
+	body := bodyOf(u)
+
+	now := lineWith(body, "the model is sent now")
+	require.Contains(t, now, "6K of 32K")
+	require.Contains(t, now, "│", "the slide point is marked on the bar")
+	legend := strings.Join(body[slices.Index(body, now)+1:slices.Index(body, now)+3], "\n")
+	for _, part := range []string{"always sent", "outside every frame", "fix-flaky-test", "find-cause", "slides at 25.6K"} {
+		require.Contains(t, legend, part)
+	}
+	require.NotEmpty(t, lineWith(body, "before the next slide"))
+}
+
+func TestExplorer_ContextSaysWhatAPopNowWouldFree(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('3'))
+	body := bodyOf(u)
+
+	require.NotEmpty(t, lineWith(body, "a pop now would free"))
+	require.Contains(t, lineWith(body, "› ▸ try-free-port"), "0", "the frame at work first, holding nothing yet")
+	require.Regexp(t, `find-cause\s+with try-free-port\s+2\s`, lineWith(body, "▸ find-cause"))
+	require.Regexp(t, `fix-flaky-test\s+with both\s+6\s`, lineWith(body, "▸ fix-flaky-test"))
+	require.Regexp(t, `outside every frame\s+2\s.*no pop takes these`, lineWith(body, "no pop takes these"))
+	require.Contains(t, lineWith(body, "since its push"), "of 12.8K", "against half the slide point")
+}
+
+func TestExplorer_ContextListsTheBiggestRowsAndShowsOne(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('3'))
+	body := bodyOf(u)
+	head := slices.IndexFunc(body, func(l string) bool { return strings.Contains(l, "the biggest rows the model still has") })
+	require.Greater(t, head, 0)
+	require.Contains(t, body[head+1], "≈")
+	require.Contains(t, body[head+1], "›", "the first is selected")
+
+	press(u, typed('j'))
+	require.Contains(t, bodyOf(u)[head+2], "›")
+
+	press(u, enter)
+	require.NotEmpty(t, u.chat.framed, "enter shows the selected row in the chat")
+	require.Equal(t, explorerHalf, u.explorerDrawn(), "and makes room for the chat")
+	require.Equal(t, explorerContext, u.explorer.tab)
+}
+
+func TestExplorer_ContextChartsTheSessionWhenTall(t *testing.T) {
+	tall := contextUI(t, 200, 50)
+	press(tall, ctrlX, typed('+'), typed('3'))
+	body := bodyOf(tall)
+	require.NotEmpty(t, lineWith(body, "the model's context over the session"))
+	require.NotEmpty(t, lineWith(body, "32K window"))
+	require.True(t, slices.ContainsFunc(body, func(l string) bool { return strings.Contains(l, "slides at 25.6K") && strings.Contains(l, "┄") }),
+		"the slide point is a dashed line")
+
+	short := contextUI(t, 200, 30)
+	press(short, ctrlX, typed('+'), typed('3'))
+	require.Empty(t, lineWith(bodyOf(short), "the model's context over the session"))
+}
+
+func TestExplorer_ContextWithoutAWindow(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	press(u, ctrlX, typed('3'))
+	body := strings.Join(bodyOf(u), "\n")
+
+	require.Contains(t, body, "the model is sent now")
+	require.NotContains(t, body, "slides at")
 }
 
 func TestExplorer_DetailComesUnderAShortTree(t *testing.T) {

@@ -64,6 +64,8 @@ type explorer struct {
 	searching bool
 	query     string
 	from      explorerSelection
+	// row is the Context tab's selection among the biggest rows.
+	row int
 	// back is the focus to give back on closing.
 	back uiFocusState
 }
@@ -426,9 +428,7 @@ func (m *UI) findFrame() {
 }
 
 // showFrameInChat shows the selected frame's rows in the chat: the chat
-// starts at its push and marks its rows and its pop with a gutter. A full
-// explorer makes room: it turns half where half fits, else it closes,
-// leaving the marks and the keys to the chat.
+// starts at its push and marks its rows and its pop with a gutter.
 func (m *UI) showFrameInChat() tea.Cmd {
 	n := m.selectedFrame()
 	if n == nil {
@@ -441,8 +441,15 @@ func (m *UI) showFrameInChat() tea.Cmd {
 	if n.popCall != "" {
 		ids = append(ids, n.popCall)
 	}
+	return m.showInChat(ids, n.pushCall)
+}
+
+// showInChat marks the chat items ids with a gutter and scrolls the chat
+// to the item at. A full explorer makes room: it turns half where half
+// fits, else it closes, leaving the marks and the keys to the chat.
+func (m *UI) showInChat(ids []string, at string) tea.Cmd {
 	m.chat.ShowFrame(ids)
-	m.chat.ScrollToItem(n.pushCall)
+	m.chat.ScrollToItem(at)
 	switch {
 	case m.explorerDrawn() == explorerHalf:
 		return nil
@@ -465,13 +472,14 @@ func (m *UI) handleExplorerKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.searchKey(msg)
 		return nil, true
 	}
+	tree := e.tab == explorerTree
 	switch {
 	case key.Matches(msg, k.Close), key.Matches(msg, m.keyMap.Chat.Frames):
 		return m.closeExplorer(), true
-	case key.Matches(msg, k.Search):
+	case tree && key.Matches(msg, k.Search):
 		e.searching, e.query, e.from = true, "", explorerSelection{following: e.following, selected: e.selected}
 	case key.Matches(msg, k.Show):
-		return m.showFrameInChat(), true
+		return m.showOnTab(), true
 	case key.Matches(msg, k.Full):
 		e.want = explorerFull
 		m.updateLayoutAndSize()
@@ -489,12 +497,12 @@ func (m *UI) handleExplorerKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, k.Context):
 		e.tab = explorerContext
 	case key.Matches(msg, k.Up):
-		m.moveExplorer(-1)
+		m.moveOnTab(-1)
 	case key.Matches(msg, k.Down):
-		m.moveExplorer(1)
-	case key.Matches(msg, k.Fold):
+		m.moveOnTab(1)
+	case tree && key.Matches(msg, k.Fold):
 		m.foldExplorer(true)
-	case key.Matches(msg, k.Unfold):
+	case tree && key.Matches(msg, k.Unfold):
 		m.foldExplorer(false)
 	case key.Matches(msg, k.Follow):
 		e.following, e.selected = true, ""
@@ -507,6 +515,28 @@ func (m *UI) handleExplorerKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, false
 	}
 	return nil, true
+}
+
+// moveOnTab moves the open tab's selection by delta: the frame on the
+// Tree tab, the row on the Context tab.
+func (m *UI) moveOnTab(delta int) {
+	switch m.explorer.tab {
+	case explorerTree:
+		m.moveExplorer(delta)
+	case explorerContext:
+		m.moveContextRow(delta)
+	}
+}
+
+// showOnTab shows the open tab's selection in the chat.
+func (m *UI) showOnTab() tea.Cmd {
+	switch m.explorer.tab {
+	case explorerTree:
+		return m.showFrameInChat()
+	case explorerContext:
+		return m.showRowInChat()
+	}
+	return nil
 }
 
 // handleExplorerClick handles a click on the explorer: a header button, a
@@ -653,6 +683,8 @@ func (m *UI) explorerView(width, height int) (string, int) {
 		var body []string
 		body, lit = m.explorerTree(inner, height)
 		lines = append(lines, body...)
+	case explorerContext:
+		lines = append(lines, m.contextTab(inner, height-explorerBodyRow)...)
 	default:
 		lines = append(lines, "", t.Files.EmptyMessage.Render("not built yet"))
 	}
