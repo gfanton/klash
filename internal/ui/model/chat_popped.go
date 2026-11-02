@@ -13,12 +13,17 @@ import (
 )
 
 // poppedItemIDs is the chat items that show row: its own (a reply or a
-// prompt), a reply's model line, and the tool items of the calls it made
-// or answered.
+// prompt), a reply's model line, its shell commands, and the tool items
+// of the calls it made or answered.
 func poppedItemIDs(row message.Message) []string {
 	ids := []string{row.ID}
 	if row.Role == message.Assistant {
 		ids = append(ids, chat.AssistantInfoID(row.ID))
+	}
+	for i, part := range row.Parts {
+		if _, ok := part.(message.ShellCommand); ok {
+			ids = append(ids, chat.ShellItemID(row.ID, i))
+		}
 	}
 	for _, call := range row.ToolCalls() {
 		ids = append(ids, call.ID)

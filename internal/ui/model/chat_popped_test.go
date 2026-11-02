@@ -129,6 +129,51 @@ func TestPoppedItemIDs(t *testing.T) {
 	require.ElementsMatch(t, []string{"t1", "call-1"}, poppedItemIDs(results))
 }
 
+// poppedItemIDs names every item the chat makes for a row, whatever its
+// kind.
+func TestPoppedItemIDsNameEveryItemTheChatMakes(t *testing.T) {
+	sty := newTestUI().com.Styles
+	rows := map[string]message.Message{
+		"prompt": {ID: "u1", Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "fix it"}}},
+		"notice": {ID: "u2", Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "go on", Hidden: true, Notice: true}}},
+		"shell commands": {ID: "u3", Role: message.User, Parts: []message.ContentPart{
+			message.ShellCommand{Command: "go test ./...", Output: "ok"},
+			message.ShellCommand{Command: "git status", Output: "clean"},
+		}},
+		"reply and calls": {ID: "a1", Role: message.Assistant, Parts: []message.ContentPart{
+			message.TextContent{Text: "x"}, message.ToolCall{ID: "call-1", Name: "view"},
+		}},
+		"calls alone": {ID: "a2", Role: message.Assistant, Parts: []message.ContentPart{message.ToolCall{ID: "call-2", Name: "ls"}}},
+	}
+	for name, row := range rows {
+		t.Run(name, func(t *testing.T) {
+			items := chat.ExtractMessageItems(sty, &row, nil, "")
+			require.NotEmpty(t, items)
+			for _, item := range items {
+				require.Contains(t, poppedItemIDs(row), item.ID())
+			}
+		})
+	}
+}
+
+// A bang command run inside a frame is dimmed with the frame's rows.
+func TestChatDimsAPoppedShellCommand(t *testing.T) {
+	u, _ := sidebarUI(t, 60)
+	_, _ = u.Update(loadSessionMsg{session: &session.Session{ID: "s1", Title: "release"}, messages: []message.Message{
+		*reply("a0", "entering fix-test", ""),
+		*reply("a1", "running the tests first", "fix-test"),
+		{ID: "u1", SessionID: "s1", Role: message.User, Popped: "fix-test", Parts: []message.ContentPart{
+			message.ShellCommand{Command: "go test ./...", Output: "ok  release 0.4s"},
+		}},
+		*reply("a2", "reading the log after", "fix-test"),
+	}})
+
+	rows, faint := chatRows(t, u)
+	require.True(t, faint[rowWith(rows, "go test ./...")], "the command is drawn faint")
+	require.True(t, faint[rowWith(rows, "ok  release 0.4s")], "and its output")
+	require.Equal(t, 1, strings.Count(strings.Join(rows, "\n"), "popped by"), "under the run's one label")
+}
+
 // A new session's chat starts with nothing dimmed.
 func TestChatSetMessagesForgetsTheMarks(t *testing.T) {
 	u := newTestUI()
