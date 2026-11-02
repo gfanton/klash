@@ -591,7 +591,7 @@ func (m *UI) moveContextRow(delta int) {
 
 // showRowInChat shows the selected one of the biggest rows in the chat.
 func (m *UI) showRowInChat() tea.Cmd {
-	rows := m.sessionFrames.biggest(m.contextNow().sent)
+	rows := m.sessionFrames.biggest(m.sessionFrames.sentRows())
 	if len(rows) == 0 {
 		return nil
 	}
