@@ -170,7 +170,7 @@ func (f sessionFrames) slides() []frameSlide {
 		for _, r := range f.rows[:end] {
 			if r.Popped == mark {
 				s.rows++
-				s.tokens += rowTokens(r)
+				s.tokens += f.rowTokens(r)
 			}
 		}
 		slides = append(slides, s)

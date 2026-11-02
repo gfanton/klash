@@ -971,7 +971,7 @@ func (m *UI) explorerTree(inner, height int) ([]string, int) {
 	top := explorerTreeTop(sel, l.tree)
 	look := m.stackLook()
 	r := stackRenderer{t: t, width: inner - treeGutter, look: look}
-	r.freedOf = func(n *frameNode) int64 { return tokensOf(m.sessionFrames.heldRows(n)) }
+	r.freedOf = func(n *frameNode) int64 { return m.sessionFrames.tokensOf(m.sessionFrames.heldRows(n)) }
 	if len(stack) > 0 {
 		r.top = stack[len(stack)-1]
 	}
@@ -1087,7 +1087,7 @@ func (m *UI) frameDetail(n *frameNode, r *stackRenderer, rows, held []message.Me
 	label := func(s string) string { return t.Files.TruncationHint.Render(fmt.Sprintf("%-10s", s)) }
 	value := t.Files.ArtifactLabel
 	muted := t.Files.EmptyMessage
-	tokens := tokensOf(held)
+	tokens := m.sessionFrames.tokensOf(held)
 
 	marker := t.Files.Additions.Render("✓")
 	if n.open() {

@@ -521,7 +521,7 @@ func (f *frameStacks) remove(ctx context.Context, sessionID string, rec *session
 	// are rows behind the summary: they are marked, not counted.
 	for _, row := range rows {
 		if row.Popped == "" && !stale[row.ID] {
-			removed += estimateMessageTokens(row.ToAIMessage())
+			removed += RowTokens(row)
 		}
 	}
 	rec.estimate += removed
@@ -624,7 +624,7 @@ func slideRange(msgs []message.Message, stack []*stackFrame, need int64, promptI
 		for _, row := range rows {
 			if row.Popped == "" && !stale[row.ID] {
 				out = append(out, row)
-				tokens += estimateMessageTokens(row.ToAIMessage())
+				tokens += RowTokens(row)
 			}
 		}
 		return out, tokens
@@ -750,6 +750,12 @@ func FrameRows(msgs []message.Message, pushCallID, popCallID string) []message.M
 		return poppedRows(msgs, pushCallID, popCallID)
 	}
 	return rowsBefore(msgs, pushCallID, len(msgs))
+}
+
+// RowTokens is about how many tokens row holds in the model's context, as
+// a pop or a slide counts what it takes out.
+func RowTokens(row message.Message) int64 {
+	return estimateMessageTokens(row.ToAIMessage())
 }
 
 // rowsBefore is poppedRows for a pop at the row end.

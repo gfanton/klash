@@ -61,11 +61,11 @@ func heldOf(n *frameNode, rows []message.Message) []message.Message {
 	return held
 }
 
-// tokensOf is about how many tokens rows hold.
-func tokensOf(rows []message.Message) int64 {
+// tokensOf is about how many tokens rows, the session's, hold.
+func (f sessionFrames) tokensOf(rows []message.Message) int64 {
 	var n int64
 	for _, r := range rows {
-		n += rowTokens(r)
+		n += f.rowTokens(r)
 	}
 	return n
 }
@@ -175,7 +175,7 @@ func (f sessionFrames) contextSeries() []contextPoint {
 			clear(live)
 			total = 0
 		}
-		live[r.ID] = rowTokens(r)
+		live[r.ID] = f.rowTokens(r)
 		total += live[r.ID]
 		for _, result := range r.ToolResults() {
 			for _, n := range popped[result.ToolCallID] {
