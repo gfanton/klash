@@ -1244,8 +1244,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sessions.Name(m.takeStartName())
 		}
 	case memPulseMsg:
-		// Reads land in any order; one older than the last is dropped.
-		if msg.pulse.At >= m.memPulse.At {
+		// Reads land in any order; one older than the last is dropped. An
+		// empty one is mem without a status, which has no age.
+		if msg.pulse.At == 0 || msg.pulse.At >= m.memPulse.At {
 			m.memPulse = msg.pulse
 		}
 	case reportMsg:
