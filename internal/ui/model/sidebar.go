@@ -3,6 +3,7 @@ package model
 import (
 	"image"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	mcp "github.com/charmbracelet/crush/internal/agent/tools/mcp"
@@ -96,6 +97,9 @@ func (m *UI) updateSidebarScrollState() {
 		"",
 		m.modelInfo(contentWidth),
 		"",
+	}
+	if stack := stackSection(t, m.sessionFrames, contentWidth, stackLook{now: time.Now(), busy: m.isAgentBusy()}); stack != "" {
+		parts = append(parts, stack, "")
 	}
 	m.sidebarArtifacts = m.sidebarArtifacts[:0]
 	if len(m.sessionArtifacts) > 0 {
@@ -193,6 +197,12 @@ func (m *UI) drawSidebar(scr uv.Screen, area uv.Rectangle) {
 			uv.NewStyledString(scrollbar).Draw(scr, scrollbarArea)
 		}
 	}
+}
+
+// sidebarAnimating reports whether anything in the sidebar moves at now,
+// which keeps the shared animation clock running.
+func (m *UI) sidebarAnimating(now time.Time) bool {
+	return m.hasPendingArtifact() || m.session != nil && m.sessionFrames.animating(now, m.isAgentBusy())
 }
 
 // sidebarRects splits the sidebar's area into the fixed logo at its top

@@ -218,6 +218,7 @@ type UI struct {
 	session          *session.Session
 	sessionFiles     []SessionFile
 	sessionArtifacts []SessionArtifact
+	sessionFrames    sessionFrames
 	// artifactAnims is the animation shown in place of each pending
 	// artifact's target, by label. Made on first sight and dropped when
 	// the deliverable arrives (see advancePendingArtifacts).
@@ -1276,6 +1277,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sidebarOffset = 0
 		m.sessionFiles = msg.files
 		m.sessionArtifacts = deriveArtifacts(msg.messages)
+		m.sessionFrames = deriveFrames(msg.session.ID, msg.messages)
 		// Session switch: the memoized busy state and queued prompts
 		// belong to the previous session. Drop them and re-fetch
 		// off-thread so the queue pill and esc behavior track the new
@@ -1438,6 +1440,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case pubsub.CreatedEvent:
 			cmds = append(cmds, m.appendSessionMessage(msg.Payload))
 			m.upsertArtifactsFromMessage(msg.Payload)
+			m.sessionFrames.observe(m.session.ID, msg.Payload, time.Now())
 			// A new message is a run boundary — a user prompt starting
 			// a turn or the agent replying/dequeueing. Drop the
 			// memoized busy state and re-fetch it and the queue
@@ -1455,8 +1458,10 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case pubsub.UpdatedEvent:
 			cmds = append(cmds, m.updateSessionMessage(msg.Payload))
 			m.upsertArtifactsFromMessage(msg.Payload)
+			m.sessionFrames.observe(m.session.ID, msg.Payload, time.Now())
 		case pubsub.DeletedEvent:
 			m.chat.RemoveMessage(msg.Payload.ID)
+			m.sessionFrames.forget(msg.Payload.ID)
 		}
 		m.noteLoopReply(msg.Payload)
 		// start the spinner if there is a new message
@@ -1993,7 +1998,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// sole place the clock is armed so a tick never sits inside a caller's
 	// tea.Sequence.
 	if m.state == uiChat {
-		if cmd := m.chat.EnsureAnimating(m.hasPendingArtifact()); cmd != nil {
+		if cmd := m.chat.EnsureAnimating(m.sidebarAnimating(time.Now())); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 		// Same for the chat scrollbar's auto-hide: a scroll may be applied
@@ -2019,11 +2024,11 @@ func (m *UI) handleAnimTick(msg animTickMsg) tea.Cmd {
 		m.markScrollOnly()
 		return nil
 	}
-	// The sidebar's pending artifacts ride the same clock; a frame of
-	// theirs is a change, so the sidebar is drawn again rather than
-	// served from the frame cache.
-	moved := m.advancePendingArtifacts()
-	changed, cmd := m.chat.Tick(msg, m.hasPendingArtifact())
+	// The sidebar's pending artifacts and its Stack ride the same clock;
+	// a frame of theirs is a change, so the sidebar is drawn again rather
+	// than served from the frame cache.
+	moved := m.advancePendingArtifacts() || m.sessionFrames.animating(time.Now(), m.isAgentBusy())
+	changed, cmd := m.chat.Tick(msg, m.sidebarAnimating(time.Now()))
 	if !changed && !moved {
 		m.markScrollOnly()
 		return cmd
@@ -6942,6 +6947,7 @@ func (m *UI) newSession() tea.Cmd {
 	m.sidebarOffset = 0
 	m.sessionFiles = nil
 	m.sessionArtifacts = nil
+	m.sessionFrames = sessionFrames{}
 	m.sessionFileReads = nil
 	m.setState(uiLanding, uiFocusEditor)
 	m.textarea.Focus()
