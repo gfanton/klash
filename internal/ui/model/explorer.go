@@ -978,13 +978,8 @@ func (m *UI) explorerTree(inner, height int) ([]string, int) {
 	r.width = inner - treeGutter
 	axis := m.sessionFrames.treeAxis(roots, r.look, l.cols.bars)
 	lines := m.treeHead(l, axis, roots, slides)
-	gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
 	for i := top; i < min(top+l.tree, len(rows)); i++ {
-		mark := "  "
-		if i == sel {
-			mark = gutter.Render("›") + " "
-		}
-		lines = append(lines, mark+r.treeLine(rows[i], l.cols, axis, inner-treeGutter))
+		lines = append(lines, gutterMark(t, i == sel)+" "+r.treeLine(rows[i], l.cols, axis, inner-treeGutter))
 	}
 	lit := l.head + sel - top
 	if l.detail == 0 {

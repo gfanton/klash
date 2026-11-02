@@ -366,12 +366,8 @@ func (m *UI) contextPopLines(c contextNow, inner int) []string {
 	name := min(inner-treeGutter-popRows-popTokens-popAfter, maxPopName)
 	lines := []string{strings.Repeat(" ", treeGutter) + fitLeft(value.Bold(true).Render("a pop now would free"), name) +
 		fitRight(muted.Render("rows"), popRows) + fitRight(muted.Render("tokens"), popTokens) + "   " + muted.Render("then the model is sent")}
-	gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
 	for i := len(c.stack) - 1; i >= 0; i-- {
-		mark := "  "
-		if i == len(c.stack)-1 {
-			mark = gutter.Render("›") + " "
-		}
+		mark := gutterMark(t, i == len(c.stack)-1) + " "
 		label := t.LSP.WarningDiagnostic.Render("▸") + " " + value.Render(c.frameName(i))
 		if with := withFrames(c, i); with != "" {
 			label += "  " + muted.Render(with)
@@ -454,13 +450,9 @@ func (m *UI) biggestLines(c contextNow, rows []message.Message, shown, inner int
 	if w.above != "" {
 		lines = append(lines, "  "+muted.Render(w.above))
 	}
-	gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
 	colors := m.frameColors(len(c.stack))
 	for i, row := range rows[w.first : w.first+w.shown] {
-		mark := "  "
-		if w.first+i == sel {
-			mark = gutter.Render("›") + " "
-		}
+		mark := gutterMark(t, w.first+i == sel) + " "
 		in := t.Files.TruncationHint.Render("outside every frame")
 		if f, ok := c.owner[row.ID]; ok {
 			in = lipgloss.NewStyle().Foreground(colors[f]).Render(c.frameName(f))
