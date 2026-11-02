@@ -313,10 +313,12 @@ const maxFinishedTasks = 3
 
 // stackLook is what the section is drawn for: the time, and whether the
 // agent is working, which sets the open frames' clocks running and the
-// one it is in shimmering.
+// one it is in shimmering; still stops the shimmer and a pop's flash and
+// count-up.
 type stackLook struct {
-	now  time.Time
-	busy bool
+	now   time.Time
+	busy  bool
+	still bool
 }
 
 // resultLines is which finished frames the Stack shows with their result.
@@ -601,6 +603,7 @@ func (r *stackRenderer) clock(n *frameNode) string {
 // n, in the gradient while n's pop is lit.
 func (r *stackRenderer) name(n *frameNode, style lipgloss.Style, name string) string {
 	switch {
+	case r.look.still:
 	case n == r.top && r.working():
 		return r.paint(style, name, int(r.look.now.UnixMilli()/shimmerStep.Milliseconds()))
 	case flashed(n.poppedAt, r.look.now) < 1:
@@ -777,6 +780,9 @@ func (r *stackRenderer) entryRight(n *frameNode) string {
 	// A pop just seen counts its freed tokens up, easing out.
 	lit := flashed(n.poppedAt, r.look.now)
 	eased := 1 - (1-lit)*(1-lit)*(1-lit)
+	if r.look.still {
+		eased = 1
+	}
 	total := n.total()
 	if r.freedOf != nil {
 		total = r.freedOf(n)
