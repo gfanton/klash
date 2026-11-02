@@ -2,8 +2,10 @@ package model
 
 import (
 	"image"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/message"
@@ -29,7 +31,8 @@ func explorerRows(t *testing.T) []message.Message {
 	}
 }
 
-// explorerUI is a UI of width × height with the frames of explorerRows.
+// explorerUI is a UI of width × height with the frames of explorerRows,
+// their pops long seen.
 func explorerUI(t *testing.T, width, height int) *UI {
 	t.Helper()
 	u, _ := sidebarUI(t, height)
@@ -39,6 +42,9 @@ func explorerUI(t *testing.T, width, height int) *UI {
 	u.width = width
 	u.updateLayoutAndSize()
 	observeRows(u, explorerRows(t)...)
+	for i := range u.sessionFrames.calls {
+		u.sessionFrames.calls[i].seen = time.Time{}
+	}
 	return u
 }
 
@@ -313,4 +319,114 @@ func TestExplorer_IsNotOfferedWithoutFrames(t *testing.T) {
 	press(u, ctrlX)
 
 	require.False(t, u.explorer.open)
+}
+
+// treeOf is the Tree tab's lines above its detail, each cut to the
+// explorer.
+func treeOf(u *UI) []string {
+	rows := drawn(u)
+	area := u.layout.explorer
+	var tree []string
+	for y := area.Min.Y + explorerBodyRow; y < area.Max.Y; y++ {
+		cells := []rune(rows[y])
+		line := string(cells[min(area.Min.X, len(cells)):min(area.Max.X, len(cells))])
+		if strings.HasPrefix(strings.TrimSpace(line), "────") {
+			break
+		}
+		tree = append(tree, line)
+	}
+	return tree
+}
+
+// lineWith is the first of lines holding text, or "".
+func lineWith(lines []string, text string) string {
+	for _, l := range lines {
+		if strings.Contains(l, text) {
+			return l
+		}
+	}
+	return ""
+}
+
+// column is the column of text in line, in cells, or -1.
+func column(line, text string) int {
+	i := strings.Index(line, text)
+	if i < 0 {
+		return -1
+	}
+	return len([]rune(line[:i]))
+}
+
+func TestExplorer_TreeDrawsEachFrameOnATimeAxis(t *testing.T) {
+	u := explorerUI(t, 200, 34)
+	press(u, ctrlX, typed('+'))
+	tree := treeOf(u)
+
+	axis := lineWith(tree, "freed")
+	require.Contains(t, axis, "0s", "the axis starts at the first push")
+	require.Contains(t, axis, "10s")
+	require.Contains(t, lineWith(tree, "▴"), "pop", "a row marks the pops on the axis")
+
+	top, reproduce := lineWith(tree, "fix-flaky-test"), lineWith(tree, "reproduce-it")
+	require.Greater(t, column(reproduce, "█"), column(top, "█"), "reproduce-it was pushed after its parent")
+	require.Contains(t, reproduce, "−2K tok", "what its pop freed ends its line")
+	cause := lineWith(tree, "find-cause")
+	require.Contains(t, cause, "▶", "an open frame's bar runs to the end")
+	require.Less(t, column(cause, "▶"), column(cause, time.Unix(1_700_000_030, 0).Format("15:04")), "then when it was entered")
+}
+
+func TestExplorer_TreeDropsTheBarsWhenNarrow(t *testing.T) {
+	u := explorerUI(t, 48, 30)
+	press(u, ctrlX)
+	tree := strings.Join(treeOf(u), "\n")
+
+	require.NotContains(t, tree, "█")
+	require.NotContains(t, tree, "freed", "no axis either")
+	require.Contains(t, tree, "reproduce-it")
+	require.Contains(t, tree, "−2K tok")
+}
+
+// slidRows is explorerRows with try-free-port's first round slid out of the
+// model's context, and a round after it.
+func slidRows(t *testing.T) []message.Message {
+	t.Helper()
+	mark := "slide:fix-flaky-test/find-cause/try-free-port:fc5:fc7"
+	first, answer := callRow("e6", 1_700_000_050, toolCall("v1", "view", `{"file_path":"a.go"}`)), toolRow("f6", 1_700_000_050, viewResult("v1"))
+	first.Popped, answer.Popped = mark, mark
+	return append(explorerRows(t), first, answer,
+		callRow("e7", 1_700_000_060, toolCall("v2", "view", `{"file_path":"b.go"}`)),
+		toolRow("f7", 1_700_000_060, viewResult("v2")),
+	)
+}
+
+func TestExplorer_TreeShowsASlideUnderTheFrameItSlid(t *testing.T) {
+	u := explorerUI(t, 200, 34)
+	observeRows(u, slidRows(t)[len(explorerRows(t)):]...)
+	press(u, ctrlX, typed('+'))
+	tree := treeOf(u)
+
+	slide := slices.IndexFunc(tree, func(l string) bool { return strings.Contains(l, "⟲ slid · 2 rows") })
+	require.Greater(t, slide, slices.IndexFunc(tree, func(l string) bool { return strings.Contains(l, "try-free-port") }))
+	require.Contains(t, tree[slide], "−1K tok")
+	require.Contains(t, lineWith(tree, "▴"), "⟲", "the axis marks it too")
+
+	press(u, typed('j'))
+	require.Equal(t, "fix-flaky-test/find-cause/try-free-port", u.selectedFrame().id, "the selection skips it")
+}
+
+func TestExplorer_TreeShowsTheContextOverTimeWhenTall(t *testing.T) {
+	tall := explorerUI(t, 200, 50)
+	press(tall, ctrlX, typed('+'))
+	require.NotEmpty(t, lineWith(treeOf(tall), "model context"))
+
+	short := explorerUI(t, 200, 34)
+	press(short, ctrlX, typed('+'))
+	require.Empty(t, lineWith(treeOf(short), "model context"), "a short terminal drops the chart")
+}
+
+func TestContextChartScalesToItsHeight(t *testing.T) {
+	series := []contextPoint{{at: 10, tokens: 1000}, {at: 20, tokens: 2000}, {at: 30, tokens: 500}}
+
+	require.Equal(t, []string{" █ ", "██▄"}, contextChart(series, 10, 30, 3, 2, 2000))
+	require.Equal(t, []string{"   ██ ", " ████▄"}, contextChart(series, 5, 30, 6, 2, 2000), "a column shows the last point at or before its time")
 }

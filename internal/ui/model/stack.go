@@ -692,33 +692,46 @@ func (r *stackRenderer) node(n *frameNode, parent, lead, cont string) {
 // entry renders n's line, width wide: lead, its marker and name, then
 // when it was entered while it is open, or what its pop freed once done.
 func (r *stackRenderer) entry(n *frameNode, name, lead string, width int) string {
-	t := r.t
-	open := n.open()
-	marker, nameStyle, right := t.Files.Additions.Render("✓"), t.Files.Path, ""
-	if open {
-		marker, nameStyle = t.LSP.WarningDiagnostic.Render("▸"), t.Files.ArtifactLabel
-		right = r.clock(n)
-	} else {
-		// A pop just seen counts its freed tokens up, easing out.
-		lit := flashed(n.poppedAt, r.look.now)
-		eased := 1 - (1-lit)*(1-lit)*(1-lit)
-		total := n.total()
-		if r.freedOf != nil {
-			total = r.freedOf(n)
-		}
-		if freed := int64(float64(total) * eased); freed > 0 {
-			right = t.Files.Additions.Render("−" + shortTokens(freed) + " tok")
-		}
-	}
-	head := t.Files.TruncationHint.Render(lead) + marker + " "
-	room := width - lipgloss.Width(head) - lipgloss.Width(right)
+	right := r.entryRight(n)
+	room := width - lipgloss.Width(right)
 	if right != "" {
 		room--
 	}
-	name = ansi.Truncate(name, max(room, 1), "…")
-	pad := max(width-lipgloss.Width(head)-lipgloss.Width(name)-lipgloss.Width(right), 1)
+	head := r.entryHead(n, name, lead, room)
 	if right == "" {
-		pad = 0
+		return head
 	}
-	return head + r.name(n, nameStyle, name) + strings.Repeat(" ", pad) + right
+	return head + strings.Repeat(" ", max(width-lipgloss.Width(head)-lipgloss.Width(right), 1)) + right
+}
+
+// entryHead renders lead, then n's marker and name, name cut to fit
+// width.
+func (r *stackRenderer) entryHead(n *frameNode, name, lead string, width int) string {
+	t := r.t
+	marker, nameStyle := t.Files.Additions.Render("✓"), t.Files.Path
+	if n.open() {
+		marker, nameStyle = t.LSP.WarningDiagnostic.Render("▸"), t.Files.ArtifactLabel
+	}
+	head := t.Files.TruncationHint.Render(lead) + marker + " "
+	name = ansi.Truncate(name, max(width-lipgloss.Width(head), 1), "…")
+	return head + r.name(n, nameStyle, name)
+}
+
+// entryRight is when n was entered while it is open, or what its pop
+// freed once done; "" for a pop that freed nothing.
+func (r *stackRenderer) entryRight(n *frameNode) string {
+	if n.open() {
+		return r.clock(n)
+	}
+	// A pop just seen counts its freed tokens up, easing out.
+	lit := flashed(n.poppedAt, r.look.now)
+	eased := 1 - (1-lit)*(1-lit)*(1-lit)
+	total := n.total()
+	if r.freedOf != nil {
+		total = r.freedOf(n)
+	}
+	if freed := int64(float64(total) * eased); freed > 0 {
+		return r.t.Files.Additions.Render("−" + shortTokens(freed) + " tok")
+	}
+	return ""
 }
