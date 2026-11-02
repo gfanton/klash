@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/commands"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/gnovm"
 	"github.com/charmbracelet/crush/internal/herdr"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/log"
@@ -266,6 +267,10 @@ func (w *ClientWorkspace) MemCommand(ctx context.Context, sessionID, args string
 
 func (w *ClientWorkspace) MemNotice(ctx context.Context) (string, error) {
 	return w.client.MemNotice(ctx, w.workspaceID())
+}
+
+func (w *ClientWorkspace) MemPulse(ctx context.Context) (gnovm.MemPulse, error) {
+	return w.client.MemPulse(ctx, w.workspaceID())
 }
 
 func (w *ClientWorkspace) ContextReport(ctx context.Context, sessionID string) (string, error) {

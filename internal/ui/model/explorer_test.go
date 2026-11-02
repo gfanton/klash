@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"image"
 	"slices"
 	"strings"
@@ -11,7 +12,9 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/gnovm"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/stretchr/testify/require"
@@ -622,6 +625,97 @@ func TestExplorer_ContextWithoutAWindow(t *testing.T) {
 	require.Contains(t, body, "the model is sent now")
 	require.NotContains(t, body, "slides at")
 }
+
+// pulseUI is explorerUI with mem holding a question for the user, release
+// v2 whose next step is the notes, and the shapes plan, whose circle a
+// peer session started; and the session's todos.
+func pulseUI(t *testing.T, width, height int) *UI {
+	t.Helper()
+	u := explorerUI(t, width, height)
+	u.memPulse = gnovm.MemPulse{
+		At:   time.Now().Unix() - 30,
+		Asks: []gnovm.MemPulseItem{{Name: "release-v2/ci-green/which-runner", Title: "which CI runner is the release one?"}},
+		Goals: []gnovm.MemPulseGoal{
+			{Name: "release-v2", Title: "release v2", Doing: "s1", StepsOpen: 2, Next: "release-v2/notes", NextTitle: "write the notes"},
+			{Name: "shapes", Title: "the shapes plan", StepsOpen: 3, Held: []gnovm.MemPulseHeld{
+				{Name: "shapes/circle", Title: "draw the circle", Why: "session", Doing: "3a91c0de-77c0-4e1b-9a7e-0d1c2b3a4f5e"},
+			}},
+		},
+	}
+	u.session.Todos = []session.Todo{
+		{Content: "reproduce the flake", Status: session.TodoStatusCompleted},
+		{Content: "rerun the suite 20 times", Status: session.TodoStatusPending},
+	}
+	return u
+}
+
+func TestExplorer_PulseShowsWhatWaitsOnTheUser(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('2'))
+	body := bodyOf(u)
+
+	require.Contains(t, body[0], "▲ WAITS ON YOU (1)")
+	require.Contains(t, lineWith(body, "which CI runner is the release one?"), "release-v2/ci-green/which-runner")
+
+	u.memPulse.Asks = nil
+	require.NotContains(t, strings.Join(bodyOf(u), "\n"), "WAITS ON YOU", "the strip shows only when something waits")
+}
+
+func TestExplorer_PulseLanes(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('2'))
+	body := strings.Join(bodyOf(u), "\n")
+
+	for _, want := range []string{
+		"NOW (4)", "fix-flaky-test/find-cause/try-free-port", "this session", "shapes/circle", "session 3a91c0de",
+		"JUST FINISHED (1)", "fix-flaky-test/reproduce-it", "−2K tok", "fails 3 times in 20",
+		"UP NEXT (2)", "rerun the suite 20 times", "release-v2/notes",
+	} {
+		require.Contains(t, body, want)
+	}
+	require.Regexp(t, `4 working · 1 waits on you · updated 3[01]s ago`, body)
+	require.NotContains(t, body, "reproduce the flake", "a todo done is not up next")
+	nowAt := column(lineWith(bodyOf(u), "NOW (4)"), "NOW")
+	require.Less(t, nowAt, column(lineWith(bodyOf(u), "JUST FINISHED"), "JUST FINISHED"), "the lanes stand side by side when wide")
+
+	half := pulseUI(t, 200, 50)
+	press(half, ctrlX, typed('2'))
+	lines := bodyOf(half)
+	require.Less(t, slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "NOW (4)") }),
+		slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "JUST FINISHED") }), "and one under the other when not")
+}
+
+func TestExplorer_PulseOpensAFrameInTheTree(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	press(u, ctrlX, typed('+'), typed('2'))
+	require.Contains(t, lineWith(bodyOf(u), "› ● fix-flaky-test/find-cause/try-free-port"), "try-free-port", "the frame at work is selected")
+
+	press(u, typed('l'))
+	require.NotEmpty(t, lineWith(bodyOf(u), "› ✓"), "→ goes to the next lane")
+	press(u, enter)
+
+	require.Equal(t, explorerTree, u.explorer.tab)
+	require.Equal(t, "fix-flaky-test/reproduce-it", u.selectedFrame().id)
+}
+
+func TestExplorer_MemPulseIsReadThroughTheWorkspace(t *testing.T) {
+	u := explorerUI(t, 200, 50)
+	pulse := gnovm.MemPulse{At: 7, Asks: []gnovm.MemPulseItem{{Name: "a", Title: "b"}}}
+	u.com.Workspace = pulseWorkspace{u.com.Workspace.(*exportWorkspace), pulse}
+
+	_, _ = u.Update(u.loadMemPulse()())
+	require.Equal(t, pulse, u.memPulse)
+	require.True(t, callsMem(toolRow("r", 1, memResult(t, "c", push("x", "y")))))
+	require.False(t, callsMem(toolRow("r", 1, viewResult("c"))))
+}
+
+// pulseWorkspace is exportWorkspace whose mem says pulse.
+type pulseWorkspace struct {
+	*exportWorkspace
+	pulse gnovm.MemPulse
+}
+
+func (w pulseWorkspace) MemPulse(context.Context) (gnovm.MemPulse, error) { return w.pulse, nil }
 
 func TestExplorer_DetailComesUnderAShortTree(t *testing.T) {
 	u := explorerUI(t, 200, 50)

@@ -38,6 +38,7 @@ import (
 	"github.com/charmbracelet/crush/internal/env"
 	"github.com/charmbracelet/crush/internal/event"
 	"github.com/charmbracelet/crush/internal/fsext"
+	"github.com/charmbracelet/crush/internal/gnovm"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
 	"github.com/charmbracelet/crush/internal/lsp"
@@ -224,6 +225,8 @@ type UI struct {
 	// sidebarStack is where the sidebar's Stack section is in
 	// sidebarContent, and the frame entry each of its lines shows.
 	sidebarStack stackLines
+	// memPulse is what mem last said goes on, read after each call to mem.
+	memPulse gnovm.MemPulse
 	// artifactAnims is the animation shown in place of each pending
 	// artifact's target, by label. Made on first sight and dropped when
 	// the deliverable arrives (see advancePendingArtifacts).
@@ -1237,6 +1240,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			sessions.Name(m.takeStartName())
 		}
+	case memPulseMsg:
+		m.memPulse = msg.pulse
 	case reportMsg:
 		if msg.plain {
 			m.dialog.OpenDialog(dialog.NewTextReport(m.com, msg.title, msg.report))
@@ -1286,6 +1291,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionFiles = msg.files
 		m.sessionArtifacts = deriveArtifacts(msg.messages)
 		m.sessionFrames = deriveFrames(msg.session.ID, msg.messages)
+		cmds = append(cmds, m.loadMemPulse())
 		// Session switch: the memoized busy state and queued prompts
 		// belong to the previous session. Drop them and re-fetch
 		// off-thread so the queue pill and esc behavior track the new
@@ -1450,6 +1456,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.upsertArtifactsFromMessage(msg.Payload)
 			m.sessionFrames.observe(m.session.ID, msg.Payload, time.Now())
 			m.chat.MarkPopped(msg.Payload)
+			if callsMem(msg.Payload) {
+				cmds = append(cmds, m.loadMemPulse())
+			}
 			// A new message is a run boundary — a user prompt starting
 			// a turn or the agent replying/dequeueing. Drop the
 			// memoized busy state and re-fetch it and the queue
@@ -1469,6 +1478,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.upsertArtifactsFromMessage(msg.Payload)
 			m.sessionFrames.observe(m.session.ID, msg.Payload, time.Now())
 			m.chat.MarkPopped(msg.Payload)
+			if callsMem(msg.Payload) {
+				cmds = append(cmds, m.loadMemPulse())
+			}
 		case pubsub.DeletedEvent:
 			m.chat.RemoveMessage(msg.Payload.ID)
 			m.sessionFrames.forget(msg.Payload.ID)
@@ -4423,9 +4435,12 @@ func (m *UI) ShortHelp() []key.Binding {
 	if m.state == uiChat && m.focus == uiFocusExplorer {
 		e := k.Explorer
 		binds = append(binds, e.Close, e.Tabs, e.Size, e.Move)
-		if m.explorer.tab == explorerTree {
+		switch m.explorer.tab {
+		case explorerTree:
 			binds = append(binds, e.Folding, e.Show, e.Search, e.Follow)
-		} else {
+		case explorerPulse:
+			binds = append(binds, e.Lanes, e.Open)
+		default:
 			binds = append(binds, e.Show)
 		}
 		if m.explorerBeside() {
