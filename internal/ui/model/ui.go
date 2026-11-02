@@ -4450,7 +4450,12 @@ func (m *UI) ShortHelp() []key.Binding {
 			binds = append(binds, e.Folding, e.Show, e.Search, e.Follow)
 		case explorerPulse:
 			binds = append(binds, e.Lanes)
-			if m.pulseFrame() != nil {
+			switch {
+			case m.selectedWait() >= 0:
+				if m.askCall(m.waitsOnUser()[m.selectedWait()].Name) != "" {
+					binds = append(binds, e.Answer)
+				}
+			case m.pulseFrame() != nil:
 				binds = append(binds, e.Open)
 			}
 		default:
