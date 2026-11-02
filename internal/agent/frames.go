@@ -738,6 +738,22 @@ func poppedRows(msgs []message.Message, pushCallID, popCallID string) []message.
 	if end < 0 {
 		return nil
 	}
+	return rowsBefore(msgs, pushCallID, end)
+}
+
+// FrameRows is the rows a frame holds in the model's context: those its
+// pop, the call popCallID, removed, as poppedRows finds them; or, for a
+// frame still open (popCallID ""), those a pop now would remove, up to the
+// last row.
+func FrameRows(msgs []message.Message, pushCallID, popCallID string) []message.Message {
+	if popCallID != "" {
+		return poppedRows(msgs, pushCallID, popCallID)
+	}
+	return rowsBefore(msgs, pushCallID, len(msgs))
+}
+
+// rowsBefore is poppedRows for a pop at the row end.
+func rowsBefore(msgs []message.Message, pushCallID string, end int) []message.Message {
 	start := -1
 	if pushCallID != "" {
 		if push := slices.IndexFunc(msgs, func(m message.Message) bool { return m.Role == message.Assistant && hasToolCall(m, pushCallID) }); push >= 0 {
@@ -918,7 +934,7 @@ func popClauses(ev gnovm.MemFrame, rows []message.Message, calls map[string]mess
 		fmt.Fprintf(&b, ", and so do its %d thoughts, listed above and kept in mem", ev.Thoughts)
 	}
 	b.WriteString("; the user still sees all of it.")
-	if edited := editedFiles(rows, calls, workingDir); len(edited) > 0 {
+	if edited := EditedFiles(rows, calls, workingDir); len(edited) > 0 {
 		b.WriteString(" In it you edited " + strings.Join(edited, ", ") + ".")
 	}
 	if changes := memChanges(rows); len(changes) > 0 {
@@ -930,10 +946,10 @@ func popClauses(ev gnovm.MemFrame, rows []message.Message, calls map[string]mess
 	return b.String()
 }
 
-// editedFiles is the files the file tools changed in rows, as /rewind
+// EditedFiles is the files the file tools changed in rows, as /rewind
 // finds them (tools.ChangedFiles), each once, relative to the working
 // directory where under it.
-func editedFiles(rows []message.Message, calls map[string]message.ToolCall, workingDir string) []string {
+func EditedFiles(rows []message.Message, calls map[string]message.ToolCall, workingDir string) []string {
 	var files []string
 	seen := map[string]bool{}
 	for _, row := range rows {

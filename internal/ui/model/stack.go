@@ -25,6 +25,10 @@ import (
 type sessionFrames struct {
 	calls []frameCall
 	cut   map[string]cutRow
+	// rows is the session's rows in the order the UI was sent them, and
+	// at where each row id stands in it.
+	rows []message.Message
+	at   map[string]int
 }
 
 // frameCall is the frames one gnovm_run call pushed and popped, in order.
@@ -61,6 +65,15 @@ func deriveFrames(sessionID string, rows []message.Message) sessionFrames {
 // for a row loaded with the session), and reports whether that changed
 // what the section shows.
 func (f *sessionFrames) observe(sessionID string, row message.Message, now time.Time) bool {
+	if i, ok := f.at[row.ID]; ok {
+		f.rows[i] = row
+	} else {
+		if f.at == nil {
+			f.at = map[string]int{}
+		}
+		f.at[row.ID] = len(f.rows)
+		f.rows = append(f.rows, row)
+	}
 	changed := false
 	for _, call := range frameCallsOf(sessionID, row) {
 		i := slices.IndexFunc(f.calls, func(c frameCall) bool { return c.callID == call.callID })
@@ -95,6 +108,13 @@ func (f *sessionFrames) observe(sessionID string, row message.Message, now time.
 // forget drops a deleted row, and reports whether the section showed
 // anything of it.
 func (f *sessionFrames) forget(rowID string) bool {
+	if i, ok := f.at[rowID]; ok {
+		f.rows = slices.Delete(f.rows, i, i+1)
+		delete(f.at, rowID)
+		for j := i; j < len(f.rows); j++ {
+			f.at[f.rows[j].ID] = j
+		}
+	}
 	n := len(f.calls)
 	f.calls = slices.DeleteFunc(f.calls, func(c frameCall) bool { return c.rowID == rowID })
 	_, wasCut := f.cut[rowID]
@@ -106,9 +126,15 @@ func (f *sessionFrames) forget(rowID string) bool {
 // agent left it.
 type frameNode struct {
 	id, purpose string
-	// since is when it was pushed, in Unix seconds.
-	since  int64
-	popped bool
+	// key tells this entry from another of the same frame: its push's
+	// call and place in it.
+	key string
+	// pushCall and popCall are the gnovm_run calls that pushed and popped
+	// it; popCall is "" while it is on the stack.
+	pushCall, popCall string
+	// since and until are when it was pushed and popped, in Unix seconds.
+	since, until int64
+	popped       bool
 	// popIndex is its pop's place among the session's pops, from 1; 0
 	// while it is on the stack.
 	popIndex int
@@ -147,10 +173,10 @@ func (f sessionFrames) tree() (roots, stack []*frameNode) {
 	owner := map[string]*frameNode{}
 	pops := 0
 	for _, call := range f.calls {
-		for _, ev := range call.frames {
+		for e, ev := range call.frames {
 			switch ev.Kind {
 			case "push":
-				n := &frameNode{id: ev.Id, purpose: ev.Purpose, since: call.at}
+				n := &frameNode{id: ev.Id, purpose: ev.Purpose, since: call.at, pushCall: call.callID, key: call.callID + ":" + strconv.Itoa(e)}
 				if len(stack) == 0 {
 					roots = append(roots, n)
 				} else {
@@ -163,6 +189,7 @@ func (f sessionFrames) tree() (roots, stack []*frameNode) {
 					if stack[i].id == ev.Id {
 						pops++
 						stack[i].popped, stack[i].result, stack[i].poppedAt, stack[i].popIndex = true, ev.Result, call.seen, pops
+						stack[i].popCall, stack[i].until = call.callID, call.at
 						owner[ev.Id] = stack[i]
 						stack = slices.Delete(stack, i, i+1)
 						break

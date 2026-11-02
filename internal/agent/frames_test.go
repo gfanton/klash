@@ -424,6 +424,24 @@ func TestPoppedRows(t *testing.T) {
 	require.Equal(t, []string{"a3", "t3"}, rowIDs(poppedRows(withSummary, "", "c2")), "a push not found: from the first assistant row after the summary")
 }
 
+// A frame holds what its pop removes, or would remove now while it is
+// still open: everything after its push's round.
+func TestFrameRows(t *testing.T) {
+	t.Parallel()
+
+	rows := []message.Message{
+		row(message.Assistant, "a1", callPart("c1")),
+		row(message.Tool, "t1", resultPart("c1")),
+		row(message.Assistant, "a2", callPart("v1")),
+		row(message.Tool, "t2", resultPart("v1")),
+		row(message.Assistant, "a3", callPart("c2")),
+		row(message.Tool, "t3", resultPart("c2")),
+	}
+	require.Equal(t, []string{"a2", "t2"}, rowIDs(FrameRows(rows, "c1", "c2")), "a popped frame: what its pop removed")
+	require.Equal(t, []string{"a2", "t2", "a3", "t3"}, rowIDs(FrameRows(rows, "c1", "")), "an open frame: up to the last row")
+	require.Empty(t, FrameRows(rows[:2], "c1", ""), "nothing yet past the push's round")
+}
+
 func TestPopClauses(t *testing.T) {
 	t.Parallel()
 
