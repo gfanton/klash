@@ -724,6 +724,26 @@ func TestExplorer_ContextShowsWhatTheModelIsSentNow(t *testing.T) {
 	require.NotEmpty(t, lineWith(body, "before the next slide"))
 }
 
+// How far the slide is, the tab reckons as the agent does: from what the
+// provider counted, the rows that came after the reply it counted left
+// out, since the agent sends them before it slides.
+func TestExplorer_ContextSaysHowFarTheSlideIsAsTheAgentDoes(t *testing.T) {
+	u := contextUI(t, 200, 50)
+	observeRows(u,
+		whole(callRow("g1", 1_700_000_050, toolCall("v1", "view", `{"file_path":"big.go"}`))),
+		toolRow("g2", 1_700_000_050, message.ToolResult{ToolCallID: "v1", Name: "view", Content: strings.Repeat("x", 100_000)}),
+	)
+	u.session.PromptTokens = 6_000 // counted for g1's request, before its 25K result came
+	press(u, ctrlX, typed('+'), typed('3'))
+
+	body := bodyOf(u)
+	require.Empty(t, lineWith(body, "Past the slide point"), "the agent goes on from 6K")
+	require.NotEmpty(t, lineWith(body, "19.6K before the next slide"))
+
+	u.session.PromptTokens = 27_000
+	require.NotEmpty(t, lineWith(bodyOf(u), "Past the slide point"), "from 27K it slides")
+}
+
 func TestExplorer_ContextSaysWhatAPopNowWouldFree(t *testing.T) {
 	u := contextUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('3'))

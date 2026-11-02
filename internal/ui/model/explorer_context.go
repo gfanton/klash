@@ -46,8 +46,8 @@ type contextNow struct {
 	frames  []contextShare
 	// window is the model's context window and slideAt the total at which
 	// the session slides, or compacts out of frames; 0 where unknown, or
-	// for slideAt, off.
-	window, slideAt int64
+	// for slideAt, off. holds is that total now (modelHolds).
+	window, slideAt, holds int64
 }
 
 // sentRows is the rows the model is still sent: from the last summary on,
@@ -102,6 +102,7 @@ func (m *UI) contextNow() contextNow {
 	_, stack := m.sessionFrames.tree()
 	c := contextNow{stack: stack, frames: make([]contextShare, len(stack)), owner: map[string]int{}}
 	c.window, c.slideAt = m.contextLimits()
+	c.holds = m.modelHolds()
 	for i, n := range stack {
 		for _, r := range m.sessionFrames.heldRows(n) {
 			c.owner[r.ID] = i
@@ -252,14 +253,14 @@ func (m *UI) contextNowLines(c contextNow, inner int) []string {
 		said = "The model's context window is not known."
 	case c.slideAt == 0:
 		said = "Auto-compact is off: nothing slides and nothing is compacted."
-	case c.total >= c.slideAt && len(c.stack) > 0:
+	case c.holds >= c.slideAt && len(c.stack) > 0:
 		said = "Past the slide point: the next request takes the oldest part of the conversation out of the model's context."
-	case c.total >= c.slideAt:
+	case c.holds >= c.slideAt:
 		said = "Past the compaction point: the next request summarizes the conversation."
 	case len(c.stack) > 0:
-		said = shortTokens(c.slideAt-c.total) + " before the next slide, which takes the oldest part of the conversation out of the model's context."
+		said = shortTokens(c.slideAt-c.holds) + " before the next slide, which takes the oldest part of the conversation out of the model's context."
 	default:
-		said = shortTokens(c.slideAt-c.total) + " before the next compaction, which summarizes the conversation."
+		said = shortTokens(c.slideAt-c.holds) + " before the next compaction, which summarizes the conversation."
 	}
 	return append(lines, wrapText(muted, said, inner)...)
 }
