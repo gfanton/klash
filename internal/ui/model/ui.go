@@ -6111,18 +6111,19 @@ func (m *UI) doctorReport() tea.Cmd {
 
 // memCommand runs /mem, the user's command for the project's mem, off the
 // update loop, and shows what it answers: mem's own text, kept as it is.
+// Then it reads mem's pulse again, which undo, forget and redact change.
 func (m *UI) memCommand(args string) tea.Cmd {
 	sessionID := ""
 	if m.hasSession() {
 		sessionID = m.session.ID
 	}
-	return func() tea.Msg {
+	return tea.Sequence(func() tea.Msg {
 		text, err := m.com.Workspace.MemCommand(context.Background(), sessionID, args)
 		if err != nil {
 			return util.ReportError(err)()
 		}
 		return reportMsg{title: "Mem", report: text, plain: true}
-	}
+	}, m.loadMemPulse())
 }
 
 // memNoticeOnPrompt is mem's notice again with a prompt the user sends:
