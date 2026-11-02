@@ -86,18 +86,29 @@ func (m *UI) showAskCall(call string) tea.Cmd {
 	return tea.Batch(cmd, m.textarea.Focus())
 }
 
-// askCall is the session's mem call that asked name, "" for none.
+// askCall is the session's mem call that asked name, "" for none, looked
+// for once while the session's mem calls stay as they are: the help asks
+// at every draw.
 // ceiling: finds mem's output line `asked <name>`; an ask kept in the
 // run's metadata, as pushes and pops are, would not hang on its wording.
 func (m *UI) askCall(name string) string {
+	f := &m.sessionFrames
+	if call, ok := f.asked[name]; ok {
+		return call
+	}
+	if f.asked == nil {
+		f.asked = map[string]string{}
+	}
 	said := "asked `" + name + "`"
-	for _, r := range slices.Backward(m.sessionFrames.rows) {
+	for _, r := range slices.Backward(f.rows) {
 		for _, res := range r.ToolResults() {
 			if res.Name == gnovmtools.RunToolName && strings.Contains(res.Content, said) {
+				f.asked[name] = res.ToolCallID
 				return res.ToolCallID
 			}
 		}
 	}
+	f.asked[name] = ""
 	return ""
 }
 

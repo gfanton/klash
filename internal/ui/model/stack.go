@@ -30,6 +30,9 @@ type sessionFrames struct {
 	// at where each row id stands in it.
 	rows []message.Message
 	at   map[string]int
+	// asked is askCall's answers by question; nil once a mem call's row
+	// comes or a row goes.
+	asked map[string]string
 }
 
 // frameCall is the frames one gnovm_run call pushed and popped, in order.
@@ -75,6 +78,9 @@ func (f *sessionFrames) observe(sessionID string, row message.Message, now time.
 		f.at[row.ID] = len(f.rows)
 		f.rows = append(f.rows, row)
 	}
+	if callsMem(row) {
+		f.asked = nil
+	}
 	changed := false
 	for _, call := range frameCallsOf(sessionID, row) {
 		i := slices.IndexFunc(f.calls, func(c frameCall) bool { return c.callID == call.callID })
@@ -115,6 +121,7 @@ func (f *sessionFrames) forget(rowID string) bool {
 		for j := i; j < len(f.rows); j++ {
 			f.at[f.rows[j].ID] = j
 		}
+		f.asked = nil
 	}
 	n := len(f.calls)
 	f.calls = slices.DeleteFunc(f.calls, func(c frameCall) bool { return c.rowID == rowID })
