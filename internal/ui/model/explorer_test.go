@@ -1195,6 +1195,15 @@ func TestExplorer_AnOlderPulseDoesNotReplaceANewerOne(t *testing.T) {
 	require.EqualValues(t, 10, u.memPulse.At, "reads land in any order")
 }
 
+// mem without a status, as after an erasure that could not write it
+// again, reads as an empty pulse: nothing is known to wait any more.
+func TestSidebar_AnEmptyPulseClearsWhatWaits(t *testing.T) {
+	u := pulseUI(t, 200, 50)
+	_, _ = u.Update(memPulseMsg{gnovm.MemPulse{}})
+
+	require.Equal(t, -1, at(drawn(u), u.layout.sidebar, "waits on you").Y)
+}
+
 func TestExplorer_SearchFoldsBackWhatItOpened(t *testing.T) {
 	u := explorerUI(t, 200, 50)
 	press(u, ctrlX, typed('k'), typed('k'), typed('k'), typed('h'))
