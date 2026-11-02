@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -1308,6 +1310,25 @@ func askedHere(t *testing.T, u *UI) {
 		Content: "asked `release-v2/ci-green/which-runner` \"which CI runner is the release one?\" (for the user)",
 	}
 	observeRows(u, callRow("e9", 1_700_000_090, memCall("fc9")), asked)
+}
+
+// The call that asked is found by what mem's Ask prints, read from mem's
+// own transcript: a change to its wording fails here.
+func TestAskCallFindsTheCallByWhatMemPrints(t *testing.T) {
+	t.Parallel()
+
+	story, err := os.ReadFile(filepath.Join("..", "..", "gnovm", "testdata", "gnomem", "v2", "story.golden"))
+	require.NoError(t, err)
+	_, after, ok := strings.Cut(string(story), "> s1: mem.Ask(\"release-v2/tag\", \"which key signs the tag?\")\n")
+	require.True(t, ok, "the story asks which key signs the tag")
+	printed, _, _ := strings.Cut(after, "\n>")
+
+	u := explorerUI(t, 200, 50)
+	res := memResult(t, "fc9")
+	res.Content = printed
+	observeRows(u, callRow("e9", 1_700_000_090, memCall("fc9")), toolRow("f9", 1_700_000_090, res))
+
+	require.Equal(t, "fc9", u.askCall("release-v2/tag/which-key-signs-tag"), "mem printed: %s", printed)
 }
 
 func TestExplorer_PulseAClickOnWhatWaitsShowsTheCallThatAskedIt(t *testing.T) {
