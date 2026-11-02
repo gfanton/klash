@@ -965,7 +965,7 @@ func (m *UI) explorerTabs() string {
 // selection among the lines.
 func (m *UI) explorerTree(inner, height int) ([]string, int) {
 	t := m.com.Styles
-	roots, stack := m.sessionFrames.tree()
+	roots, _ := m.sessionFrames.tree()
 	slides := m.sessionFrames.slides()
 	rows := m.explorer.rows(roots, slides, m.stepsNotStarted())
 	if len(rows) == 0 {
@@ -974,12 +974,9 @@ func (m *UI) explorerTree(inner, height int) ([]string, int) {
 	l := m.treeLayout(rows, inner, height)
 	sel := m.selectedRow(rows)
 	top := explorerTreeTop(sel, l.tree)
-	look := m.stackLook()
-	r := stackRenderer{t: t, width: inner - treeGutter, look: look, frames: m.sessionFrames}
-	if len(stack) > 0 {
-		r.top = stack[len(stack)-1]
-	}
-	axis := m.sessionFrames.treeAxis(roots, look, l.cols.bars)
+	r := m.explorerRenderer()
+	r.width = inner - treeGutter
+	axis := m.sessionFrames.treeAxis(roots, r.look, l.cols.bars)
 	lines := m.treeHead(l, axis, roots, slides)
 	gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
 	for i := top; i < min(top+l.tree, len(rows)); i++ {
@@ -997,7 +994,7 @@ func (m *UI) explorerTree(inner, height int) ([]string, int) {
 		lines = append(lines, "")
 	}
 	lines = append(lines, t.Files.TruncationHint.Render(strings.Repeat("─", inner)))
-	return append(lines, m.detailPane(rows[sel].node, &r, inner, l.detail)...), lit
+	return append(lines, m.detailPane(rows[sel].node, r, inner, l.detail)...), lit
 }
 
 // listBesideWidth is the narrowest explorer content that lists what a
