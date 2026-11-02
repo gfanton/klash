@@ -968,6 +968,26 @@ func TestExplorer_PulseLanesShareTheRows(t *testing.T) {
 	require.NotContains(t, body, "more")
 }
 
+// Lanes too tall for a short tab, or many questions waiting, are cut
+// above the summary, which stays at the foot.
+func TestExplorer_PulseKeepsItsSummaryWhenShort(t *testing.T) {
+	for _, height := range []int{10, 12, 15, 16} {
+		u := pulseUI(t, 80, height)
+		u.memPulse.Asks = nil
+		press(u, ctrlX, typed('2'))
+		body := bodyOf(u)
+		require.Contains(t, body[len(body)-1], "0 waits on you", "%d rows", height)
+	}
+
+	u := pulseUI(t, 80, 24)
+	for i := range 8 {
+		u.memPulse.Asks = append(u.memPulse.Asks, gnovm.MemPulseItem{Name: fmt.Sprintf("q%d", i), Title: "which one?"})
+	}
+	press(u, ctrlX, typed('2'))
+	body := bodyOf(u)
+	require.Contains(t, body[len(body)-1], "9 waits on you")
+}
+
 func TestExplorer_PulseOpensAFrameInTheTree(t *testing.T) {
 	u := pulseUI(t, 200, 50)
 	press(u, ctrlX, typed('+'), typed('2'))
