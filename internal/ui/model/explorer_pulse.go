@@ -220,10 +220,11 @@ func (m *UI) pulseLanes(r *stackRenderer) [laneCount][]pulseItem {
 	}
 
 	// A session's todos are the steps of the goal it works on, so that
-	// goal's next step is among them.
-	steps, goal := m.stepsNotStarted(), ""
+	// goal's next step is among them. The session's bottom frame is that
+	// goal, or one of its steps under /goal, where mem pushes no goal.
+	steps, bottom := m.stepsNotStarted(), ""
 	if len(stack) > 0 && len(steps) > 0 {
-		goal = stack[0].id
+		bottom = stack[0].id
 	}
 	next := func(name, note string) {
 		lanes[laneNext] = append(lanes[laneNext], pulseItem{head: muted.Render("○") + " " + value.Render(name) + "  " + muted.Render(note)})
@@ -232,7 +233,7 @@ func (m *UI) pulseLanes(r *stackRenderer) [laneCount][]pulseItem {
 		next(s, "this session")
 	}
 	for _, g := range m.memPulse.Goals {
-		if g.Next != "" && g.Name != goal {
+		if g.Next != "" && bottom != g.Name && !strings.HasPrefix(bottom, g.Name+"/") {
 			next(g.Next, g.NextTitle+" · "+g.Title)
 		}
 	}
