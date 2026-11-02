@@ -108,18 +108,6 @@ func frameWork(rows []message.Message) []toolUse {
 	return uses
 }
 
-// frameEdits is the files rows' calls changed, relative to workingDir
-// where under it, as a pop names them to the model.
-func frameEdits(rows []message.Message, workingDir string) []string {
-	calls := map[string]message.ToolCall{}
-	for _, r := range rows {
-		for _, c := range r.ToolCalls() {
-			calls[c.ID] = c
-		}
-	}
-	return agent.EditedFiles(rows, calls, workingDir)
-}
-
 // frameWorkCache is a frame entry's work and edits, and what they were
 // worked out from: its key and how many rows, calls and results it held.
 type frameWorkCache struct {
@@ -130,7 +118,7 @@ type frameWorkCache struct {
 }
 
 // frameWorkOf is the tools rows, frame n's, called and the files they
-// changed. They are worked out again only once n's rows, calls or results
+// changed, as a pop names them to the model. They are worked out again only once n's rows, calls or results
 // change: reading what an edit changed decodes the whole file it held.
 func (m *UI) frameWorkOf(n *frameNode, rows []message.Message) ([]toolUse, []string) {
 	calls, results := 0, 0
@@ -141,7 +129,7 @@ func (m *UI) frameWorkOf(n *frameNode, rows []message.Message) ([]toolUse, []str
 	c := &m.explorer.work
 	if c.key != n.key || c.rows != len(rows) || c.calls != calls || c.results != results {
 		*c = frameWorkCache{key: n.key, rows: len(rows), calls: calls, results: results,
-			work: frameWork(rows), edits: frameEdits(rows, m.com.Workspace.WorkingDir())}
+			work: frameWork(rows), edits: agent.EditedFiles(rows, m.com.Workspace.WorkingDir())}
 	}
 	return c.work, c.edits
 }

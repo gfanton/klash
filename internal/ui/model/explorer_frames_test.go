@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/crush/internal/agent"
 	gnovmtools "github.com/charmbracelet/crush/internal/gnovm/tools"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/stretchr/testify/require"
@@ -154,7 +155,7 @@ func TestFrameEdits_AreTheFilesItsCallsChanged(t *testing.T) {
 	f := deriveFrames("s1", flakySession(t))
 	roots, _ := f.tree()
 
-	require.Equal(t, []string{"listen_test.go"}, frameEdits(f.frameRows(roots[0]), "/w"))
+	require.Equal(t, []string{"listen_test.go"}, agent.EditedFiles(f.frameRows(roots[0]), "/w"))
 }
 
 func TestContextSeries_RisesWithEachRowAndDropsAtAPop(t *testing.T) {

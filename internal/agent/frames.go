@@ -483,7 +483,7 @@ func (f *frameStacks) pop(ctx context.Context, sessionID string, rec *sessionFra
 	if len(rows) == 0 {
 		return "nothing came between, so nothing was removed from your context."
 	}
-	calls, reads, removed := f.remove(ctx, sessionID, rec, rows, ev.Id, behindSummary(msgs))
+	reads, removed := f.remove(ctx, sessionID, rec, rows, ev.Id, behindSummary(msgs))
 	if f.notify != nil {
 		f.notify.Publish(pubsub.CreatedEvent, notify.Notification{
 			SessionID: sessionID,
@@ -491,7 +491,7 @@ func (f *frameStacks) pop(ctx context.Context, sessionID string, rec *sessionFra
 			Message:   fmt.Sprintf("popped `%s`: about %s tokens out of the model's context", ev.Id, roughCount(removed)),
 		})
 	}
-	return popClauses(ev, rows, calls, f.workingDir, len(reads) > 0, spared > 0)
+	return popClauses(ev, rows, f.workingDir, len(reads) > 0, spared > 0)
 }
 
 // remove takes rows out of the model's context, for a pop or a slide: the
@@ -499,9 +499,8 @@ func (f *frameStacks) pop(ctx context.Context, sessionID string, rec *sessionFra
 // touched and the views they were given are forgotten, and what they held
 // is estimated against the session's counts, rows behind the summary
 // (stale, see behindSummary) not counted, since the model was not sent
-// them. It returns the rows' tool calls by id, the paths they read, and
-// about how many tokens left.
-func (f *frameStacks) remove(ctx context.Context, sessionID string, rec *sessionFrames, rows []message.Message, mark string, stale map[string]bool) (calls map[string]message.ToolCall, reads []string, removed int64) {
+// them. It returns the paths they read, and about how many tokens left.
+func (f *frameStacks) remove(ctx context.Context, sessionID string, rec *sessionFrames, rows []message.Message, mark string, stale map[string]bool) (reads []string, removed int64) {
 	ids := make([]string, len(rows))
 	for i, row := range rows {
 		ids[i] = row.ID
@@ -509,15 +508,9 @@ func (f *frameStacks) remove(ctx context.Context, sessionID string, rec *session
 	if err := f.messages.SetPopped(ctx, ids, mark); err != nil {
 		slog.Warn("Could not mark the rows removed from the model's context", "session_id", sessionID, "mark", mark, "error", err)
 	}
-	calls = map[string]message.ToolCall{}
-	for _, row := range rows {
-		for _, call := range row.ToolCalls() {
-			calls[call.ID] = call
-		}
-	}
 	// The reads made inside the frame are forgotten, by path: the model no
 	// longer has what it read, so an edit of the file waits for a view.
-	reads = readPaths(rows, calls, f.workingDir)
+	reads = readPaths(rows, callsOf(rows), f.workingDir)
 	if f.files != nil && len(reads) > 0 {
 		if err := f.files.ForgetReads(ctx, sessionID, reads); err != nil {
 			slog.Warn("Could not forget the reads made inside a removed frame", "session_id", sessionID, "error", err)
@@ -534,7 +527,18 @@ func (f *frameStacks) remove(ctx context.Context, sessionID string, rec *session
 		}
 	}
 	rec.estimate += removed
-	return calls, reads, removed
+	return reads, removed
+}
+
+// callsOf is the tool calls rows make, by id.
+func callsOf(rows []message.Message) map[string]message.ToolCall {
+	calls := map[string]message.ToolCall{}
+	for _, row := range rows {
+		for _, call := range row.ToolCalls() {
+			calls[call.ID] = call
+		}
+	}
+	return calls
 }
 
 // behindSummary is the rows at and before the last summary among msgs, by
@@ -594,7 +598,7 @@ func (f *frameStacks) slide(ctx context.Context, sessionID string, need int64, p
 	if !ok {
 		return "", 0, false
 	}
-	_, _, removed := f.remove(ctx, sessionID, rec, rows, slideMarkOf(r), stale)
+	_, removed := f.remove(ctx, sessionID, rec, rows, slideMarkOf(r), stale)
 	rec.pops = append(rec.pops, r)
 	if !slices.Contains(rec.slid, r.frame) {
 		rec.slid = append(rec.slid, r.frame)
@@ -934,7 +938,7 @@ func readPaths(rows []message.Message, calls map[string]message.ToolCall, workin
 // line: that everything since the push was removed, where the frame's
 // thoughts are, the files its rounds edited, the other calls to mem in
 // them, and that their reads are forgotten.
-func popClauses(ev gnovm.MemFrame, rows []message.Message, calls map[string]message.ToolCall, workingDir string, reads, keptUser bool) string {
+func popClauses(ev gnovm.MemFrame, rows []message.Message, workingDir string, reads, keptUser bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Everything since you entered `%s` was removed from your context", ev.Id)
 	if keptUser {
@@ -949,7 +953,7 @@ func popClauses(ev gnovm.MemFrame, rows []message.Message, calls map[string]mess
 		fmt.Fprintf(&b, ", and so do its %d thoughts, listed above and kept in mem", ev.Thoughts)
 	}
 	b.WriteString("; the user still sees all of it.")
-	if edited := EditedFiles(rows, calls, workingDir); len(edited) > 0 {
+	if edited := EditedFiles(rows, workingDir); len(edited) > 0 {
 		b.WriteString(" In it you edited " + strings.Join(edited, ", ") + ".")
 	}
 	if changes := memChanges(rows); len(changes) > 0 {
@@ -964,7 +968,8 @@ func popClauses(ev gnovm.MemFrame, rows []message.Message, calls map[string]mess
 // EditedFiles is the files the file tools changed in rows, as /rewind
 // finds them (tools.ChangedFiles), each once, relative to the working
 // directory where under it.
-func EditedFiles(rows []message.Message, calls map[string]message.ToolCall, workingDir string) []string {
+func EditedFiles(rows []message.Message, workingDir string) []string {
+	calls := callsOf(rows)
 	var files []string
 	seen := map[string]bool{}
 	for _, row := range rows {
