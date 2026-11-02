@@ -4437,15 +4437,19 @@ func (m *UI) ShortHelp() []key.Binding {
 
 	if m.state == uiChat && m.focus == uiFocusExplorer {
 		e := k.Explorer
-		binds = append(binds, e.Close, e.Tabs, e.Size, e.Move)
+		binds = append(binds, e.Close, e.Move)
 		switch m.explorer.tab {
 		case explorerTree:
 			binds = append(binds, e.Folding, e.Show, e.Search, e.Follow)
 		case explorerPulse:
-			binds = append(binds, e.Lanes, e.Open)
+			binds = append(binds, e.Lanes)
+			if m.pulseFrame() != nil {
+				binds = append(binds, e.Open)
+			}
 		default:
 			binds = append(binds, e.Show)
 		}
+		binds = append(binds, e.Tabs, e.Size)
 		if m.explorerBeside() {
 			binds = append(binds, e.Focus)
 		}

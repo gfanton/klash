@@ -61,7 +61,7 @@ func (m *UI) modelSees(width int) string {
 		return ""
 	}
 	t := m.com.Styles
-	fill := t.Files.Path
+	fill, _ := m.chartColors()
 	if slideAt > 0 && counted >= slideAt {
 		fill = t.LSP.WarningDiagnostic
 	}
@@ -79,7 +79,7 @@ func (m *UI) waitsLines(width int) []string {
 		return nil
 	}
 	t := m.com.Styles
-	lines := []string{t.LSP.WarningDiagnostic.Render(fmt.Sprintf("▲ %d waits on you", len(waits)))}
+	lines := []string{t.LSP.WarningDiagnostic.Bold(true).Render(fmt.Sprintf("▲ %d waits on you", len(waits)))}
 	said := wrapText(t.Files.EmptyMessage, waits[0].Title, width-2)
 	if len(said) > 2 {
 		said = []string{said[0], ansi.Truncate(said[1]+" "+said[2], width-2, "…")}

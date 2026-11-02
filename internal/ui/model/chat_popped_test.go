@@ -90,6 +90,17 @@ func TestChatDimsTheRowsAPopTookOutOfTheModelsContext(t *testing.T) {
 	require.Equal(t, -1, rowWith(rows, "popped by"))
 }
 
+func TestChatLabelsADeepPopByItsLastName(t *testing.T) {
+	u := newTestUI()
+	before := reply("a1", "trying a free port", "")
+	inside := reply("a2", "reading the notes", "fix-flaky-test/find-cause/try-free-port")
+	u.chat.SetMessages(chat.NewAssistantMessageItem(u.com.Styles, before), chat.NewAssistantMessageItem(u.com.Styles, inside))
+	u.chat.MarkPopped(*inside)
+
+	rows, _ := chatRows(t, u)
+	require.GreaterOrEqual(t, rowWith(rows, "popped by `…/try-free-port`"), 0)
+}
+
 func TestChatLabelsWhatASlideTookOut(t *testing.T) {
 	u := newTestUI()
 	slid := reply("a1", "an early round", "slide::c1:c4")

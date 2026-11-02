@@ -83,7 +83,11 @@ func (m *Chat) poppedLabel(after int) string {
 	if mark == "" || m.markAt(after) == mark {
 		return ""
 	}
-	text := "popped by `" + mark + "` · out of the model's context"
+	name := mark
+	if strings.Count(mark, "/") > 1 {
+		name = "…" + mark[strings.LastIndex(mark, "/"):]
+	}
+	text := "popped by `" + name + "` · out of the model's context"
 	if strings.HasPrefix(mark, slideMarkPrefix) {
 		text = "slid out of the model's context"
 	}

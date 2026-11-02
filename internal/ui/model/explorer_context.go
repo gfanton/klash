@@ -162,29 +162,38 @@ const (
 	chartLabel = 18
 	// minContextChart is the fewest rows of the chart worth drawing.
 	minContextChart = 4
+	// listsBesideWidth is the narrowest tab that sets what a pop would
+	// free and the biggest rows side by side.
+	listsBesideWidth = 180
 )
 
 // contextTab is the Context tab's lines, inner wide and at most height
 // tall: what the model is sent now, what a pop now would free, the
-// biggest rows it still has, and, where there is room, its context over
-// the session.
+// biggest rows it still has, side by side where wide, and, where there
+// is room, its context over the session.
 func (m *UI) contextTab(inner, height int) []string {
 	c := m.contextNow()
 	lines := append(m.contextNowLines(c, inner), "")
-	lines = append(lines, m.contextPopLines(c, inner)...)
-	lines = append(lines, "")
-	rows := c.biggest()
-	shown := min(len(rows), maxBiggest, max(height-len(lines)-4, 1))
-	lines = append(lines, m.biggestLines(c, rows, shown, inner)...)
-	lines = append(lines, "")
 	var foot []string
 	if counted := m.countedTokens(); counted > 0 {
 		foot = []string{m.com.Styles.Files.EmptyMessage.Render("≈ a row's tokens are estimated at 4 bytes a token; " + shortTokens(counted) + " is the provider's count.")}
 	}
+	rows := c.biggest()
+	if inner >= listsBesideWidth {
+		width := (inner - laneGap) / 2
+		shown := min(len(rows), maxBiggest, max(height-len(lines)-len(foot)-4, 1))
+		lines = append(lines, beside([][]string{m.contextPopLines(c, width), m.biggestLines(c, rows, shown, width)}, width)...)
+	} else {
+		lines = append(lines, m.contextPopLines(c, inner)...)
+		lines = append(lines, "")
+		shown := min(len(rows), maxBiggest, max(height-len(lines)-len(foot)-4, 1))
+		lines = append(lines, m.biggestLines(c, rows, shown, inner)...)
+	}
+	lines = append(lines, "")
 	if room := height - len(lines) - len(foot); room >= minContextChart+3 {
 		lines = append(lines, m.contextChartLines(c, inner, room)...)
 	}
-	return append(lines, foot...)
+	return append(lines[:min(len(lines), max(height-len(foot), 0))], foot...)
 }
 
 // segment is a part of the now bar.
@@ -199,15 +208,16 @@ type segment struct {
 func (m *UI) contextNowLines(c contextNow, inner int) []string {
 	t := m.com.Styles
 	muted := t.Files.EmptyMessage
+	_, always := m.chartColors()
 	segs := []segment{
-		{"always sent", c.always, t.Files.Path.GetForeground()},
+		{"always sent", c.always, always.GetForeground()},
 		{"outside every frame", c.outside.tokens, t.Files.TruncationHint.GetForeground()},
 	}
 	colors := m.frameColors(len(c.stack))
 	for i := range c.stack {
 		segs = append(segs, segment{c.frameName(i), c.frames[i].tokens, colors[i]})
 	}
-	title := t.Files.ArtifactLabel.Render("the model is sent now")
+	title := t.Files.ArtifactLabel.Bold(true).Render("the model is sent now")
 	right := shortTokens(c.total)
 	if c.window > 0 {
 		right += " of " + shortTokens(c.window)
@@ -353,7 +363,7 @@ func (m *UI) contextPopLines(c contextNow, inner int) []string {
 	t := m.com.Styles
 	muted, value := t.Files.EmptyMessage, t.Files.ArtifactLabel
 	name := min(inner-treeGutter-popRows-popTokens-popAfter, maxPopName)
-	lines := []string{strings.Repeat(" ", treeGutter) + fitLeft(value.Render("a pop now would free"), name) +
+	lines := []string{strings.Repeat(" ", treeGutter) + fitLeft(value.Bold(true).Render("a pop now would free"), name) +
 		fitRight(muted.Render("rows"), popRows) + fitRight(muted.Render("tokens"), popTokens) + "   " + muted.Render("then the model is sent")}
 	gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
 	for i := len(c.stack) - 1; i >= 0; i-- {
@@ -381,7 +391,7 @@ func (m *UI) contextPopLines(c contextNow, inner int) []string {
 	}
 	top, large := len(c.stack)-1, c.slideAt/2
 	took := c.frames[top].tokens
-	lines = append(lines, "  "+muted.Render("since its push")+"  "+gauge(t.LSP.WarningDiagnostic, t.Files.TruncationHint, took, large, 20)+" "+
+	lines = append(lines, "  "+muted.Render("since its push")+"  "+gauge(lipgloss.NewStyle().Foreground(m.frameColors(len(c.stack))[top]), t.Files.TruncationHint, took, large, 20)+" "+
 		value.Render(shortTokens(took))+muted.Render(" of "+shortTokens(large)))
 	said := fmt.Sprintf("%s has taken in %s since its push. At %s, half the slide point, gnosh tells the model the step is large.",
 		c.frameName(top), shortTokens(took), shortTokens(large))
@@ -431,37 +441,54 @@ func (m *UI) biggestLines(c contextNow, rows []message.Message, shown, inner int
 	t := m.com.Styles
 	muted, value := t.Files.EmptyMessage, t.Files.ArtifactLabel
 	text := min(inner-treeGutter-bigTokens-2-2-bigIn, maxBigText)
-	lines := []string{strings.Repeat(" ", treeGutter) + fitLeft(value.Render("the biggest rows the model still has"), bigTokens+2+text+2) + muted.Render("in")}
+	lines := []string{strings.Repeat(" ", treeGutter) + fitLeft(value.Bold(true).Render("the biggest rows the model still has"), bigTokens+2+text+2) + muted.Render("in")}
 	if len(rows) == 0 {
 		return append(lines, "  "+muted.Render("none"))
 	}
 	sel := min(max(m.explorer.row, 0), len(rows)-1)
-	first := min(max(sel-shown+1, 0), len(rows)-shown)
+	w := listView{shown: len(rows)}
+	if len(rows) > shown {
+		w = listWindow(len(rows), sel, shown+1, 1)
+	}
+	if w.above != "" {
+		lines = append(lines, "  "+muted.Render(w.above))
+	}
 	gutter := lipgloss.NewStyle().Foreground(t.Header.LogoGradToColor)
-	for i, row := range rows[first : first+shown] {
+	colors := m.frameColors(len(c.stack))
+	for i, row := range rows[w.first : w.first+w.shown] {
 		mark := "  "
-		if first+i == sel {
+		if w.first+i == sel {
 			mark = gutter.Render("›") + " "
 		}
-		line, _ := m.rowLine(row)
-		if line == "" {
-			line = string(row.Role)
-		}
-		in := "outside every frame"
+		in := t.Files.TruncationHint.Render("outside every frame")
 		if f, ok := c.owner[row.ID]; ok {
-			in = c.frameName(f)
+			in = lipgloss.NewStyle().Foreground(colors[f]).Render(c.frameName(f))
 		}
-		lines = append(lines, mark+fitRight(muted.Render("≈"+shortTokens(rowTokens(row))), bigTokens)+"  "+
-			fitLeft(muted.Render(line), text)+"  "+fitLeft(muted.Render(in), bigIn))
+		lines = append(lines, mark+fitRight(value.Render("≈"+shortTokens(rowTokens(row))), bigTokens)+"  "+
+			fitLeft(m.bigRowLine(row), text)+"  "+fitLeft(in, bigIn))
 	}
-	if more := len(rows) - shown; more > 0 {
-		noun := "rows"
-		if more == 1 {
-			noun = "row"
-		}
-		lines = append(lines, "  "+muted.Render(fmt.Sprintf("… %d more %s", more, noun)))
+	if w.below != "" {
+		lines = append(lines, "  "+muted.Render(w.below))
 	}
 	return append(lines, t.Files.TruncationHint.Render("enter: show the row in the chat"))
+}
+
+// bigRowLine is how the biggest rows name row: a prompt or a reply by
+// its first line, any other by the first line the chat draws for it.
+func (m *UI) bigRowLine(row message.Message) string {
+	muted, value := m.com.Styles.Files.EmptyMessage, m.com.Styles.Files.ArtifactLabel
+	text := firstLine(strings.TrimSpace(row.Content().Text))
+	switch {
+	case text != "" && row.Role == message.User:
+		return muted.Render("prompt  ") + value.Render(text)
+	case text != "" && row.Role == message.Assistant:
+		return muted.Render("reply   ") + value.Render(`"`+text+`"`)
+	}
+	line, _ := m.rowLine(row)
+	if line == "" {
+		line = string(row.Role)
+	}
+	return muted.Render(line)
 }
 
 // rowLine is the first line the chat draws for row, and the id of the
@@ -492,7 +519,7 @@ func (m *UI) contextChartLines(c contextNow, inner, height int) []string {
 	roots, _ := m.sessionFrames.tree()
 	width := max(inner-chartLabel, 1)
 	axis := m.sessionFrames.treeAxis(roots, m.stackLook(), width)
-	series := m.contextOverTime()
+	series, always := m.contextOverTime()
 	top := c.window
 	for _, p := range series {
 		top = max(top, p.tokens)
@@ -502,24 +529,32 @@ func (m *UI) contextChartLines(c contextNow, inner, height int) []string {
 	if c.slideAt > 0 && top > 0 {
 		slide = min(max(rows-1-int(c.slideAt*int64(rows)/top), 0), rows-1)
 	}
-	lines := []string{t.Files.ArtifactLabel.Render("the model's context over the session")}
+	rowsStyle, alwaysStyle := m.chartColors()
+	floor := rows - chartFloor(always, max(top, 1), rows)
+	lines := []string{t.Files.ArtifactLabel.Bold(true).Render("the model's context over the session")}
 	for i, row := range contextChart(series, axis.from, axis.to, width, rows, max(top, 1)) {
-		label := ""
+		label, style := "", rowsStyle
+		if i >= floor {
+			style = alwaysStyle
+		}
+		labelStyle := muted
 		switch {
 		case i == slide:
-			label = "slides at " + shortTokens(c.slideAt)
-		case i == 0 && c.window > 0:
+			label, labelStyle = "slides at "+shortTokens(c.slideAt), t.LSP.WarningDiagnostic
+		case i == 0 && c.window > 0 && top == c.window:
 			label = shortTokens(c.window) + " window"
 		case i == 0:
 			label = shortTokens(top)
+		case i == floor:
+			label = "always sent " + shortTokens(always)
 		case i == rows-1:
 			label = "0"
 		}
-		drawn := t.Files.Path.Render(row)
+		drawn := style.Render(row)
 		if i == slide {
-			drawn = dashBlanks(row, t.Files.Path, t.LSP.WarningDiagnostic)
+			drawn = dashBlanks(row, style, t.LSP.WarningDiagnostic)
 		}
-		lines = append(lines, fitLeft(muted.Render(label), chartLabel)+drawn)
+		lines = append(lines, fitLeft(labelStyle.Render(label), chartLabel)+drawn)
 	}
 	marks, labels := m.axisRows(axis, roots, m.sessionFrames.slides())
 	return append(lines, fitLeft(muted.Render("▴ pop  ⟲ slide"), chartLabel)+marks, fitLeft(muted.Render("time"), chartLabel)+labels)
