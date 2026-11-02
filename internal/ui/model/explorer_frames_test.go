@@ -68,6 +68,8 @@ func rowIDsOf(rows []message.Message) []string {
 }
 
 func TestSessionFrames_KeepsTheRowsInOrder(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", flakySession(t)[:3])
 	f.observe("s1", textRow("a9", message.Assistant, 10, 4), time.Time{})
 	grown := textRow("u0", message.User, 1, 800)
@@ -83,6 +85,8 @@ func TestSessionFrames_KeepsTheRowsInOrder(t *testing.T) {
 }
 
 func TestFrameTree_EntriesKnowTheirCallsAndTimes(t *testing.T) {
+	t.Parallel()
+
 	roots, _ := deriveFrames("s1", flakySession(t)).tree()
 
 	n := roots[0]
@@ -99,6 +103,8 @@ func TestFrameTree_EntriesKnowTheirCallsAndTimes(t *testing.T) {
 }
 
 func TestFrameRows_AreWhatItsPopTookOrWouldTake(t *testing.T) {
+	t.Parallel()
+
 	rows := flakySession(t)
 	done := deriveFrames("s1", rows)
 	roots, _ := done.tree()
@@ -112,6 +118,8 @@ func TestFrameRows_AreWhatItsPopTookOrWouldTake(t *testing.T) {
 // A parent's pop marks its children's rows as its own; each frame still
 // holds what its own pop took out.
 func TestHeldRows_AreWhatItsOwnPopTookOrAPopNowWould(t *testing.T) {
+	t.Parallel()
+
 	rows := []message.Message{
 		callRow("a1", 1, memCall("c1")),
 		toolRow("t1", 2, memResult(t, "c1", push("p", "p"))),
@@ -145,6 +153,8 @@ func TestHeldRows_AreWhatItsOwnPopTookOrAPopNowWould(t *testing.T) {
 }
 
 func TestFrameWork_CountsItsToolCallsMostUsedFirst(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", flakySession(t))
 	roots, _ := f.tree()
 
@@ -152,6 +162,8 @@ func TestFrameWork_CountsItsToolCallsMostUsedFirst(t *testing.T) {
 }
 
 func TestFrameEdits_AreTheFilesItsCallsChanged(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", flakySession(t))
 	roots, _ := f.tree()
 
@@ -159,6 +171,8 @@ func TestFrameEdits_AreTheFilesItsCallsChanged(t *testing.T) {
 }
 
 func TestContextSeries_RisesWithEachRowAndDropsAtAPop(t *testing.T) {
+	t.Parallel()
+
 	rows := flakySession(t)
 	f := deriveFrames("s1", rows)
 
@@ -178,6 +192,8 @@ func TestContextSeries_RisesWithEachRowAndDropsAtAPop(t *testing.T) {
 }
 
 func TestContextSeries_ASlideTakesItsRowsOutAfterTheLastOfThem(t *testing.T) {
+	t.Parallel()
+
 	slid := func(id string, at int64) message.Message {
 		r := textRow(id, message.Assistant, at, 4000)
 		r.Popped = "slide:x:c1:c2"
@@ -197,6 +213,8 @@ func TestContextSeries_ASlideTakesItsRowsOutAfterTheLastOfThem(t *testing.T) {
 }
 
 func TestContextSeries_StartsAgainAtASummary(t *testing.T) {
+	t.Parallel()
+
 	summary := textRow("sum", message.Assistant, 3, 800)
 	summary.IsSummaryMessage = true
 	f := deriveFrames("s1", []message.Message{

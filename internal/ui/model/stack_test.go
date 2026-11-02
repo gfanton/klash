@@ -86,6 +86,8 @@ func stackColumn(t *styles.Styles, f sessionFrames, width, height int, look stac
 }
 
 func TestDeriveFrames_TheStackIsThePushesNotYetPopped(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", []message.Message{
 		toolRow("m1", 10, memResult(t, "c1", push("release", "release v2"))),
 		toolRow("m2", 20, memResult(t, "c2", push("release/bump", "bump the version"))),
@@ -99,6 +101,8 @@ func TestDeriveFrames_TheStackIsThePushesNotYetPopped(t *testing.T) {
 }
 
 func TestDeriveFrames_APopTakesItsOwnFrameOff(t *testing.T) {
+	t.Parallel()
+
 	// A pop names its frame: it takes that one off even when it is not
 	// on top, as the agent's own stack does.
 	f := deriveFrames("s1", []message.Message{
@@ -109,6 +113,8 @@ func TestDeriveFrames_APopTakesItsOwnFrameOff(t *testing.T) {
 }
 
 func TestDeriveFrames_KeepsOnlyTheSessionsOwnSuccessfulMemCalls(t *testing.T) {
+	t.Parallel()
+
 	copied := push("theirs", "a frame of the session this one was branched from")
 	copied.Session = "s0"
 	failed := memResult(t, "c3", push("failed", "a call that failed"))
@@ -123,6 +129,8 @@ func TestDeriveFrames_KeepsOnlyTheSessionsOwnSuccessfulMemCalls(t *testing.T) {
 }
 
 func TestSessionFrames_ObserveIsIdempotent(t *testing.T) {
+	t.Parallel()
+
 	// A row is published again on every update: its push counts once.
 	var f sessionFrames
 	row := toolRow("m1", 10, memResult(t, "c1", push("a", "a")))
@@ -132,6 +140,8 @@ func TestSessionFrames_ObserveIsIdempotent(t *testing.T) {
 }
 
 func TestSessionFrames_ForgetDropsADeletedRowsFrames(t *testing.T) {
+	t.Parallel()
+
 	// /rewind deletes the rows after the point it goes back to.
 	f := deriveFrames("s1", []message.Message{
 		toolRow("m1", 10, memResult(t, "c1", push("a", "a"))),
@@ -143,6 +153,8 @@ func TestSessionFrames_ForgetDropsADeletedRowsFrames(t *testing.T) {
 }
 
 func TestFrameTree_FramesNestAsTheyWereEntered(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", []message.Message{
 		toolRow("m1", 10, memResult(t, "c1", push("a", "task a"), push("a/b", "step b"))),
 		toolRow("m2", 20, memResult(t, "c2", popWith("a/b", "b is done"), push("a/c", "step c"))),
@@ -163,6 +175,8 @@ func TestFrameTree_FramesNestAsTheyWereEntered(t *testing.T) {
 }
 
 func TestFrameTree_EnteringAFrameAgainIsANewFrame(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", []message.Message{
 		toolRow("m1", 10, memResult(t, "c1", push("a", "a"))),
 		toolRow("m2", 20, memResult(t, "c2", popWith("a", "first"), push("a", "a"))),
@@ -176,6 +190,8 @@ func TestFrameTree_EnteringAFrameAgainIsANewFrame(t *testing.T) {
 }
 
 func TestFrameTree_EachFrameKeepsWhatItsPopFreed(t *testing.T) {
+	t.Parallel()
+
 	inB := cutMsg("m2", "a/b", 400)
 	f := deriveFrames("s1", []message.Message{
 		callRow("e1", 10, memCall("c1")),
@@ -229,6 +245,8 @@ func releaseRows(t *testing.T) []message.Message {
 }
 
 func TestStackSection_ShowsFinishedFramesAndTheLastResult(t *testing.T) {
+	t.Parallel()
+
 	got := stripANSI(stackSection(minimalFileStyles(), releaseFrames(t), 30, stackLook{}))
 
 	lines := []string{
@@ -254,6 +272,8 @@ func TestStackSection_ShowsFinishedFramesAndTheLastResult(t *testing.T) {
 }
 
 func TestStackSection_AFinishedTaskFoldsItsSteps(t *testing.T) {
+	t.Parallel()
+
 	f := releaseFrames(t)
 	f.observe("s1", callRow("e7", 1_700_000_070, memCall("c7")), time.Time{})
 	f.observe("s1", toolRow("m7", 1_700_000_070, memResult(t, "c7", popWith("release-v2/ci-green", "CI passed"), popWith("release-v2", "released 2.0.0"))), time.Time{})
@@ -268,6 +288,8 @@ func TestStackSection_AFinishedTaskFoldsItsSteps(t *testing.T) {
 }
 
 func TestStackSection_MarksTheFrameAtWork(t *testing.T) {
+	t.Parallel()
+
 	got := strings.Split(stripANSI(stackSection(minimalFileStyles(), releaseFrames(t), 30, stackLook{})), "\n")
 
 	for _, line := range got[2:] {
@@ -280,6 +302,8 @@ func TestStackSection_MarksTheFrameAtWork(t *testing.T) {
 }
 
 func TestStackSection_CountsTheTodosAndSaysWhatComesNext(t *testing.T) {
+	t.Parallel()
+
 	todos := []session.Todo{
 		{Content: "bump the version", Status: session.TodoStatusCompleted},
 		{Content: "tag the release", Status: session.TodoStatusInProgress},
@@ -296,6 +320,8 @@ func TestStackSection_CountsTheTodosAndSaysWhatComesNext(t *testing.T) {
 }
 
 func TestStackSection_TheHeadingSaysWhatLeftTheContextInAll(t *testing.T) {
+	t.Parallel()
+
 	f := releaseFrames(t)
 	heading := func() string {
 		got := stripANSI(stackSection(minimalFileStyles(), f, 30, stackLook{}))
@@ -321,6 +347,8 @@ func attachedPrompt(id string, at int64) message.Message {
 }
 
 func TestSidebar_APopFreesWhatAPromptsAttachmentsHeld(t *testing.T) {
+	t.Parallel()
+
 	u, _ := sidebarUI(t, 60)
 	prompt := attachedPrompt("u1", 15)
 	prompt.Popped = "fix-test"
@@ -338,6 +366,8 @@ func TestSidebar_APopFreesWhatAPromptsAttachmentsHeld(t *testing.T) {
 // A frame entered twice is two entries, each with what its own pop took
 // out, in the sidebar as in the explorer.
 func TestStackSection_EachEntryFreesWhatItsOwnPopTookOut(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	u.sessionFrames = sessionFrames{}
 	observeRows(u,
@@ -368,6 +398,8 @@ func TestStackSection_EachEntryFreesWhatItsOwnPopTookOut(t *testing.T) {
 }
 
 func TestStackSection_KeepsTheLastThreeFinishedTasks(t *testing.T) {
+	t.Parallel()
+
 	var rows []message.Message
 	for i := range 5 {
 		id := fmt.Sprintf("task-%d", i+1)
@@ -385,6 +417,8 @@ func TestStackSection_KeepsTheLastThreeFinishedTasks(t *testing.T) {
 }
 
 func TestStackSection_ShowsWhatSlidOut(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", []message.Message{
 		toolRow("m1", 10, memResult(t, "c1", push("a", "a"))),
 		cutMsg("m2", "slide::c1:c9", 8000),
@@ -403,6 +437,8 @@ func TestStackSection_ShowsWhatSlidOut(t *testing.T) {
 }
 
 func TestStackSection_FitsTheSidebar(t *testing.T) {
+	t.Parallel()
+
 	long := strings.Repeat("a long result that keeps going ", 4)
 	f := deriveFrames("s1", []message.Message{
 		toolRow("m1", 10, memResult(t, "c1", push("a-very-long-todo-name-that-overflows", strings.Repeat("a long purpose ", 6)))),
@@ -419,6 +455,8 @@ func TestStackSection_FitsTheSidebar(t *testing.T) {
 }
 
 func TestStackSection_TheFrameAtWorkShowsHowLongItHasRun(t *testing.T) {
+	t.Parallel()
+
 	f := releaseFrames(t)
 	now := time.Unix(1_700_000_050+65, 0)
 
@@ -431,6 +469,8 @@ func TestStackSection_TheFrameAtWorkShowsHowLongItHasRun(t *testing.T) {
 }
 
 func TestStackSection_TheFrameAtWorkShimmers(t *testing.T) {
+	t.Parallel()
+
 	f := releaseFrames(t)
 	at := time.Unix(1_700_000_100, 0)
 	draw := func(busy bool, after time.Duration) string {
@@ -443,6 +483,8 @@ func TestStackSection_TheFrameAtWorkShimmers(t *testing.T) {
 }
 
 func TestStackSection_APopCountsUpWhatItFreed(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", []message.Message{
 		callRow("e1", 10, memCall("c1")),
 		toolRow("m1", 10, memResult(t, "c1", push("a", "a"), push("a/b", "b"))),
@@ -463,6 +505,8 @@ func TestStackSection_APopCountsUpWhatItFreed(t *testing.T) {
 }
 
 func TestStackSection_StandsStillWhenMotionIsReduced(t *testing.T) {
+	t.Parallel()
+
 	f := releaseFrames(t)
 	at := time.Unix(1_700_000_100, 0)
 	working := func(after time.Duration) string {
@@ -479,6 +523,8 @@ func TestStackSection_StandsStillWhenMotionIsReduced(t *testing.T) {
 }
 
 func TestReduceMotionIsATUIOption(t *testing.T) {
+	t.Parallel()
+
 	u := explorerUI(t, 200, 50)
 	require.False(t, u.stackLook().still)
 
@@ -494,6 +540,8 @@ func (stillWorkspace) Config() *config.Config {
 }
 
 func TestSessionFrames_AnimatesWhileTheAgentWorksInAFrame(t *testing.T) {
+	t.Parallel()
+
 	now := time.Unix(1_700_000_100, 0)
 	require.True(t, releaseFrames(t).animating(now, true))
 	require.False(t, releaseFrames(t).animating(now, false), "a loaded pop does not flash")
@@ -501,12 +549,16 @@ func TestSessionFrames_AnimatesWhileTheAgentWorksInAFrame(t *testing.T) {
 }
 
 func TestStackSection_IsHiddenForASessionWithoutFrames(t *testing.T) {
+	t.Parallel()
+
 	require.Empty(t, stackSection(minimalFileStyles(), sessionFrames{}, 30, stackLook{}))
 }
 
 // The sidebar follows the agent's frames as their rows arrive, and drops
 // the ones /rewind deletes.
 func TestSidebarShowsTheStackLive(t *testing.T) {
+	t.Parallel()
+
 	// The section's heading, not the word, which the test's temporary
 	// directory, shown as the working directory, also holds.
 	const heading = "Stack ─"
@@ -551,6 +603,8 @@ func flakyRows(t *testing.T) []message.Message {
 }
 
 func TestStackTrail_ShowsThePathToTheFrameAtWork(t *testing.T) {
+	t.Parallel()
+
 	got := stripANSI(stackTrail(minimalFileStyles(), deriveFrames("s1", flakyRows(t)), 80, stackLook{}))
 
 	require.Equal(t, 80, lipgloss.Width(got), "it fills its row")
@@ -560,6 +614,8 @@ func TestStackTrail_ShowsThePathToTheFrameAtWork(t *testing.T) {
 }
 
 func TestStackTrail_FoldsTheMiddleFramesWhenNarrow(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", flakyRows(t))
 	trail := func(width int) string {
 		t.Helper()
@@ -578,6 +634,8 @@ func TestStackTrail_FoldsTheMiddleFramesWhenNarrow(t *testing.T) {
 }
 
 func TestStackTrail_ShowsTheLastTaskOnceAllAreDone(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", releaseRows(t))
 	f.observe("s1", toolRow("m7", 1_700_000_070, memResult(t, "c7", popWith("release-v2/ci-green", "CI passed"), popWith("release-v2", "released 2.0.0"))), time.Time{})
 
@@ -588,12 +646,16 @@ func TestStackTrail_ShowsTheLastTaskOnceAllAreDone(t *testing.T) {
 }
 
 func TestStackTrail_TheFrameAtWorkShowsHowLongItHasRun(t *testing.T) {
+	t.Parallel()
+
 	now := time.Unix(1_700_000_040+65, 0)
 	got := stripANSI(stackTrail(minimalFileStyles(), deriveFrames("s1", flakyRows(t)), 80, stackLook{now: now, busy: true}))
 	require.Contains(t, got, "try-free-port  1m05s")
 }
 
 func TestStackTrail_TheFrameAtWorkShimmers(t *testing.T) {
+	t.Parallel()
+
 	f := deriveFrames("s1", flakyRows(t))
 	at := time.Unix(1_700_000_100, 0)
 	draw := func(busy bool, after time.Duration) string {
@@ -606,6 +668,8 @@ func TestStackTrail_TheFrameAtWorkShimmers(t *testing.T) {
 }
 
 func TestStackTrail_IsEmptyForASessionWithoutFrames(t *testing.T) {
+	t.Parallel()
+
 	require.Empty(t, stackTrail(minimalFileStyles(), sessionFrames{}, 80, stackLook{}))
 }
 
@@ -623,6 +687,8 @@ func longSessionFrames(t *testing.T) sessionFrames {
 }
 
 func TestStackColumn_DropsTheLeastNeededFirstToFitItsHeight(t *testing.T) {
+	t.Parallel()
+
 	f := longSessionFrames(t)
 	column := func(height int) string {
 		t.Helper()
@@ -697,6 +763,8 @@ func screenRows(scr uv.ScreenBuffer, area uv.Rectangle) []string {
 // Compact mode has no sidebar: the row under its header shows where the
 // agent is, and the chat keeps its rows.
 func TestCompactModeShowsTheStackUnderTheHeader(t *testing.T) {
+	t.Parallel()
+
 	u := compactUI(t)
 	draw := func() string {
 		t.Helper()
@@ -717,6 +785,8 @@ func TestCompactModeShowsTheStackUnderTheHeader(t *testing.T) {
 // Ctrl+d opens the session's details in compact mode: the Stack comes
 // first, and keeps the frame the agent is in within the panel's height.
 func TestCompactDetailsShowTheStackFirst(t *testing.T) {
+	t.Parallel()
+
 	u := compactUI(t)
 	details := func() string {
 		t.Helper()
@@ -748,6 +818,8 @@ func TestCompactDetailsShowTheStackFirst(t *testing.T) {
 // At 80 columns the sections beside the Stack are narrow enough to wrap
 // their titles; the panel still keeps its frame.
 func TestCompactDetailsKeepTheirFrameWhenNarrow(t *testing.T) {
+	t.Parallel()
+
 	u := compactUI(t)
 	u.width = 80
 	u.updateLayoutAndSize()
@@ -765,6 +837,8 @@ func TestCompactDetailsKeepTheirFrameWhenNarrow(t *testing.T) {
 }
 
 func TestCompactDetailsSayHowManyFilesTheyHide(t *testing.T) {
+	t.Parallel()
+
 	u := compactUI(t)
 	for i := range 12 {
 		path := fmt.Sprintf("internal/pkg%d/file.go", i)
