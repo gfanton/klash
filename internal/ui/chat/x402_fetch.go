@@ -2,7 +2,10 @@ package chat
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/ui/styles"
@@ -56,6 +59,9 @@ func (x *X402FetchToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 		return header
 	}
 
+	if opts.Status == ToolStatusError {
+		return joinToolParts(header, x402ErrorContent(sty, opts.Result, cappedWidth, opts.ExpandedContent))
+	}
 	if earlyState, ok := toolEarlyStateContent(sty, opts, cappedWidth); ok {
 		return joinToolParts(header, earlyState)
 	}
@@ -64,6 +70,41 @@ func (x *X402FetchToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 		return header
 	}
 
-	body := toolOutputCodeContent(sty, getFileExtensionForFormat(params.Format), opts.Result.Content, 0, cappedWidth, opts.ExpandedContent)
-	return joinToolParts(header, body)
+	// The tool writes the receipt, a blank line, then what was paid for.
+	receipt, content, _ := strings.Cut(opts.Result.Content, "\n\n")
+	bodyWidth := cappedWidth - toolBodyLeftPaddingTotal
+	paid := capLineWidths(sty.Tool.ContentLine.Width(bodyWidth).PaddingLeft(1).Render(receipt), bodyWidth)
+	paid = sty.Tool.Body.Render(x402Folded(sty, paid, bodyWidth, opts.ExpandedContent))
+	if content == "" {
+		return joinToolParts(header, paid)
+	}
+	body := toolOutputCodeContent(sty, getFileExtensionForFormat(params.Format), content, 0, cappedWidth, opts.ExpandedContent)
+	return joinToolParts(header, paid+"\n\n"+body)
+}
+
+// x402ErrorContent is the ERROR line every tool shows, wrapped where the
+// message does not fit it: a failed payment names the transaction to look up
+// near the end of its message.
+func x402ErrorContent(sty *styles.Styles, result *message.ToolResult, width int, expanded bool) string {
+	tag := sty.Tool.ErrorTag.Render("ERROR")
+	msgWidth := width - lipgloss.Width(tag) - 3
+	if result == nil || isUserRefusal(result.Content) ||
+		!strings.Contains(result.Content, "\n") && lipgloss.Width(result.Content) <= msgWidth {
+		return toolErrorContent(sty, result, width)
+	}
+	msg := capLineWidths(sty.Tool.ErrorMessage.Width(msgWidth).Render(result.Content), msgWidth)
+	return lipgloss.JoinHorizontal(lipgloss.Top, tag+" ", x402Folded(sty, msg, msgWidth, expanded))
+}
+
+// x402Folded keeps the first lines of a wrapped block until the item is
+// expanded: the seller writes the text of a receipt and of a refusal, at any
+// length.
+func x402Folded(sty *styles.Styles, block string, width int, expanded bool) string {
+	lines := strings.Split(block, "\n")
+	maxLines := collapsedMaxLines(len(lines))
+	if expanded || len(lines) <= maxLines {
+		return block
+	}
+	hint := sty.Tool.ContentTruncation.Width(width).Render(fmt.Sprintf(assistantMessageTruncateFormat, len(lines)-maxLines))
+	return strings.Join(append(lines[:maxLines], hint), "\n")
 }

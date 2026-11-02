@@ -315,7 +315,11 @@ func TestX402Fetch_PaysWhatTheUserApproved(t *testing.T) {
 	require.False(t, resp.IsError, resp.Content)
 	require.Contains(t, resp.Content, "Paid 0.25 GNOT (250000ugnot) to "+x402PayTo+" on dev, plus a 0.02 GNOT (20000ugnot) network fee.")
 	require.Contains(t, resp.Content, "Transaction A1B2C3, payer "+x402Buyer)
-	require.Contains(t, resp.Content, "sunny")
+	// The chat wraps the receipt and shows what was paid for below it, apart.
+	receipt, content, ok := strings.Cut(resp.Content, "\n\n")
+	require.True(t, ok, resp.Content)
+	require.NotContains(t, receipt, "sunny")
+	require.Contains(t, content, "sunny")
 	require.NotContains(t, resp.Content, "hunter2")
 	require.Len(t, seller.payments, 1)
 
@@ -457,8 +461,10 @@ func TestX402Fetch_AFreeResourceIsNotPaid(t *testing.T) {
 	resp := runX402Fetch(t, tool, X402FetchParams{URL: free.URL, Key: "buyer"})
 
 	require.False(t, resp.IsError, resp.Content)
-	require.Contains(t, resp.Content, "nothing was paid")
-	require.Contains(t, resp.Content, "free weather: sunny")
+	notice, content, ok := strings.Cut(resp.Content, "\n\n")
+	require.True(t, ok, resp.Content)
+	require.Contains(t, notice, "nothing was paid")
+	require.Equal(t, "free weather: sunny", content)
 	require.Len(t, gnokey.runs(t), 1)
 }
 
