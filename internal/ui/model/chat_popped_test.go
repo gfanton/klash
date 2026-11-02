@@ -1,6 +1,7 @@
 package model
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -50,12 +51,7 @@ func chatRows(t *testing.T, u *UI) (rows []string, faint []bool) {
 
 // rowWith is the index of the first row holding text, or -1.
 func rowWith(rows []string, text string) int {
-	for i, r := range rows {
-		if strings.Contains(r, text) {
-			return i
-		}
-	}
-	return -1
+	return slices.IndexFunc(rows, func(r string) bool { return strings.Contains(r, text) })
 }
 
 func TestChatDimsTheRowsAPopTookOutOfTheModelsContext(t *testing.T) {
