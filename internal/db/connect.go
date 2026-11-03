@@ -57,7 +57,8 @@ type connEntry struct {
 	// watchFile owns lock, file and warned, and may replace lock, until
 	// stopWatch returns.
 	lock *dataDirLock
-	// path is the database file; file is the one the pool has open there.
+	// path is the database file and file the one the pool has open there;
+	// they and stopWatch are set only WithRestore.
 	path      string
 	file      os.FileInfo
 	warned    bool
@@ -80,6 +81,7 @@ type ConnectOption func(*connectOptions)
 // connectOptions holds the resolved configuration for a Connect call.
 type connectOptions struct {
 	lockDataDir bool
+	restore     bool
 }
 
 // WithDataDirLock toggles acquisition of the per-data-directory lock
@@ -89,6 +91,14 @@ type connectOptions struct {
 // bypasses acquisition even when this option is set.
 func WithDataDirLock(enable bool) ConnectOption {
 	return func(o *connectOptions) { o.lockDataDir = enable }
+}
+
+// WithRestore toggles the check that writes the database back to its path
+// when its file is removed while open, as by a model deleting .gnosh/. It
+// is off by default; gnosh opts in for the data directory it works in. As
+// with the lock, the Connect that opens the database decides.
+func WithRestore(enable bool) ConnectOption {
+	return func(o *connectOptions) { o.restore = enable }
 }
 
 // Connect opens a SQLite database connection for the given data
@@ -183,20 +193,22 @@ func Connect(ctx context.Context, dataDir string, opts ...ConnectOption) (*sql.D
 		return nil, fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	info, err := os.Stat(dbPath)
-	if err != nil {
-		conn.Close()
-		releaseLock()
-		return nil, fmt.Errorf("failed to stat database: %w", err)
-	}
-
-	entry := &connEntry{db: conn, refCount: 1, lock: lock, path: dbPath, file: info}
-	watchCtx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go entry.watchFile(watchCtx, dbFileCheckInterval, done)
-	entry.stopWatch = func() {
-		cancel()
-		<-done
+	entry := &connEntry{db: conn, refCount: 1, lock: lock}
+	if cfg.restore {
+		info, err := os.Stat(dbPath)
+		if err != nil {
+			conn.Close()
+			releaseLock()
+			return nil, fmt.Errorf("failed to stat database: %w", err)
+		}
+		entry.path, entry.file = dbPath, info
+		watchCtx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go entry.watchFile(watchCtx, dbFileCheckInterval, done)
+		entry.stopWatch = func() {
+			cancel()
+			<-done
+		}
 	}
 	pool[absPath] = entry
 	return conn, nil
@@ -315,7 +327,9 @@ func Release(dataDir string) error {
 	}
 
 	delete(pool, absPath)
-	entry.stopWatch()
+	if entry.stopWatch != nil {
+		entry.stopWatch()
+	}
 	closeErr := entry.db.Close()
 	if entry.lock != nil {
 		entry.lock.release()
@@ -329,7 +343,9 @@ func ResetPool() {
 	poolMu.Lock()
 	defer poolMu.Unlock()
 	for path, entry := range pool {
-		entry.stopWatch()
+		if entry.stopWatch != nil {
+			entry.stopWatch()
+		}
 		entry.db.Close()
 		if entry.lock != nil {
 			entry.lock.release()

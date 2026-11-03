@@ -608,7 +608,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 		slog.Warn("Failed to register project", "error", err)
 	}
 
-	conn, err := db.Connect(ctx, cfg.Options.DataDirectory)
+	conn, err := db.Connect(ctx, cfg.Options.DataDirectory, db.WithRestore(true))
 	if err != nil {
 		return nil, nil, err
 	}

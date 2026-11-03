@@ -220,7 +220,7 @@ func TestConnect_RestoresRemovedDataDir(t *testing.T) {
 	t.Cleanup(ResetPool)
 
 	dataDir := filepath.Join(t.TempDir(), ".gnosh")
-	conn, err := Connect(t.Context(), dataDir)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true))
 	require.NoError(t, err)
 	q := New(conn)
 	createSession := func(id string) {
@@ -253,7 +253,7 @@ func TestConnect_LocksRestoredDataDir(t *testing.T) {
 	t.Cleanup(ResetPool)
 
 	dataDir := filepath.Join(t.TempDir(), ".gnosh")
-	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true))
+	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true))
 	require.NoError(t, err)
 	require.NoError(t, os.RemoveAll(dataDir))
 
@@ -275,7 +275,7 @@ func TestConnect_LeavesAnotherFileAtTheDatabasePath(t *testing.T) {
 	t.Cleanup(ResetPool)
 
 	dataDir := t.TempDir()
-	conn, err := Connect(t.Context(), dataDir)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true))
 	require.NoError(t, err)
 	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "ours", Title: "ours"})
 	require.NoError(t, err)
@@ -303,13 +303,24 @@ func TestConnect_StopsCheckingWhenDropped(t *testing.T) {
 			t.Cleanup(ResetPool)
 
 			dataDir := t.TempDir()
-			_, err := Connect(t.Context(), dataDir)
+			_, err := Connect(t.Context(), dataDir, WithRestore(true))
 			require.NoError(t, err)
 
 			drop(t, dataDir)
 			goleak.VerifyNone(t, ignore)
 		})
 	}
+}
+
+// Without WithRestore, Connect starts no check of the database file, so a
+// test that never calls Release leaves none running.
+func TestConnect_ChecksNoFileWithoutRestore(t *testing.T) {
+	ignore := goleak.IgnoreCurrent()
+	t.Cleanup(ResetPool)
+
+	_, err := Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	goleak.VerifyNone(t, ignore, goleak.IgnoreTopFunction("database/sql.(*DB).connectionOpener"))
 }
 
 func shortenDBFileCheck(t *testing.T) {
