@@ -245,6 +245,11 @@ func TestConnect_RestoresRemovedDataDir(t *testing.T) {
 	ids, err := sessionIDsIn(t.Context(), dbPath)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"before-removal", "after-removal", "after-restore"}, ids)
+
+	// Without it, git add -A picks up the restored database.
+	gitIgnore, err := os.ReadFile(filepath.Join(dataDir, ".gitignore"))
+	require.NoError(t, err)
+	require.Equal(t, "*\n", string(gitIgnore))
 }
 
 // A restored data directory is locked again when it was locked before.
@@ -376,4 +381,30 @@ func TestDataFileNames(t *testing.T) {
 	require.Equal(t, filepath.Join(old, "crush.db"), FileName(old))
 	require.Equal(t, filepath.Join(old, "crush.lock"), dataDirLockFile(old))
 	require.NoError(t, Release(old))
+}
+
+// A data directory's .gitignore keeps git off everything in it; one
+// already there is left as it is.
+func TestWriteGitIgnore(t *testing.T) {
+	cases := map[string]struct {
+		existing string
+		want     string
+	}{
+		"none yet":      {want: "*\n"},
+		"already there": {existing: "gnosh.db\n", want: "gnosh.db\n"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			path := filepath.Join(dataDir, ".gitignore")
+			if tc.existing != "" {
+				require.NoError(t, os.WriteFile(path, []byte(tc.existing), 0o644))
+			}
+
+			require.NoError(t, WriteGitIgnore(dataDir))
+			got, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, string(got))
+		})
+	}
 }

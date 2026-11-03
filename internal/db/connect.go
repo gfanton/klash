@@ -276,8 +276,13 @@ func (e *connEntry) restoreFile(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	if err := os.Mkdir(filepath.Dir(e.path), 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+	dataDir := filepath.Dir(e.path)
+	if err := os.Mkdir(dataDir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return err
+	}
+	// A .gitignore that cannot be written does not stop the restore.
+	if err := WriteGitIgnore(dataDir); err != nil {
+		slog.Warn("Failed to restore the data directory's .gitignore", "error", err)
 	}
 	// Not ctx: a Release meanwhile waits for the copy to finish instead of
 	// leaving part of it at the path.
@@ -395,4 +400,17 @@ func FileName(dataDir string) string {
 		}
 	}
 	return filepath.Join(dataDir, "gnosh.db")
+}
+
+// WriteGitIgnore writes the .gitignore that keeps git off everything in
+// dataDir, unless one is already there.
+func WriteGitIgnore(dataDir string) error {
+	path := filepath.Join(dataDir, ".gitignore")
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err := os.WriteFile(path, []byte("*\n"), 0o644); err != nil {
+		return fmt.Errorf("failed to create .gitignore file: %q %w", path, err)
+	}
+	return nil
 }
