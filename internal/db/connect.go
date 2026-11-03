@@ -3,14 +3,19 @@ package db
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"embed"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
+	crushlog "github.com/charmbracelet/crush/internal/log"
 	"github.com/pressly/goose/v3"
 )
 
@@ -49,13 +54,24 @@ func init() {
 type connEntry struct {
 	db       *sql.DB
 	refCount int
-	lock     *dataDirLock
+	// watchFile owns lock, file and warned, and may replace lock, until
+	// stopWatch returns.
+	lock *dataDirLock
+	// path is the database file; file is the one the pool has open there.
+	path      string
+	file      os.FileInfo
+	warned    bool
+	stopWatch func()
 }
 
 var (
 	pool   = make(map[string]*connEntry)
 	poolMu sync.Mutex
 )
+
+// dbFileCheckInterval is how often a pooled database checks that its file
+// is still at its path.
+var dbFileCheckInterval = 2 * time.Second
 
 // ConnectOption configures a Connect call. Options are applied in
 // order; later options override earlier ones for the same field.
@@ -167,8 +183,112 @@ func Connect(ctx context.Context, dataDir string, opts ...ConnectOption) (*sql.D
 		return nil, fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	pool[absPath] = &connEntry{db: conn, refCount: 1, lock: lock}
+	info, err := os.Stat(dbPath)
+	if err != nil {
+		conn.Close()
+		releaseLock()
+		return nil, fmt.Errorf("failed to stat database: %w", err)
+	}
+
+	entry := &connEntry{db: conn, refCount: 1, lock: lock, path: dbPath, file: info}
+	watchCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go entry.watchFile(watchCtx, dbFileCheckInterval, done)
+	entry.stopWatch = func() {
+		cancel()
+		<-done
+	}
+	pool[absPath] = entry
 	return conn, nil
+}
+
+// watchFile checks the database file every interval until ctx ends.
+func (e *connEntry) watchFile(ctx context.Context, interval time.Duration, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			e.checkFile(ctx)
+		}
+	}
+}
+
+// checkFile restores the database when its file is gone, and leaves a
+// different file at its path as it is.
+func (e *connEntry) checkFile(ctx context.Context) {
+	info, err := os.Stat(e.path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		e.restore(ctx)
+	case err != nil:
+		e.warnOnce("Failed to check the database file", "path", e.path, "error", err)
+	case !os.SameFile(info, e.file):
+		e.warnOnce("Another file is at the database path; leaving it, the open database is no longer on disk", "path", e.path)
+	}
+}
+
+// restore writes the open database back to its path, then moves the pool,
+// the data-directory lock and the log file onto the restored directory.
+func (e *connEntry) restore(ctx context.Context) {
+	if err := e.restoreFile(ctx); err != nil {
+		e.warnOnce("Failed to restore the removed database", "path", e.path, "error", err)
+		return
+	}
+	e.warned = false
+
+	if err := crushlog.ReopenIfRemoved(); err != nil {
+		slog.Warn("Failed to reopen the removed log file", "error", err)
+	}
+	if e.lock != nil {
+		lock, err := acquireDataDirLock(filepath.Dir(e.path))
+		if err != nil {
+			slog.Warn("Failed to lock the restored data directory", "path", e.path, "error", err)
+		} else {
+			e.lock.release()
+			e.lock = lock
+		}
+	}
+	slog.Warn("Data directory was removed while in use; restored the database", "path", e.path)
+}
+
+func (e *connEntry) restoreFile(ctx context.Context) error {
+	// The pool's one connection: while it is held, no write can land in the
+	// removed file after the copy.
+	conn, err := e.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := os.Mkdir(filepath.Dir(e.path), 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	// Not ctx: a Release meanwhile waits for the copy to finish instead of
+	// leaving part of it at the path.
+	if _, err := conn.ExecContext(context.WithoutCancel(ctx), "VACUUM INTO ?", e.path); err != nil {
+		return err
+	}
+	info, err := os.Stat(e.path)
+	if err != nil {
+		return err
+	}
+	e.file = info
+	// database/sql closes a connection that reports ErrBadConn instead of
+	// pooling it, so the next query opens the restored file.
+	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	return nil
+}
+
+func (e *connEntry) warnOnce(msg string, args ...any) {
+	if e.warned {
+		return
+	}
+	e.warned = true
+	slog.Warn(msg, args...)
 }
 
 // Release decrements the reference count for the database at the given
@@ -195,6 +315,7 @@ func Release(dataDir string) error {
 	}
 
 	delete(pool, absPath)
+	entry.stopWatch()
 	closeErr := entry.db.Close()
 	if entry.lock != nil {
 		entry.lock.release()
@@ -208,6 +329,7 @@ func ResetPool() {
 	poolMu.Lock()
 	defer poolMu.Unlock()
 	for path, entry := range pool {
+		entry.stopWatch()
 		entry.db.Close()
 		if entry.lock != nil {
 			entry.lock.release()

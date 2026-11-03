@@ -1,8 +1,10 @@
 package log
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"runtime/debug"
@@ -18,6 +20,8 @@ import (
 var (
 	initOnce    sync.Once
 	initialized atomic.Bool
+	// fileLogger writes the log file Setup was given.
+	fileLogger atomic.Pointer[lumberjack.Logger]
 )
 
 func Setup(logFile string, debug bool, ws ...io.Writer) {
@@ -29,6 +33,7 @@ func Setup(logFile string, debug bool, ws ...io.Writer) {
 			MaxAge:     30,    // Days
 			Compress:   false, // Enable compression
 		}
+		fileLogger.Store(logRotator)
 
 		level := slog.LevelInfo
 		if debug {
@@ -63,6 +68,22 @@ func Setup(logFile string, debug bool, ws ...io.Writer) {
 
 func Initialized() bool {
 	return initialized.Load()
+}
+
+// ReopenIfRemoved opens a new log file at Setup's path when the one being
+// written was removed, since logging would otherwise go on into the
+// removed file. It does nothing before Setup.
+func ReopenIfRemoved() error {
+	l := fileLogger.Load()
+	if l == nil {
+		return nil
+	}
+	if _, err := os.Stat(l.Filename); !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	// Rotate moves aside only a file still at the path, so here it just
+	// opens a new one.
+	return l.Rotate()
 }
 
 func RecoverPanic(name string, cleanup func()) {

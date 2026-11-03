@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/crush/internal/lock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestConnect_SharesConnectionForSameDataDir(t *testing.T) {
@@ -208,6 +210,132 @@ func TestConnect_ServerPathFailsWhenDataDirLocked(t *testing.T) {
 	_, err = Connect(context.Background(), dataDir, WithDataDirLock(true))
 	require.Error(t, err, "server-path Connect must refuse to open a locked data dir")
 	require.ErrorIs(t, err, ErrDataDirLocked)
+}
+
+// A data directory removed while gnosh runs (a project generator that
+// wants an empty folder) is written back from the open database, and
+// what is written after goes to the restored file.
+func TestConnect_RestoresRemovedDataDir(t *testing.T) {
+	shortenDBFileCheck(t)
+	t.Cleanup(ResetPool)
+
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	conn, err := Connect(t.Context(), dataDir)
+	require.NoError(t, err)
+	q := New(conn)
+	createSession := func(id string) {
+		t.Helper()
+		_, err := q.CreateSession(t.Context(), CreateSessionParams{ID: id, Title: id})
+		require.NoError(t, err)
+	}
+
+	createSession("before-removal")
+	require.NoError(t, os.RemoveAll(dataDir))
+	createSession("after-removal")
+
+	dbPath := filepath.Join(dataDir, "gnosh.db")
+	require.Eventually(t, func() bool {
+		ids, err := sessionIDsIn(t.Context(), dbPath)
+		return err == nil && len(ids) == 2
+	}, 5*time.Second, 10*time.Millisecond, "the removed database is not back at its path")
+
+	// Lands in the restored file only if the pool let go of its
+	// connection to the removed one.
+	createSession("after-restore")
+	ids, err := sessionIDsIn(t.Context(), dbPath)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"before-removal", "after-removal", "after-restore"}, ids)
+}
+
+// A restored data directory is locked again when it was locked before.
+func TestConnect_LocksRestoredDataDir(t *testing.T) {
+	shortenDBFileCheck(t)
+	t.Cleanup(ResetPool)
+
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true))
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dataDir))
+
+	// The owner info is written once the lock is held; trying the lock
+	// before then could take it from the restore.
+	lockPath := filepath.Join(dataDir, "gnosh.lock")
+	require.Eventually(t, func() bool {
+		return readOwnerInfo(lockPath).PID == os.Getpid()
+	}, 5*time.Second, 10*time.Millisecond, "the restored data directory is not locked")
+	_, err = lock.TryFile(lockPath)
+	require.ErrorIs(t, err, lock.ErrContended)
+}
+
+// Another file put at the database path while gnosh runs is never written
+// over. An empty one, since VACUUM INTO itself refuses a file with
+// anything in it.
+func TestConnect_LeavesAnotherFileAtTheDatabasePath(t *testing.T) {
+	shortenDBFileCheck(t)
+	t.Cleanup(ResetPool)
+
+	dataDir := t.TempDir()
+	conn, err := Connect(t.Context(), dataDir)
+	require.NoError(t, err)
+	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "ours", Title: "ours"})
+	require.NoError(t, err)
+
+	// Renamed over the database, so the path is never missing.
+	dbPath := filepath.Join(dataDir, "gnosh.db")
+	other := filepath.Join(dataDir, "other.db")
+	require.NoError(t, os.WriteFile(other, nil, 0o600))
+	require.NoError(t, os.Rename(other, dbPath))
+
+	require.Never(t, func() bool {
+		info, err := os.Stat(dbPath)
+		return err != nil || info.Size() != 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "the other file at the database path was changed")
+}
+
+// Dropping an entry stops the check of its file with it.
+func TestConnect_StopsCheckingWhenDropped(t *testing.T) {
+	for name, drop := range map[string]func(t *testing.T, dataDir string){
+		"release":    func(t *testing.T, dataDir string) { require.NoError(t, Release(dataDir)) },
+		"reset pool": func(*testing.T, string) { ResetPool() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ignore := goleak.IgnoreCurrent()
+			t.Cleanup(ResetPool)
+
+			dataDir := t.TempDir()
+			_, err := Connect(t.Context(), dataDir)
+			require.NoError(t, err)
+
+			drop(t, dataDir)
+			goleak.VerifyNone(t, ignore)
+		})
+	}
+}
+
+func shortenDBFileCheck(t *testing.T) {
+	t.Helper()
+	old := dbFileCheckInterval
+	dbFileCheckInterval = 10 * time.Millisecond
+	t.Cleanup(func() { dbFileCheckInterval = old })
+}
+
+// sessionIDsIn reads the database file at dbPath on a connection of its
+// own, not the pool's.
+func sessionIDsIn(ctx context.Context, dbPath string) ([]string, error) {
+	conn, err := ConnectReadOnly(ctx, dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	sessions, err := New(conn).ListSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		ids = append(ids, s.ID)
+	}
+	return ids, nil
 }
 
 // A new data directory gets gnosh.db and gnosh.lock; one that already
