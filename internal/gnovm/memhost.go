@@ -938,16 +938,25 @@ func (h *Host) mem(project string) *memHost {
 	return m
 }
 
-// memDir is where a project's mem lives under dir: keyed by the project's
-// repository (memRoot), not by its working directory.
+// memDir is where a project's mem lives under dir, keyed by memRoot.
 func memDir(dir, project string) string {
-	return filepath.Join(dir, projectKey(memRoot(project)), "mem")
+	return keyedMemDir(dir, memRoot(dir, project))
 }
 
-// memRoot is what a project's mem is keyed by: its repository's git common
-// dir, so that a repository's worktrees and subdirectories share one mem;
-// outside git, the project's directory. Symlinks are resolved first.
-func memRoot(project string) string {
+// keyedMemDir is where the mem keyed by root lives under dir.
+func keyedMemDir(dir, root string) string {
+	return filepath.Join(dir, projectKey(root), "mem")
+}
+
+// memRoot is what a project's mem under data is keyed by. Outside git, it is
+// the project's directory. In a repository, it is the first to have a mem
+// of: the git common dir, which the repository's worktrees and
+// subdirectories share; the folder the common dir is the .git of; the
+// project's directory. With none, the common dir. So a project keeps its
+// mem when it becomes a repository (a scaffold's git init), and a worktree
+// made after shares its main checkout's. Symlinks are resolved first, and
+// nothing is cached, so every process finds the same mem.
+func memRoot(data, project string) string {
 	dir, err := filepath.EvalSymlinks(project)
 	if err != nil {
 		dir = filepath.Clean(project)
@@ -956,16 +965,31 @@ func memRoot(project string) string {
 		git := filepath.Join(d, ".git")
 		if fi, err := os.Stat(git); err == nil {
 			if fi.IsDir() {
-				return git
+				return keptRoot(data, git, dir)
 			}
 			if common := gitCommonDir(git); common != "" {
-				return common
+				return keptRoot(data, common, dir)
 			}
 		}
 		if filepath.Dir(d) == d {
 			return dir
 		}
 	}
+}
+
+// keptRoot is memRoot in a repository whose git common dir is common, for
+// the project's directory dir.
+func keptRoot(data, common, dir string) string {
+	roots := []string{common}
+	if filepath.Base(common) == ".git" {
+		roots = append(roots, filepath.Dir(common))
+	}
+	for _, root := range append(roots, dir) {
+		if _, err := os.Stat(keyedMemDir(data, root)); err == nil {
+			return root
+		}
+	}
+	return common
 }
 
 // gitCommonDir reads a worktree's .git file ("gitdir: <path>") and that git

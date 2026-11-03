@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -655,13 +656,86 @@ func TestMemRootIsTheRepository(t *testing.T) {
 
 	want, err := filepath.EvalSymlinks(filepath.Join(repo, ".git"))
 	require.NoError(t, err)
+	data := t.TempDir()
 	for _, p := range []string{repo, filepath.Join(repo, "pkg", "deep"), wt, filepath.Join(wt, "sub")} {
-		require.Equal(t, want, memRoot(p), p)
+		require.Equal(t, want, memRoot(data, p), p)
 	}
 	outside := t.TempDir()
 	got, err := filepath.EvalSymlinks(outside)
 	require.NoError(t, err)
-	require.Equal(t, got, memRoot(outside), "outside git, the directory itself")
+	require.Equal(t, got, memRoot(data, outside), "outside git, the directory itself")
+}
+
+// A scaffold that runs git init in the middle of a session (create-next-app
+// does) leaves the session's plan and the frame it stands in where they
+// were: the project keeps its mem when it becomes a repository.
+func TestMemStaysWhenTheProjectBecomesARepository(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	h := newTestHost(t, t.TempDir())
+	project := t.TempDir()
+	ok := func(stack []string, code string) string {
+		t.Helper()
+		res, err := h.Run(context.Background(), RunRequest{Project: project, Session: "s1", Name: MemVM, Code: code, Frames: stack})
+		require.NoError(t, err, code)
+		require.NoError(t, res.Err, res.Output)
+		return res.Output
+	}
+	ok(nil, `mem.Todo("build the todo app").Push()`)
+	stack := []string{"build-todo-app"}
+	ok(stack, `mem.Todo("scaffold it with create-next-app")`)
+	before := ok(stack, `mem.Show()`)
+	require.Contains(t, before, "`build-todo-app/scaffold-create-next-app` \"scaffold it with create-next-app\"")
+	require.Contains(t, before, "held by this session", "the frame the session stands in")
+
+	gitInit := exec.CommandContext(t.Context(), "git", "init", "-q")
+	gitInit.Dir = project
+	require.NoError(t, gitInit.Run())
+
+	require.Equal(t, before, ok(stack, `mem.Show()`))
+}
+
+// A worktree made once the project is a repository shares the mem its main
+// checkout had from before.
+func TestMemRootOfALaterWorktree(t *testing.T) {
+	t.Parallel()
+	data := t.TempDir()
+	repo, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	store := memDir(data, repo)
+	require.NoError(t, os.MkdirAll(store, 0o700))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, ".git", "worktrees", "wt"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, ".git", "worktrees", "wt", "commondir"), []byte("../..\n"), 0o644))
+	wt := filepath.Join(t.TempDir(), "wt")
+	require.NoError(t, os.MkdirAll(wt, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.Join(repo, ".git", "worktrees", "wt")+"\n"), 0o644))
+
+	require.Equal(t, store, memDir(data, repo))
+	require.Equal(t, store, memDir(data, wt))
+}
+
+// A repository with a mem of its own keeps it, though its folder and a
+// subdirectory had theirs from before it was a repository.
+func TestMemRootKeepsTheRepositorysOwnStore(t *testing.T) {
+	t.Parallel()
+	data := t.TempDir()
+	repo, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	sub := filepath.Join(repo, "sub")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+	for _, p := range []string{repo, sub} {
+		require.NoError(t, os.MkdirAll(memDir(data, p), 0o700))
+	}
+	require.NoError(t, os.Mkdir(filepath.Join(repo, ".git"), 0o755))
+	store := filepath.Join(data, projectKey(filepath.Join(repo, ".git")), "mem")
+	require.NoError(t, os.MkdirAll(store, 0o700))
+
+	for _, p := range []string{repo, sub} {
+		require.Equal(t, store, memDir(data, p), p)
+	}
 }
 
 // The <mem> block a new session is given, from status.json: the user's
