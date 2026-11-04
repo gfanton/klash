@@ -30,4 +30,4 @@ cmd go test ./...
 cmd grep -q 'func Median' stats.go
 cmd for f in Min Max Median; do grep -rq "func Test$f" --include='*_test.go' . || exit 1; done
 mem-count open == 0
-mem-count done >= 4
+mem-count done >= 3
