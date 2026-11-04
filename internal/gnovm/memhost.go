@@ -951,11 +951,11 @@ func keyedMemDir(dir, root string) string {
 // memRoot is what a project's mem under data is keyed by. Outside git, it is
 // the project's directory. In a repository, it is the first to have a mem
 // of: the git common dir, which the repository's worktrees and
-// subdirectories share; the folder the common dir is the .git of; the
-// project's directory. With none, the common dir. So a project keeps its
-// mem when it becomes a repository (a scaffold's git init), and a worktree
-// made after shares its main checkout's. Symlinks are resolved first, and
-// nothing is cached, so every process finds the same mem.
+// subdirectories share; the folder the common dir is the .git of. With
+// neither, the common dir. So a folder keeps its mem when it becomes a
+// repository (a scaffold's git init), and a worktree made after shares its
+// main checkout's. Symlinks are resolved first, and nothing is cached, so
+// every process finds the same mem.
 func memRoot(data, project string) string {
 	dir, err := filepath.EvalSymlinks(project)
 	if err != nil {
@@ -965,10 +965,10 @@ func memRoot(data, project string) string {
 		git := filepath.Join(d, ".git")
 		if fi, err := os.Stat(git); err == nil {
 			if fi.IsDir() {
-				return keptRoot(data, git, dir)
+				return keptRoot(data, git)
 			}
 			if common := gitCommonDir(git); common != "" {
-				return keptRoot(data, common, dir)
+				return keptRoot(data, common)
 			}
 		}
 		if filepath.Dir(d) == d {
@@ -977,14 +977,13 @@ func memRoot(data, project string) string {
 	}
 }
 
-// keptRoot is memRoot in a repository whose git common dir is common, for
-// the project's directory dir.
-func keptRoot(data, common, dir string) string {
+// keptRoot is memRoot in a repository whose git common dir is common.
+func keptRoot(data, common string) string {
 	roots := []string{common}
 	if filepath.Base(common) == ".git" {
 		roots = append(roots, filepath.Dir(common))
 	}
-	for _, root := range append(roots, dir) {
+	for _, root := range roots {
 		if _, err := os.Stat(keyedMemDir(data, root)); err == nil {
 			return root
 		}

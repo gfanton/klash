@@ -738,6 +738,38 @@ func TestMemRootKeepsTheRepositorysOwnStore(t *testing.T) {
 	}
 }
 
+// Every folder of a repository shares one mem, whichever folder starts the
+// first session, so peers in one repository meet in it. A subdirectory's
+// own mem from before the repository is left behind.
+func TestMemRootIsOnePerRepository(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		before []string // folders, relative to the repository, with a mem from before git init
+		want   string   // the folder, relative to the repository, every folder's mem is keyed by
+	}{
+		"the folder's":                      {before: []string{".", "sub"}, want: "."},
+		"the repository's, over a subdir's": {before: []string{"sub"}, want: ".git"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			data := t.TempDir()
+			repo, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			sub := filepath.Join(repo, "sub")
+			require.NoError(t, os.MkdirAll(sub, 0o755))
+			for _, p := range tc.before {
+				require.NoError(t, os.MkdirAll(memDir(data, filepath.Join(repo, p)), 0o700))
+			}
+			require.NoError(t, os.Mkdir(filepath.Join(repo, ".git"), 0o755))
+
+			want := keyedMemDir(data, filepath.Join(repo, tc.want))
+			for _, p := range []string{sub, repo} {
+				require.Equal(t, want, memDir(data, p), p)
+			}
+		})
+	}
+}
+
 // The <mem> block a new session is given, from status.json: the user's
 // rules in full, first; then what is due on the session's day, though
 // status.json was written days before; what waits on the user; the open
