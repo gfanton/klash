@@ -78,10 +78,22 @@ type stackFrame struct {
 // poppedRange is a pop: everything between the round of pushCallID and
 // the round of popCallID is removed from the model's context. pushCallID
 // is "" when the push was not found among the rows.
+//
+// A pop (spare) never cuts the user rows of the turn it was made in: the
+// prompt the model is answering, the prompts folded into the turn and its
+// hidden continuations, as a slide never cuts the prompt. Cut, a model
+// left with an earlier turn's "do only (1) now" re-planned finished work,
+// or never answered the question asked (QA, 2026-11-04). What the user said in
+// earlier turns, while the model stood in the frame, is cut as before: it
+// was to be kept as a thought. spareLast is how many they are: the last
+// user rows of the range (turnRows), each one user message in the model's
+// list, so a list cuts the same as the rows are marked.
 type poppedRange struct {
 	frame      string
 	pushCallID string
 	popCallID  string
+	spare      bool
+	spareLast  int
 }
 
 func newFrameStacks(sessions session.Service, messages message.Service, files filetracker.Service, workingDir string) *frameStacks {
@@ -120,6 +132,11 @@ func (f *frameStacks) record(ctx context.Context, sessionID string) *sessionFram
 					rec.apply(ev, result.ToolCallID, tokens)
 				}
 			}
+		}
+	}
+	for i, r := range rec.pops {
+		if r.spare {
+			_, rec.pops[i].spareLast = turnRows(msgs, poppedRows(msgs, r.pushCallID, r.popCallID), r.popCallID)
 		}
 	}
 	f.records[sessionID] = rec
@@ -170,7 +187,7 @@ func (rec *sessionFrames) apply(ev gnovm.MemFrame, callID string, tokens int64) 
 			}
 			popped := rec.stack[i]
 			rec.stack = slices.Delete(rec.stack, i, i+1)
-			rec.pops = append(rec.pops, poppedRange{frame: ev.Id, pushCallID: popped.callID, popCallID: callID})
+			rec.pops = append(rec.pops, poppedRange{frame: ev.Id, pushCallID: popped.callID, popCallID: callID, spare: true})
 			// A slide's mark on the frame goes with it: pushed again under
 			// the same id, it is a new frame, with nothing cut from it.
 			rec.slid = slices.DeleteFunc(rec.slid, func(id string) bool { return id == ev.Id })
@@ -215,13 +232,16 @@ func (f *frameStacks) stack(ctx context.Context, sessionID string) []string {
 	return ids
 }
 
-// fresh is the frame on top of the session's stack when the model's round
-// that entered it was its last before the round making callID: nothing,
-// not even a prompt, came between them (poppedRows finds no row). mem
-// refuses to pop such a frame (RunRequest.Fresh), for the model never did
-// its todo: a long session copies the row of instant pops its cut context
-// shows. "" for any other frame, for one entered by this round itself, and
-// when the rows cannot be read.
+// fresh is the frame on top of the session's stack when no work came
+// between the model's round that entered it and the round making callID:
+// no call to a tool other than mem, and no call to mem that changed it
+// (workIn). mem refuses to pop such a frame (RunRequest.Fresh), for the
+// model never did its todo: a long session copies the row of instant pops
+// its cut context shows. A prompt, a read of mem, a Next, and a pop or
+// close mem refused are no work: each let a pop with a made-up result
+// through on its second try (QA, 2026-11-04). The rounds of the frame's
+// own todos, popped already, count. "" for any other frame, for one
+// entered by this round itself, and when the rows cannot be read.
 func (f *frameStacks) fresh(ctx context.Context, sessionID, callID string) string {
 	if f == nil || sessionID == "" || callID == "" {
 		return ""
@@ -247,10 +267,24 @@ func (f *frameStacks) fresh(ctx context.Context, sessionID, callID string) strin
 		return slices.IndexFunc(msgs, func(m message.Message) bool { return m.Role == message.Assistant && hasToolCall(m, id) })
 	}
 	push, now := round(top.callID), round(callID)
-	if push < 0 || now <= push || len(poppedRows(msgs, top.callID, callID)) > 0 {
+	if push < 0 || now <= push || workIn(poppedRows(msgs, top.callID, callID)) {
 		return ""
 	}
 	return top.id
+}
+
+// workIn reports whether rows hold work: a call to a tool other than mem,
+// or a call to mem that changed it (memChanges), which a refused one did
+// not.
+func workIn(rows []message.Message) bool {
+	for _, row := range rows {
+		for _, call := range row.ToolCalls() {
+			if !isMemCall(call) {
+				return true
+			}
+		}
+	}
+	return len(memChanges(rows)) > 0
 }
 
 // top is a copy of the frame on top of the session's stack, and false
@@ -356,7 +390,12 @@ func (f *frameStacks) pop(ctx context.Context, sessionID string, rec *sessionFra
 		slog.Warn("Could not read the session's rows for a pop", "session_id", sessionID, "error", err)
 		return ""
 	}
-	rows := poppedRows(msgs, pushCallID, popCallID)
+	rows, spared := turnRows(msgs, poppedRows(msgs, pushCallID, popCallID), popCallID)
+	for i, r := range rec.pops {
+		if r.spare && r.popCallID == popCallID && r.frame == ev.Id {
+			rec.pops[i].spareLast = spared
+		}
+	}
 	if len(rows) == 0 {
 		return "nothing came between, so nothing was removed from your context."
 	}
@@ -368,7 +407,7 @@ func (f *frameStacks) pop(ctx context.Context, sessionID string, rec *sessionFra
 			Message:   fmt.Sprintf("popped `%s`: about %s tokens out of the model's context", ev.Id, roughCount(removed)),
 		})
 	}
-	return popClauses(ev, rows, calls, f.workingDir, len(reads) > 0)
+	return popClauses(ev, rows, calls, f.workingDir, len(reads) > 0, spared > 0)
 }
 
 // remove takes rows out of the model's context, for a pop or a slide: the
@@ -673,6 +712,63 @@ func poppedRows(msgs []message.Message, pushCallID, popCallID string) []message.
 	return rows
 }
 
+// turnStart is the index in msgs of the first row of the turn in which
+// the pop popCallID was made: the user rows from there on are the turn's
+// (turnRows). A turn begins with a prompt the user typed after the model's
+// answer (an assistant row with no tool call), after a summary, or at the
+// start, together with the user rows between that answer and the prompt; a
+// prompt gnosh folded into the turn, and its hidden continuations (a goal's
+// verdict, a Stop hook's, a loop's nudge), belong to the turn they continue.
+// 0 when no such prompt comes before the pop, -1 when the pop is not among
+// msgs.
+func turnStart(msgs []message.Message, popCallID string) int {
+	end := slices.IndexFunc(msgs, func(m message.Message) bool { return m.Role == message.Assistant && hasToolCall(m, popCallID) })
+	if end < 0 {
+		return -1
+	}
+	return turnStartAt(msgs, end)
+}
+
+// turnStartAt is turnStart for the turn the row at end is in, end being
+// len(msgs) for the last turn.
+func turnStartAt(msgs []message.Message, end int) int {
+	for i := end - 1; i >= 0; i-- {
+		if msgs[i].Role != message.User || msgs[i].Content().Hidden {
+			continue
+		}
+		j := i - 1
+		for j >= 0 && msgs[j].Role == message.User {
+			j--
+		}
+		if j < 0 || msgs[j].IsSummaryMessage || msgs[j].Role == message.Assistant && len(msgs[j].ToolCalls()) == 0 {
+			return j + 1
+		}
+	}
+	return 0
+}
+
+// turnRows is between, the rows a pop of popCallID removes, without the
+// user rows of the turn the pop was made in (turnStart), and how many
+// those were.
+func turnRows(msgs, between []message.Message, popCallID string) (rows []message.Message, spared int) {
+	start := turnStart(msgs, popCallID)
+	if start < 0 {
+		return between, 0
+	}
+	at := make(map[string]int, len(msgs))
+	for i, m := range msgs {
+		at[m.ID] = i
+	}
+	for _, r := range between {
+		if r.Role == message.User && at[r.ID] >= start {
+			spared++
+			continue
+		}
+		rows = append(rows, r)
+	}
+	return rows, spared
+}
+
 func hasToolCall(m message.Message, callID string) bool {
 	return slices.ContainsFunc(m.ToolCalls(), func(c message.ToolCall) bool { return c.ID == callID })
 }
@@ -719,15 +815,19 @@ func readPaths(rows []message.Message, calls map[string]message.ToolCall, workin
 // line: that everything since the push was removed, where the frame's
 // thoughts are, the files its rounds edited, the other calls to mem in
 // them, and that their reads are forgotten.
-func popClauses(ev gnovm.MemFrame, rows []message.Message, calls map[string]message.ToolCall, workingDir string, reads bool) string {
+func popClauses(ev gnovm.MemFrame, rows []message.Message, calls map[string]message.ToolCall, workingDir string, reads, keptUser bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Everything since you entered `%s` was removed from your context: this result stays", ev.Id)
+	fmt.Fprintf(&b, "Everything since you entered `%s` was removed from your context", ev.Id)
+	if keptUser {
+		b.WriteString(", but for what the user said in this turn")
+	}
+	b.WriteString(": this result stays")
 	switch ev.Thoughts {
 	case 0:
 	case 1:
-		fmt.Fprintf(&b, ", and its 1 thought is in mem (mem.Show(%q) lists it when you need it)", ev.Id)
+		b.WriteString(", and so does its thought, listed above and kept in mem")
 	default:
-		fmt.Fprintf(&b, ", and its %d thoughts are in mem (mem.Show(%q) lists them when you need them)", ev.Thoughts, ev.Id)
+		fmt.Fprintf(&b, ", and so do its %d thoughts, listed above and kept in mem", ev.Thoughts)
 	}
 	b.WriteString("; the user still sees all of it.")
 	if edited := editedFiles(rows, calls, workingDir); len(edited) > 0 {
@@ -840,11 +940,12 @@ func roughCount(n int64) string {
 // cutPopped is msgs, the messages a step sends, without those a pop
 // removed from the model's context: for each pop, everything after the
 // round of its push (the assistant message holding the push call and the
-// tool message answering it) and before the round of its pop. A pop whose
-// push is not among msgs, older than the summary, removes everything from
-// the first assistant message on. Nested pops remove the union. The list
-// that remains keeps a tool message followed by an assistant message, so
-// it is valid for every provider.
+// tool message answering it) and before the round of its pop, but for the
+// user messages of the turn the pop was made in (poppedRange.spare). A
+// pop whose push is not among msgs, older than the summary, removes
+// everything from the first assistant message on. Nested pops remove the
+// union. The list that remains keeps a tool message followed by an
+// assistant message, so it is valid for every provider.
 //
 // The push's answer that stays says what came after it (workNote): without
 // that, a long session's context is a row of pushes each answered by its
@@ -881,7 +982,22 @@ func cutPopped(msgs []fantasy.Message, ranges []poppedRange) []fantasy.Message {
 				continue
 			}
 		}
+		// The last spareLast user messages of the range are the pop's own
+		// turn's, and stay.
+		spareFrom := end
+		if r.spare && r.spareLast > 0 {
+			n := 0
+			for i := end - 1; i >= from && n < r.spareLast; i-- {
+				if msgs[i].Role == fantasy.MessageRoleUser {
+					n++
+					spareFrom = i
+				}
+			}
+		}
 		for i := from; i < end; i++ {
+			if i >= spareFrom && msgs[i].Role == fantasy.MessageRoleUser {
+				continue
+			}
 			skip[i] = true
 			cut = true
 		}

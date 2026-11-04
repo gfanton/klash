@@ -694,10 +694,10 @@ func TestMemBlock(t *testing.T) {
 		"Rules the user gave you; follow them (the user's words today come first):\n"+
 		"- `push-after-landing` (set by the user, 2026-10-30): push to GitHub only after landed:\n"+
 		"From your memory (mem), kept by gnosh for this project: what you found and were told in earlier sessions. `mem.Show()` shows the outline; `mem.Find(\"words\")` searches everything.\n"+
-		"mem: 5 items open · 1 question for the user · 1 fact\n"+
+		"mem: 5 todos open · 1 question for the user · 1 fact\n"+
 		"due: `renew-tls-cert` \"renew the TLS cert\" (since 2026-12-01)\n"+
 		"waiting on the user: `release-v2/tag-v2-0-0/which-key-signs-tag` \"which key signs the &lt;tag&gt;?\"\n"+
-		"open goals, newest first:\n"+
+		"open todos, newest first:\n"+
 		"- `renew-tls-cert` \"renew the TLS cert\" (32d ago) due since 2026-12-01\n"+
 		"- `release-v2` \"release v2\" (0/2 done · 32d ago) next: `release-v2/bump-version` \"bump the version\"\n"+
 		"facts, newest first: `cmd/test` = go test -race ./...\n"+

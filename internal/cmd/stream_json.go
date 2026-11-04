@@ -103,9 +103,12 @@ func nonNil[T any](list []T) []T {
 	return list
 }
 
-// message takes one update of a message of the run.
+// message takes one update of a message of the run. A row a pop marks as
+// cut (message.Popped) comes as an update, and is no news: written by this
+// run, it was written already; made in an earlier run of the session, as
+// when each turn is its own `gnosh run`, it is old work, not this turn's.
 func (s *streamJSON) message(msg message.Message) {
-	if msg.SessionID != s.sessionID || msg.IsSummaryMessage {
+	if msg.SessionID != s.sessionID || msg.IsSummaryMessage || msg.Popped != "" {
 		return
 	}
 	switch msg.Role {

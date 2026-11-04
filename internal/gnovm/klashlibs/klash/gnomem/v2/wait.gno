@@ -34,6 +34,12 @@ func (m *Mem) parseWait(until string) string {
 		return until
 	}
 	if looksLikeDay(until) {
+		// A day among words ("the code freeze ends on 2026-11-20") was read
+		// as a format complaint and retried as 2026/11/20 (QA, 2026-11-04):
+		// the refusal is the call to send.
+		if d := suggestDay(until); isDay(d) && d != strings.TrimSpace(until) && strings.Contains(until, d) {
+			panic("a wait's day stands alone, written " + d + ": .Wait(\"" + d + "\"), with any words about it kept as a thought (" + todayIs() + ")")
+		}
 		panic("write a day as " + suggestDay(until) + " (" + todayIs() + ")")
 	}
 	if validName(until) && m.get(until) != nil {

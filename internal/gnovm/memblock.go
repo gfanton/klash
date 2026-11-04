@@ -82,7 +82,7 @@ func memBlock(st memStatus, now time.Time) string {
 	}
 	b.WriteString("From your memory (mem), kept by gnosh for this project: what you found and were told in earlier sessions. `mem.Show()` shows the outline; `mem.Find(\"words\")` searches everything.\n")
 	start := b.Len()
-	head := []string{memPlural(m.Counts.Open, "item") + " open"}
+	head := []string{memPlural(m.Counts.Open, "todo") + " open"}
 	if m.Counts.ForUser > 0 {
 		head = append(head, memPlural(m.Counts.ForUser, "question")+" for the user")
 	}
@@ -122,7 +122,7 @@ func memBlock(st memStatus, now time.Time) string {
 			break
 		}
 		if i == 0 {
-			b.WriteString("open goals, newest first:\n")
+			b.WriteString("open todos, newest first:\n")
 		}
 		var aside []string
 		if g.StepsOpen+g.StepsDone > 0 {
@@ -142,7 +142,7 @@ func memBlock(st memStatus, now time.Time) string {
 		case g.Wait != "":
 			line += " waits for: " + memEscape(g.Wait)
 		case g.Next == g.Name:
-			line += " next: the goal itself, once it holds"
+			line += " next: the todo itself, once it holds"
 		case g.Next != "":
 			line += " next: " + memRef(g.Next, g.NextTitle)
 		}

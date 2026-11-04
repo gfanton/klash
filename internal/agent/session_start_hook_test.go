@@ -425,7 +425,7 @@ func TestRun_MemBlockGoesWithAResumedSessionWhenMemChanged(t *testing.T) {
 	r := sessionStartAgent(t, false, "")
 	_, err := r.agent.Run(t.Context(), SessionAgentCall{SessionID: r.sessionID, Prompt: "first"})
 	require.NoError(t, err)
-	block := "<mem>\nmem: 1 item open\nopen goals, newest first:\n- `release` \"release v2\" (just now)\n</mem>"
+	block := "<mem>\nmem: 1 todo open\nopen todos, newest first:\n- `release` \"release v2\" (just now)\n</mem>"
 	var since []time.Time
 	r.agent.memChanged = func(_ string, t time.Time) string {
 		since = append(since, t)
@@ -480,7 +480,7 @@ func TestRun_MemBlockGoesWithTheFirstPrompt(t *testing.T) {
 	t.Parallel()
 
 	r := sessionStartAgent(t, false, "")
-	block := "<mem>\nmem: 2 items open\nopen goals, newest first:\n- `release` \"release v2\" (1/2 done · 2h ago) next: `release/2` \"update CHANGELOG\"\n</mem>"
+	block := "<mem>\nmem: 2 todos open\nopen todos, newest first:\n- `release` \"release v2\" (1/2 done · 2h ago) next: `release/2` \"update CHANGELOG\"\n</mem>"
 	r.agent.memBlock = func(string) string { return block }
 	_, err := r.agent.Run(t.Context(), SessionAgentCall{SessionID: r.sessionID, Prompt: "carry on"})
 	require.NoError(t, err)

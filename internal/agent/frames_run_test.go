@@ -454,7 +454,7 @@ func TestFrames_PopCutsTheContext(t *testing.T) {
 	// The clauses, after the realm's own lines.
 	result := s.resultOf("c3")
 	require.Contains(t, result, doneS1)
-	require.Contains(t, result, "Everything since you entered `g/s1` was removed from your context: this result stays, and its 2 thoughts are in mem (mem.Show(\"g/s1\") lists them when you need them); the user still sees all of it. Your reads inside it are forgotten: view a file before you edit it.")
+	require.Contains(t, result, "Everything since you entered `g/s1` was removed from your context: this result stays, and so do its 2 thoughts, listed above and kept in mem; the user still sees all of it. Your reads inside it are forgotten: view a file before you edit it.")
 	require.Less(t, strings.Index(result, inS2), strings.Index(result, "Everything since"), "the clauses come after the realm's output")
 	require.Contains(t, result, "kept as entry 1")
 
@@ -472,7 +472,8 @@ func TestFrames_PopCutsTheContext(t *testing.T) {
 	require.Equal(t, []string{"g", "g/s2"}, s.frames.stack(t.Context(), s.sessID))
 	again := newFrameStacks(s.env.sessions, s.env.messages, s.env.filetracker, s.env.workingDir)
 	require.Equal(t, []string{"g", "g/s2"}, again.stack(t.Context(), s.sessID), "a restart derives the same stack")
-	require.Equal(t, []poppedRange{{frame: "g/s1", pushCallID: "c2", popCallID: "c3"}}, again.ranges(t.Context(), s.sessID))
+	require.Equal(t, []poppedRange{{frame: "g/s1", pushCallID: "c2", popCallID: "c3", spare: true}}, again.ranges(t.Context(), s.sessID))
+	require.Equal(t, s.frames.ranges(t.Context(), s.sessID), again.ranges(t.Context(), s.sessID), "derived again, the pop spares what it spared")
 	require.Equal(t, [][]string{nil, {"g"}, {"g", "g/s1"}}, s.mem.stacks, "the stack the tool was told before each call")
 
 	// The user was told, as a non-interactive run prints it.
@@ -525,7 +526,7 @@ func TestFrames_NestedPop(t *testing.T) {
 	require.Empty(t, by["call:c4"])
 	require.Empty(t, s.frames.stack(t.Context(), s.sessID))
 	require.Contains(t, s.resultOf("c3"), "Everything since you entered `g/s1` was removed from your context: this result stays; the user still sees all of it.")
-	require.Contains(t, s.resultOf("c4"), "its 1 thought is in mem")
+	require.Contains(t, s.resultOf("c4"), "and so does its thought, listed above and kept in mem")
 }
 
 // A frame spans turns: what the user says inside it goes with the pop,
@@ -551,15 +552,51 @@ func TestFrames_WordsInsideAFrame(t *testing.T) {
 	require.Contains(t, prompts[1], "8080")
 	require.Contains(t, prompts[1], "You are in `g` \"fix it\": pop it", "the answer is told where the model stands")
 	final := s.model.sent(3)
-	require.NotContains(t, strings.Join(final, "\n"), "8080", "the user's words inside the frame went with the pop")
-	require.NotContains(t, strings.Join(final, "\n"), "which port?")
+	require.Contains(t, strings.Join(final, "\n"), "8080", "the prompt the pop's turn answers stays (QA, 2026-11-04)")
+	require.NotContains(t, strings.Join(final, "\n"), "which port?", "the model's own words in the frame go")
 	require.Contains(t, final, "assistant:c2")
 	validSequence(t, s.model.prompts[3])
 	rows := s.rows()
 	answer := slices.IndexFunc(rows, func(m message.Message) bool {
 		return m.Role == message.User && strings.Contains(m.Content().Text, "8080")
 	})
-	require.Equal(t, "g", rows[answer].Popped)
+	require.Empty(t, rows[answer].Popped, "the turn's prompt is not marked")
+	require.Contains(t, s.resultOf("c2"), "removed from your context, but for what the user said in this turn")
+}
+
+// What the user said in an earlier turn, while the model stood in the
+// frame, goes with the pop: it was to be kept as a thought. The prompt of
+// the turn the pop is made in stays.
+func TestFrames_EarlierTurnInsideAFrame(t *testing.T) {
+	t.Parallel()
+
+	replies := map[string]memReply{
+		pushG: {text: inG, events: []gnovm.MemFrame{pushed("g", "fix it")}},
+		popG:  {text: "done `g` \"fix it\" → fixed", events: []gnovm.MemFrame{poppedFrame("g", "fixed", 0)}},
+	}
+	s := newFramesScenario(t, replies, [][]fantasy.StreamPart{
+		calling(memCall("c1", pushG)),
+		saying("which port?"),
+		saying("noted"),
+		calling(memCall("c2", popG)),
+		saying("done"),
+	}, 200_000)
+	s.run("fix it")
+	s.run("8080")
+	s.run("go on")
+
+	final := strings.Join(s.model.sent(4), "\n")
+	require.NotContains(t, final, "8080", "an earlier turn's words inside the frame went with the pop")
+	require.Contains(t, final, "go on", "the pop's own turn's prompt stays")
+	validSequence(t, s.model.prompts[4])
+	rows := s.rows()
+	earlier := slices.IndexFunc(rows, func(m message.Message) bool {
+		return m.Role == message.User && strings.Contains(m.Content().Text, "8080")
+	})
+	require.Equal(t, "g", rows[earlier].Popped)
+	again := newFrameStacks(s.env.sessions, s.env.messages, s.env.filetracker, s.env.workingDir)
+	require.Equal(t, s.frames.ranges(t.Context(), s.sessID), again.ranges(t.Context(), s.sessID), "derived again, the pop spares what it spared")
+	require.Equal(t, 1, again.ranges(t.Context(), s.sessID)[0].spareLast)
 }
 
 // A call made beside the push, in the same round, keeps its result in

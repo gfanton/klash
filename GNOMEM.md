@@ -157,7 +157,10 @@ results and thoughts, and the agent is told: "The start of `x` left your
 context to make room; mem.Show("x") has the plan, the results so far and
 the thoughts. Your reads there are forgotten: view a file before you edit
 it." The prompt it is answering is never cut. A summary is made only when
-there is nothing to slide.
+there is nothing to slide. Nor does a pop cut what you said in the turn it
+is made in: the prompt the agent is answering stays, with what came with
+it; what you said in earlier turns while it stood in the frame goes with
+the frame, and the agent keeps what matters of it as a thought.
 
 Line by line, where the agent stands (its stack, bottom to top) and what
 mem holds; a todo is made under the frame you stand in, and `mem.Next()`
@@ -187,6 +190,7 @@ mem.Think("the shared port is 8080")
 mem.Pop("TestFlaky races on the shared port; fixed by picking a free port in setup (internal/net/listen_test.go:41)")
 mem.Next()
 // done `fix-flaky-test/find-why-testflaky-fails` "find why TestFlaky fails" → TestFlaky races on the shared port; fixed by picking a free port in setup (internal/net/listen_test.go:41)
+// its thoughts, kept: `shared-port-8080`: the shared port is 8080
 // in `fix-flaky-test/rerun-suite-20-times` "rerun the suite 20 times": when it is done, pop it with what came of it and what the next todo needs. …
 mem.Thought("shared-port-8080")
 // thought `shared-port-8080` on `fix-flaky-test/find-why-testflaky-fails`: the shared port is 8080
@@ -194,9 +198,8 @@ mem.Thought("shared-port-8080")
 
 To the pop's result Gnosh adds what the pop did: "Everything since you
 entered `fix-flaky-test/find-why-testflaky-fails` was removed from your
-context: this result stays, and its 1 thought is in mem
-(mem.Show("fix-flaky-test/find-why-testflaky-fails") lists it when you need
-it); the user still sees all of it. In it you edited
+context: this result stays, and so does its thought, listed above and kept
+in mem; the user still sees all of it. In it you edited
 internal/net/listen_test.go. Your reads inside it are forgotten: view a
 file before you edit it."
 
@@ -210,7 +213,10 @@ is just its name: `mem.Thought("shared-port-8080")` reads it from anywhere,
 as the last call above does from the next todo, `mem.Recall("shared port")`
 finds thoughts, frames and facts by meaning, and
 `mem.Thought("shared-port-8080").Push()` turns a thought that needs real
-work into a todo of the same name and enters it. You see every pop in the chat as the tool's result (the removed
+work into a todo of the same name and enters it: under its frame, or at the
+top once that frame is closed. A pop's receipt lists the frame's thoughts
+word for word, and entering a todo lists the thoughts already on it, such
+as a note another frame left for it with `mem.Note(name, text)`. You see every pop in the chat as the tool's result (the removed
 rows stay there and in `/export`; only the model's view loses them), the
 frame the agent is in where the sidebar shows its work, `/mem log` lists
 each push and pop, and `gnosh run` prints what a pop took out of the
@@ -736,11 +742,11 @@ func (f *Frame) Ask(question string) *Frame // a question for you, as a todo und
 func (f *Frame) Push()                      // enter it: from here the context will be cut
 func (f *Frame) NextTodo() *Frame           // the first todo under it to do; nil for none
 func (m *Mem) Frame(id ...string) *Frame    // the present frame, or one by id
-func (m *Mem) Next()                        // step into the next open todo under the present frame; at the root, of the newest open task
+func (m *Mem) Next()                        // step into the next open todo under the present frame; at the root, of the newest open task, with the todos above it
 func (m *Mem) Pop(result string)            // leave it done: everything since the push is removed
 func (m *Mem) Think(args ...string) Thought // Think(text): a thought on the present frame, named for the agent; or Think(name, text)
 func (m *Mem) Thought(name string) Thought  // a thought by name, from anywhere
-func (t Thought) Push(why ...string)        // a todo named as the thought, made if it has none, entered
+func (t Thought) Push(why ...string)        // a todo named as the thought, made if it has none (at the top once its frame is closed), entered
 func (m *Mem) Recall(words string) []Namable
 func (m *Mem) Ask(name, question string)
 func (m *Mem) Start(name string)

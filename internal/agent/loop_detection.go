@@ -5,9 +5,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"charm.land/fantasy"
+	gnovmtools "github.com/charmbracelet/crush/internal/gnovm/tools"
 )
 
 const (
@@ -18,7 +20,12 @@ const (
 // repeatedToolCalls checks whether the agent is stuck in a loop by looking
 // at recent steps. It examines the last windowSize steps and, if any
 // tool-call signature appears more than maxRepeats times, returns the tool
-// calls of the step being repeated.
+// calls of the step being repeated. A window of steps that all made tool
+// calls, with no more than two signatures among them, is a loop too: going
+// back and forth between two calls that answer the same each time, as a
+// model went round mem.Drop and mem.Reopen for 12 minutes (QA, 2026-11-04),
+// each signature at exactly half the window, never above it. It then
+// returns the calls of both.
 func repeatedToolCalls(steps []fantasy.StepResult, windowSize, maxRepeats int) ([]fantasy.ToolCallContent, bool) {
 	if len(steps) < windowSize {
 		return nil, false
@@ -26,11 +33,19 @@ func repeatedToolCalls(steps []fantasy.StepResult, windowSize, maxRepeats int) (
 
 	window := steps[len(steps)-windowSize:]
 	counts := make(map[string]int)
+	var order []string
+	callsOf := map[string][]fantasy.ToolCallContent{}
+	signed := 0
 
 	for _, step := range window {
 		sig := getToolInteractionSignature(step.Content)
 		if sig == "" {
 			continue
+		}
+		signed++
+		if counts[sig] == 0 {
+			order = append(order, sig)
+			callsOf[sig] = step.Content.ToolCalls()
 		}
 		counts[sig]++
 		if counts[sig] > maxRepeats {
@@ -38,6 +53,13 @@ func repeatedToolCalls(steps []fantasy.StepResult, windowSize, maxRepeats int) (
 		}
 	}
 
+	if signed == windowSize && len(order) <= 2 {
+		var calls []fantasy.ToolCallContent
+		for _, sig := range order {
+			calls = append(calls, callsOf[sig]...)
+		}
+		return calls, true
+	}
 	return nil, false
 }
 
@@ -108,12 +130,12 @@ func loopNudgePrompt(repeated []fantasy.ToolCallContent) string {
 		fmt.Fprintf(&calls, "- %s %s\n", tc.ToolName, compactReason(tc.Input))
 	}
 	return fmt.Sprintf(
-		"You have made the same tool call %d times in your last %d steps and got "+
-			"the same result every time:\n\n%s\n"+
-			"Making it again will not tell you anything new, so do not repeat it. "+
-			"Use what it already returned: if that is enough, give your answer now; "+
+		"In your last %d steps you made the same tool calls over and over and got "+
+			"the same results every time:\n\n%s\n"+
+			"Making them again will not tell you anything new, so do not repeat them. "+
+			"Use what they already returned: if that is enough, give your answer now; "+
 			"if not, take a different approach.",
-		loopDetectionMaxRepeats+1, loopDetectionWindowSize, calls.String(),
+		loopDetectionWindowSize, calls.String(),
 	)
 }
 
@@ -139,6 +161,13 @@ func getToolInteractionSignature(content fantasy.ResponseContent) string {
 		if tr, ok := resultsByID[tc.ToolCallID]; ok {
 			output = toolResultOutputString(tr.Result)
 		}
+		if tc.ToolName == gnovmtools.RunToolName {
+			// A Gno VM's answer ends with what the run took ("ran 31ms ·
+			// kept as entry 23", gas and memory), different every time:
+			// with its numbers blanked, the same call answered the same
+			// way signs the same, and a loop of calls to mem is seen.
+			output = runNumbers.ReplaceAllString(output, "#")
+		}
 		io.WriteString(h, tc.ToolName)
 		io.WriteString(h, "\x00")
 		io.WriteString(h, tc.Input)
@@ -148,6 +177,9 @@ func getToolInteractionSignature(content fantasy.ResponseContent) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+// runNumbers is the numbers in a Gno VM's answer, blanked for its signature.
+var runNumbers = regexp.MustCompile(`[0-9]+(\.[0-9]+)?`)
 
 // toolResultOutputString converts a ToolResultOutputContent to a stable string
 // representation for signature comparison.

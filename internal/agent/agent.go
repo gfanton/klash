@@ -27,6 +27,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
@@ -193,6 +194,10 @@ type SessionAgentCall struct {
 	// judge having found it not met. Both ride along on continuations.
 	goalsSince time.Time
 	judgedGoal string
+	// refusedCloseSent marks a turn already sent back for a close mem
+	// refused (refusedCloseContinuation); it rides along on continuations,
+	// so it is sent back once a turn.
+	refusedCloseSent bool
 	// OnAuthRefresh, when non-nil, is called by fantasy when a stream
 	// fails with an authentication error (HTTP 401). The callback should
 	// refresh credentials and return nil on success, in which case
@@ -1812,6 +1817,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				"model", a.largeModel.Get().ModelCfg.Model,
 				"hint", "the model may be spending its whole budget on reasoning: lower its reasoning level (/model, then the left arrow) or raise its max tokens",
 			)
+		} else if next, refused := a.refusedCloseContinuation(ctx, call); refused {
+			a.queueContinuation(next)
+			continued = true
 		} else if next, unmet := a.goalContinuation(ctx, call, currentAssistant.Content().String()); unmet {
 			a.queueContinuation(next)
 			continued = true
@@ -3266,6 +3274,7 @@ func (a *sessionAgent) NamesFor(ctx context.Context, sessionID string, texts []s
 	if names == nil {
 		return nil, fmt.Errorf("the small model answered with other than %d names", len(texts))
 	}
+	names = namesByText(texts, names)
 	out := map[string]string{}
 	for i, t := range texts {
 		if names[i] != "" {
@@ -3273,6 +3282,98 @@ func (a *sessionAgent) NamesFor(ctx context.Context, sessionID string, texts []s
 		}
 	}
 	return out, nil
+}
+
+// namesByText is names, given for texts in order, each matched to the text
+// it is about. A small model can answer in another order: naming a task
+// and its todo in one ask, it swapped them, so the tests task was called
+// `slug-output-lowercase` and the model spent its turn undoing that (QA,
+// 2026-11-04). A name fits a text by the words they share; when another
+// order fits better in all, it is taken, and a name that shares no word
+// with the text it ends up with is left out, for mem to name that text from
+// its words. Past maxMatched texts the order is kept as given.
+func namesByText(texts, names []string) []string {
+	n := len(texts)
+	if n < 2 || len(names) != n {
+		return names
+	}
+	fit := make([][]int, n)
+	for i, name := range names {
+		fit[i] = make([]int, n)
+		for j, text := range texts {
+			fit[i][j] = sharedWords(name, text)
+		}
+	}
+	// order[j] is the name given to text j; the order as given first, so a
+	// tie keeps it.
+	order := make([]int, n)
+	for j := range order {
+		order[j] = j
+	}
+	if n <= maxMatched {
+		score := func(o []int) int {
+			total := 0
+			for j, i := range o {
+				total += fit[i][j]
+			}
+			return total
+		}
+		best, bestScore := slices.Clone(order), score(order)
+		perm := slices.Clone(order)
+		var try func(k int)
+		try = func(k int) {
+			if k == n {
+				if sc := score(perm); sc > bestScore {
+					best, bestScore = slices.Clone(perm), sc
+				}
+				return
+			}
+			for i := k; i < n; i++ {
+				perm[k], perm[i] = perm[i], perm[k]
+				try(k + 1)
+				perm[k], perm[i] = perm[i], perm[k]
+			}
+		}
+		try(0)
+		order = best
+	}
+	out := make([]string, n)
+	for j, i := range order {
+		if names[i] != "" && fit[i][j] > 0 {
+			out[j] = names[i]
+		}
+	}
+	return out
+}
+
+// maxMatched is the most texts namesByText matches names to by trying
+// every order (7! = 5040 orders).
+const maxMatched = 7
+
+// sharedWords is how many of name's words text has: the same word, or one
+// that begins the other, four letters or more, as "test" and "tests", or
+// "lower" and "lowercase".
+func sharedWords(name, text string) int {
+	split := func(s string) []string {
+		return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+	}
+	words := split(text)
+	shared := 0
+	for _, w := range split(name) {
+		for _, t := range words {
+			short, long := w, t
+			if len(short) > len(long) {
+				short, long = long, short
+			}
+			if w == t || len(short) >= 4 && strings.HasPrefix(long, short) {
+				shared++
+				break
+			}
+		}
+	}
+	return shared
 }
 
 // thinkless is a small model's answer without its thinking tags.

@@ -269,4 +269,15 @@ func TestMemNames(t *testing.T) {
 	require.Equal(t, []string{"code", ""}, memNames("code\n---", 2), "a line that is no name gives none")
 	require.Nil(t, memNames("code\ntests", 3), "too few lines is no answer")
 	require.Nil(t, memNames("code tests readme", 3), "one line for three is no answer")
+
+	// Names answered in another order are matched to their texts by the
+	// words they share (QA, 2026-11-04: the tests task was named for the
+	// lower-casing todo, and the lower-casing todo for the tests).
+	texts := []string{"add slug_test.go with table tests for what Slug does now", "make Slug lower-case its output"}
+	require.Equal(t, []string{"slug-test-table", "slug-output-lowercase"}, namesByText(texts, []string{"slug-output-lowercase", "slug-test-table"}))
+	require.Equal(t, []string{"slug-test-table", "slug-output-lowercase"}, namesByText(texts, []string{"slug-test-table", "slug-output-lowercase"}), "names in order stay")
+	require.Equal(t, []string{"slug-test-table", ""}, namesByText(texts, []string{"slug-test-table", "deploy-site"}), "a name that fits no text is left to mem")
+	require.Equal(t, []string{"code", "tests"}, namesByText([]string{"the code", "the tests"}, []string{"code", "tests"}))
+	require.Equal(t, []string{"lone-name"}, namesByText([]string{"one text"}, []string{"lone-name"}), "one text is asked for alone and kept")
+	require.Equal(t, 3, sharedWords("error-handling-fix", "fix the errors in the handling"), "a word and its plural share")
 }

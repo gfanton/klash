@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -171,6 +173,130 @@ func TestCutPopped(t *testing.T) {
 	})
 }
 
+// A pop spares what the user said in the turn it was made in: the prompt
+// the model is answering, and what came with it, but not what an earlier
+// turn said inside the frame (QA, 2026-11-04: the cut prompt left the model
+// with the turn before's "do only (1) now").
+func TestCutPoppedSparesTheTurn(t *testing.T) {
+	t.Parallel()
+
+	list := []fantasy.Message{
+		sys("system"), user("plan three todos; do only (1) now"),
+		assistant("c1"), toolMsg("c1"), // push (1), turn 1
+		assistant(),                  // turn 1's answer
+		user("also note: port 8080"), // turn 2, said in the frame
+		assistant("v1"), toolMsg("v1"),
+		assistant(),                          // turn 2's answer
+		user("now do (2) and (3), with #42"), // turn 3
+		assistant("v2"), toolMsg("v2"),
+		user("a reminder"),             // put in during the turn
+		assistant("c2"), toolMsg("c2"), // the pop, in turn 3
+		assistant(),
+	}
+	got := cutPopped(list, []poppedRange{{frame: "g", pushCallID: "c1", popCallID: "c2", spare: true, spareLast: 2}})
+	require.Equal(t, []string{
+		"system:system", "user:plan three todos; do only (1) now", "assistant:c1", "tool:c1",
+		"user:now do (2) and (3), with #42", "user:a reminder",
+		"assistant:c2", "tool:c2", "assistant:working",
+	}, texts(got))
+	validSequence(t, got)
+
+	all := cutPopped(list, []poppedRange{{frame: "g", pushCallID: "c1", popCallID: "c2", spare: true, spareLast: 9}})
+	require.Contains(t, texts(all), "user:also note: port 8080", "more counted than there are: every user message stays")
+
+	slide := cutPopped(list, []poppedRange{{frame: "g", pushCallID: "c1", popCallID: "c2"}})
+	require.NotContains(t, texts(slide), "user:now do (2) and (3), with #42", "a slide's range spares nothing: it ends before the prompt")
+}
+
+// The turn a pop was made in begins with a prompt typed after an answer;
+// a prompt folded into the turn, and a hidden continuation after an
+// answer, are the same turn.
+func TestTurnRows(t *testing.T) {
+	t.Parallel()
+
+	typed := func(id, text string) message.Message {
+		return row(message.User, id, message.TextContent{Text: text})
+	}
+	hidden := func(id, text string) message.Message {
+		return row(message.User, id, message.TextContent{Text: text, Hidden: true})
+	}
+	answer := func(id string) message.Message {
+		return row(message.Assistant, id, message.TextContent{Text: "done"})
+	}
+	rows := []message.Message{
+		typed("u0", "plan it; do only (1)"),
+		row(message.Assistant, "a1", callPart("c1")), // push
+		row(message.Tool, "t1", resultPart("c1")),
+		answer("a1b"),
+		typed("u1", "port is 8080"), // turn 2, in the frame
+		row(message.Assistant, "a2", callPart("v1")),
+		row(message.Tool, "t2", resultPart("v1")),
+		answer("a2b"),
+		typed("u2", "now do (2) and (3)"), // turn 3
+		row(message.Assistant, "a3", callPart("v2")),
+		row(message.Tool, "t3", resultPart("v2")),
+		typed("u2f", "and the docs"), // folded into turn 3
+		row(message.Assistant, "a4", callPart("v3")),
+		row(message.Tool, "t4", resultPart("v3")),
+		answer("a4b"),
+		hidden("u2h", "the goal is not met: README"), // a continuation of turn 3
+		row(message.Assistant, "a5", callPart("c2")), // the pop
+		row(message.Tool, "t5", resultPart("c2")),
+	}
+	require.Equal(t, 8, turnStart(rows, "c2"))
+	kept, spared := turnRows(rows, poppedRows(rows, "c1", "c2"), "c2")
+	require.Equal(t, []string{"a1b", "u1", "a2", "t2", "a2b", "a3", "t3", "a4", "t4", "a4b"}, rowIDs(kept),
+		"turn 3's prompts, folded and continued, stay; turn 2's is cut")
+	require.Equal(t, 3, spared)
+	require.Equal(t, 0, turnStart(rows[:3], "c1"), "the first turn starts at the start")
+	require.Equal(t, -1, turnStart(rows, "c-none"))
+
+	// A turn that made no tool call is still a turn of its own.
+	quiet := []message.Message{
+		typed("u0", "fix it"),
+		row(message.Assistant, "a1", callPart("c1")), // push
+		row(message.Tool, "t1", resultPart("c1")),
+		answer("a1b"),
+		typed("u1", "8080"),
+		answer("a2b"),
+		typed("u2", "go on"),
+		row(message.Assistant, "a3", callPart("c2")), // the pop
+	}
+	kept, spared = turnRows(quiet, poppedRows(quiet, "c1", "c2"), "c2")
+	require.Equal(t, []string{"a1b", "u1", "a2b"}, rowIDs(kept))
+	require.Equal(t, 1, spared)
+}
+
+// A frame is fresh, and mem refuses its pop, until work came between: a
+// call to another tool, or a change to mem. Reads of mem, a Next, and a
+// pop mem refused are no work.
+func TestWorkIn(t *testing.T) {
+	t.Parallel()
+
+	memCall := func(id, code string) message.ToolCall {
+		return message.ToolCall{ID: id, Name: "gnovm_run", Input: `{"name":"mem","code":` + strconv.Quote(code) + `}`, Finished: true}
+	}
+	refused := []message.Message{
+		row(message.Assistant, "a1", memCall("m1", `mem.Pop("main.go now calls Get; build passes")`)),
+		row(message.Tool, "t1", message.ToolResult{ToolCallID: "m1", Name: "gnovm_run", Content: "ERROR — not popped: nothing came between\nfailed · mem · ran 2ms · nothing kept\n"}),
+		row(message.Assistant, "a2", memCall("m2", "mem.Show()\nmem.Next()")),
+		row(message.Tool, "t2", message.ToolResult{ToolCallID: "m2", Name: "gnovm_run", Content: "ok"}),
+		row(message.User, "u1", message.TextContent{Text: "go on"}),
+	}
+	require.False(t, workIn(refused), "a refused pop, a read and a Next are no work")
+	require.False(t, workIn(nil))
+
+	viewed := append(slices.Clone(refused),
+		row(message.Assistant, "a3", message.ToolCall{ID: "v1", Name: tools.ViewToolName, Input: `{"file_path":"main.go"}`, Finished: true}),
+		row(message.Tool, "t3", message.ToolResult{ToolCallID: "v1", Name: tools.ViewToolName, Content: "package main"}))
+	require.True(t, workIn(viewed), "a view is work")
+
+	kept := append(slices.Clone(refused),
+		row(message.Assistant, "a4", memCall("m3", `mem.Fact("staging", "staging2.acme.test")`)),
+		row(message.Tool, "t4", message.ToolResult{ToolCallID: "m3", Name: "gnovm_run", Content: "fact `staging` is new\nok · mem · ran 3ms · kept as entry 4\n"}))
+	require.True(t, workIn(kept), "a fact kept is work done in mem")
+}
+
 // Rows of a session, for poppedRows.
 func row(role message.MessageRole, id string, parts ...message.ContentPart) message.Message {
 	return message.Message{ID: id, Role: role, Parts: parts}
@@ -234,10 +360,13 @@ func TestPopClauses(t *testing.T) {
 
 	ev := gnovm.MemFrame{Kind: "pop", Id: "fix-flaky/find-cause", Result: "races", Session: "s"}
 	require.Equal(t, "Everything since you entered `fix-flaky/find-cause` was removed from your context: this result stays; the user still sees all of it.",
-		popClauses(ev, nil, nil, "/w", false))
+		popClauses(ev, nil, nil, "/w", false, false))
+
+	require.Equal(t, "Everything since you entered `fix-flaky/find-cause` was removed from your context, but for what the user said in this turn: this result stays; the user still sees all of it.",
+		popClauses(ev, nil, nil, "/w", false, true))
 
 	ev.Thoughts = 1
-	require.Contains(t, popClauses(ev, nil, nil, "/w", true), "this result stays, and its 1 thought is in mem (mem.Show(\"fix-flaky/find-cause\") lists it when you need it); the user still sees all of it. Your reads inside it are forgotten: view a file before you edit it.")
+	require.Contains(t, popClauses(ev, nil, nil, "/w", true, false), "this result stays, and so does its thought, listed above and kept in mem; the user still sees all of it. Your reads inside it are forgotten: view a file before you edit it.")
 
 	ev.Thoughts = 2
 	rows := []message.Message{
@@ -261,8 +390,8 @@ func TestPopClauses(t *testing.T) {
 	for _, call := range rows[0].ToolCalls() {
 		calls[call.ID] = call
 	}
-	got := popClauses(ev, rows, calls, "/w", false)
-	require.Contains(t, got, "its 2 thoughts are in mem (mem.Show(\"fix-flaky/find-cause\") lists them when you need them)")
+	got := popClauses(ev, rows, calls, "/w", false, false)
+	require.Contains(t, got, "and so do its 2 thoughts, listed above and kept in mem")
 	require.Contains(t, got, " In it you edited internal/net/listen_test.go.")
 	require.Contains(t, got, " In it you also changed mem: Fact `port`, Todo `a`, Note `fix-flaky`, Rule `r` and 1 more.")
 	require.NotContains(t, got, "Think")

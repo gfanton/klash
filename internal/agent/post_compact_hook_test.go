@@ -65,7 +65,7 @@ func TestSummarize_GivesMemAgain(t *testing.T) {
 	t.Parallel()
 
 	r := compactHookAgent(t, hooks.EventPostCompact, false)
-	block := "<mem>\nmem: 1 item open\nopen goals, newest first:\n- `release` \"release v2\" (just now)\n</mem>"
+	block := "<mem>\nmem: 1 todo open\nopen todos, newest first:\n- `release` \"release v2\" (just now)\n</mem>"
 	var calls []string
 	r.agent.memSummarized = func(sessionID string) { calls = append(calls, "summarized "+sessionID) }
 	r.agent.memBlock = func(sessionID string) string {

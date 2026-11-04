@@ -269,6 +269,7 @@ mem.Next()
 // no next todo: `rename-project-klash-gnosh` has no open todo: pop it with its result.
 mem.Pop("klash is gnosh everywhere: code, Makefile, tests, README, config; go test ./... → ok")
 // done `rename-project-klash-gnosh` "rename the project from klash to gnosh" → klash is gnosh everywhere: code, Makefile, tests, README, config; go test ./... → ok
+// That closes `rename-project-klash-gnosh`, the whole plan: its work is done and stays done, though it is out of your context now. Tell the user what came of it from the results above.
 ```
 
 The agent looked at mem, planned the task as a todo with the work under it,

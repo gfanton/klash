@@ -141,6 +141,7 @@ func (m *Mem) Ask(name, question string) {
 // say it is being worked on while it waits for a day or for something
 // said, and a later session could not tell which holds.
 func (m *Mem) Start(name string) {
+	name = m.resolve(name)
 	it := m.openItem(name)
 	if it.For != "" {
 		panic(ref(name, it.Title) + " is for the user: only they can do it")
@@ -167,6 +168,7 @@ func (m *Mem) Start(name string) {
 // frame of the stack under it, is refused; and nobody closes a frame
 // another session holds.
 func (m *Mem) Done(name string, result ...string) {
+	name = m.resolve(name)
 	it := m.item(name)
 	stack := frames()
 	if it.Status != "" && name == top(stack) {
@@ -216,6 +218,7 @@ func (m *Mem) Done(name string, result ...string) {
 // it, is refused, and so is Drop of a frame another session holds, or
 // that has a step another session holds.
 func (m *Mem) Drop(name, why string) {
+	name = m.resolve(name)
 	it := m.openItem(name)
 	m.refuseBound(name, "drop")
 	why = clip(text("why", why), maxText)
@@ -284,6 +287,7 @@ func (m *Mem) drop(name string, it *Todo, why string) []string {
 // left as it is. A frame popped and reopened does not bring back what its
 // pop removed from a context.
 func (m *Mem) Reopen(name string, why ...string) {
+	name = m.resolve(name)
 	it := m.item(name)
 	reason := clip(text("why", strings.Join(why, " ")), maxText)
 	if it.Status == "" {
@@ -346,6 +350,7 @@ func (m *Mem) reopenOne(n string) []string {
 // Note keeps a finding or an attempt on item name, open or closed, as a
 // thought named from its words (Think keeps one on the present frame).
 func (m *Mem) Note(name, text_ string) {
+	name = m.resolve(name)
 	it := m.item(name)
 	text_ = clip(text("the note", text_), maxText)
 	if text_ == "" {
@@ -377,6 +382,7 @@ func (m *Mem) note(name string, it *Todo, text string) string {
 // name, since a step is how one item waits for another. A refusal names
 // today ("today is Thu 2026-10-29").
 func (m *Mem) Wait(name, until string) {
+	name = m.resolve(name)
 	it := m.openItem(name)
 	until, why := clip(text("the wait", until), maxText), ""
 	if namesNextTalk(until) {

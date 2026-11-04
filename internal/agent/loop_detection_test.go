@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	gnovmtools "github.com/charmbracelet/crush/internal/gnovm/tools"
 )
 
 // makeStep creates a StepResult with the given tool calls and results in its Content.
@@ -125,8 +126,10 @@ func TestRepeatedToolCalls(t *testing.T) {
 		}
 	})
 
-	t.Run("multiple different patterns alternating", func(t *testing.T) {
-		// Two patterns alternating: each appears 5 times — not above threshold
+	t.Run("two patterns alternating", func(t *testing.T) {
+		// Two patterns alternating, each 5 times: never above the
+		// threshold, but back and forth between two calls that answer the
+		// same every time is a loop.
 		steps := make([]fantasy.StepResult, 10)
 		for i := range steps {
 			if i%2 == 0 {
@@ -135,9 +138,59 @@ func TestRepeatedToolCalls(t *testing.T) {
 				steps[i] = makeToolStep("write", `{"file":"b.go"}`, "content-b")
 			}
 		}
-		_, result := repeatedToolCalls(steps, 10, 5)
-		if result {
-			t.Error("expected false: two patterns each appearing 5 times (not > 5)")
+		calls, result := repeatedToolCalls(steps, 10, 5)
+		if !result || len(calls) != 2 || calls[0].ToolName != "read" || calls[1].ToolName != "write" {
+			t.Errorf("expected the two alternating calls, got %v %v", result, calls)
+		}
+	})
+
+	t.Run("three patterns cycling", func(t *testing.T) {
+		// Three calls in turn are not caught by the cycle rule: work that
+		// goes round edit, test and view is often progress.
+		steps := make([]fantasy.StepResult, 10)
+		for i := range steps {
+			steps[i] = makeToolStep("tool", fmt.Sprintf(`{"i":%d}`, i%3), fmt.Sprintf("result-%d", i%3))
+		}
+		if _, result := repeatedToolCalls(steps, 10, 5); result {
+			t.Error("expected false: three patterns, none above the threshold")
+		}
+	})
+
+	t.Run("two patterns with a step that made no call", func(t *testing.T) {
+		steps := make([]fantasy.StepResult, 10)
+		for i := range steps {
+			if i%2 == 0 {
+				steps[i] = makeToolStep("read", `{"file":"a.go"}`, "content-a")
+			} else {
+				steps[i] = makeToolStep("write", `{"file":"b.go"}`, "content-b")
+			}
+		}
+		steps[9] = makeEmptyStep()
+		if _, result := repeatedToolCalls(steps, 10, 5); result {
+			t.Error("expected false: the cycle rule needs every step of the window to call tools")
+		}
+	})
+
+	t.Run("a call to mem repeated, its receipt's numbers changing", func(t *testing.T) {
+		// mem's receipts end with the run's time and entry number, so the
+		// same call never answered the same text twice.
+		steps := make([]fantasy.StepResult, 10)
+		for i := range steps {
+			steps[i] = makeToolStep(gnovmtools.RunToolName, `{"name":"mem","code":"mem.Reopen(\"x\")"}`,
+				fmt.Sprintf("reopened `x` \"do x\"\nok · mem · ran %dms · kept as entry %d", 20+i, 40+i))
+		}
+		if _, result := repeatedToolCalls(steps, 10, 5); !result {
+			t.Error("expected true: the same call to mem, answered the same but for its numbers")
+		}
+	})
+
+	t.Run("other tools' numbers still count", func(t *testing.T) {
+		steps := make([]fantasy.StepResult, 10)
+		for i := range steps {
+			steps[i] = makeToolStep("bash", `{"command":"cat progress"}`, fmt.Sprintf("%d%% done", i*10))
+		}
+		if _, result := repeatedToolCalls(steps, 10, 5); result {
+			t.Error("expected false: a command whose output moves on is not a loop")
 		}
 	})
 }

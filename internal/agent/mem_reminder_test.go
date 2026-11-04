@@ -56,12 +56,12 @@ func TestMemReminderDue(t *testing.T) {
 func TestMemReminderText(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, "<system_reminder>mem hasn't been used recently. If you're working on a task of two or more steps, plan it in mem (gnovm_run name \"mem\": mem.Todo(\"…\").Push(), then mem.Todo(\"…\") for each step) and pop each step with its result as it finishes; if it is planned, carry on from its next todo. This is just a gentle reminder - ignore if not applicable.\n</system_reminder>", memReminder(nil, ""))
+	require.Equal(t, "<system_reminder>mem hasn't been used recently. If you're working on a task of two or more steps, plan it in mem (gnovm_run name \"mem\": mem.Todo(\"…\").Push(), then mem.Todo(\"…\") for each step) and pop each todo with its result as it finishes; if it is planned, carry on from its next todo. This is just a gentle reminder - ignore if not applicable.\n</system_reminder>", memReminder(nil, ""))
 	withList := memReminder([]session.Todo{
 		{Content: "Write the test", Status: session.TodoStatusCompleted},
 		{Content: "Land it", Status: session.TodoStatusInProgress},
 	}, "")
-	require.True(t, strings.HasSuffix(withList, ".\n\n\nHere is where your goal in mem stands:\n\n[1. [completed] Write the test\n2. [in_progress] Land it]</system_reminder>"), withList)
+	require.True(t, strings.HasSuffix(withList, ".\n\n\nHere is where your todos in mem stand:\n\n[1. [completed] Write the test\n2. [in_progress] Land it]</system_reminder>"), withList)
 }
 
 // countingModel calls the count tool with a new number on each of its

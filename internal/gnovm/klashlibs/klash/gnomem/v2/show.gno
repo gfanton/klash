@@ -352,7 +352,14 @@ func (m *Mem) Has(name string) bool {
 // showItem writes item name in full: its status, result, wait, claim, notes
 // and every item under it.
 func (m *Mem) showItem(sb *strings.Builder, name string, it *Todo) {
-	sb.WriteString(mark(it) + " " + ref(name, it.Title))
+	// The whole title, not ref's first 80 bytes: this is where a todo is
+	// read in full, and a title is kept up to maxTitle. A new session that
+	// saw only the start of its own "later" todo did half of it (QA,
+	// 2026-11-04).
+	sb.WriteString(mark(it) + " `" + name + "`")
+	if it.Title != "" {
+		sb.WriteString(" " + quote(line(it.Title, maxTitle)))
+	}
 	if p := parentOf(name); p != "" {
 		sb.WriteString(" (under " + ref(p, m.get(p).Title) + ")")
 	}

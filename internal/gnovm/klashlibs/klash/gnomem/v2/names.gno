@@ -263,13 +263,39 @@ func (m *Mem) item(name string) *Todo {
 	panic(m.miss(name))
 }
 
-// openItem is open item name.
+// resolve is the item name means: name itself, when it names one or holds
+// a "/"; else, standing in a frame, the todo of that last part under it, or
+// under a frame below it on the stack, the nearest first. A model in `x`
+// names its todo `x/y` by its last part: a Drop of `slug-lowercase`, the
+// todo being `slug-test-add/slug-lowercase`, was refused, and the call
+// with it (QA, 2026-11-04). Anything else is left as given, for the
+// refusal to name.
+func (m *Mem) resolve(name string) string {
+	if name == "" || strings.Contains(name, "/") || m.get(name) != nil {
+		return name
+	}
+	for _, f := range m.framesDown() {
+		if full := f + "/" + name; m.get(full) != nil {
+			return full
+		}
+	}
+	return name
+}
+
+// openItem is open item name. A closed one is refused with what came of
+// it first: after the close that ends a plan cuts its work from the
+// context, a model that saw only "mem.Reopen(…) to work on it again"
+// reopened finished work as "closed before work started" and did it all
+// again (QA, 2026-11-04).
 func (m *Mem) openItem(name string) *Todo {
 	it := m.item(name)
-	if it.Status != "" {
-		panic(ref(name, it.Title) + " is " + it.Status + arrow(it.Result) + "; mem.Reopen(\"" + name + "\") to work on it again")
+	switch it.Status {
+	case "":
+		return it
+	case "done":
+		panic(ref(name, it.Title) + " is done" + arrow(it.Result) + ". That is what came of it, and the work stays done though it is out of your context: answer from it. Reopen it only if the user wants more done: mem.Reopen(\"" + name + "\", \"why\")")
 	}
-	return it
+	panic(ref(name, it.Title) + " is " + it.Status + arrow(it.Result) + "; mem.Reopen(\"" + name + "\", \"why\") takes it up again, if the user wants it")
 }
 
 // miss says why name names no item, and what it might have been.

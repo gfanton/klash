@@ -69,11 +69,11 @@ func isMemReminder(msg message.Message) bool {
 }
 
 // memReminder is the reminder of mem, in the shape of Claude Code's of its
-// todo list, with todos, where the session's goal in mem stands, when it
+// todo list, with todos, where the session's todos in mem stand, when it
 // has one, and frame, the frame in mem the session is in (frameReminder),
 // when it is in one.
 func memReminder(todos []session.Todo, frame string) string {
-	text := memReminderOpening + ` If you're working on a task of two or more steps, plan it in mem (gnovm_run name "mem": mem.Todo("…").Push(), then mem.Todo("…") for each step) and pop each step with its result as it finishes; if it is planned, carry on from its next todo. This is just a gentle reminder - ignore if not applicable.`
+	text := memReminderOpening + ` If you're working on a task of two or more steps, plan it in mem (gnovm_run name "mem": mem.Todo("…").Push(), then mem.Todo("…") for each step) and pop each todo with its result as it finishes; if it is planned, carry on from its next todo. This is just a gentle reminder - ignore if not applicable.`
 	if frame != "" {
 		text += " " + frame
 	}
@@ -83,7 +83,7 @@ func memReminder(todos []session.Todo, frame string) string {
 		for i, todo := range todos {
 			lines[i] = fmt.Sprintf("%d. [%s] %s", i+1, todo.Status, todo.Content)
 		}
-		text += "\n\nHere is where your goal in mem stands:\n\n[" + strings.Join(lines, "\n") + "]"
+		text += "\n\nHere is where your todos in mem stand:\n\n[" + strings.Join(lines, "\n") + "]"
 	}
 	return "<system_reminder>" + text + "</system_reminder>"
 }

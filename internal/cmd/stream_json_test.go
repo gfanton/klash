@@ -94,6 +94,36 @@ func TestStreamJSONWritesATurnInOrder(t *testing.T) {
 	require.Equal(t, float64(2), lines[4]["num_turns"])
 }
 
+// A pop marks the rows it cuts, and each mark comes as an update. Rows of
+// an earlier run of the session, as when each turn is its own `gnosh run`,
+// were never written by this one: they must not stream as this turn's work.
+func TestStreamJSONSkipsRowsAPopCut(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	o, err := newRunOutput("stream-json", &out)
+	require.NoError(t, err)
+	o.started("s1", fixedInit("s1", "/work", "qwen3.8-27b"))
+
+	old := message.ToolCall{ID: "c0", Name: "view", Input: `{"file_path":"main.go"}`, Finished: true}
+	popped := assistantMsg("a0", "s1", message.TextContent{Text: "Reading it."}, old, message.Finish{Reason: message.FinishReasonToolUse})
+	popped.Popped = "fix-main"
+	o.message(popped)
+	o.message(message.Message{ID: "t0", Role: message.Tool, SessionID: "s1", Popped: "fix-main", Parts: []message.ContentPart{
+		message.ToolResult{ToolCallID: "c0", Name: "view", Content: "package main"},
+	}})
+	o.message(assistantMsg("a1", "s1", message.TextContent{Text: "Done."}, message.Finish{Reason: message.FinishReasonEndTurn}))
+	_, _ = o.w.Write([]byte("Done."))
+	require.NoError(t, o.finish(nil))
+
+	var types []string
+	for _, l := range streamLines(t, out.String()) {
+		types = append(types, l["type"].(string))
+	}
+	require.Equal(t, []string{"system", "assistant", "result"}, types, "the cut rows of an earlier run are not written")
+	require.NotContains(t, out.String(), "Reading it.")
+}
+
 // A turn cut short leaves its last message unfinished; its text is still
 // written, before the result.
 func TestStreamJSONWritesAnUnfinishedMessageAtTheEnd(t *testing.T) {

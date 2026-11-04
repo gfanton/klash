@@ -75,6 +75,38 @@ func (m *mockSessionAgent) ListSettledMessages(context.Context, string) ([]messa
 	return nil, nil
 }
 
+// freshNamer names every text it is asked for afresh, as the small model
+// does: name-1 on the first ask, name-2 on the next.
+type freshNamer struct {
+	*mockSessionAgent
+	asks int
+}
+
+func (a *freshNamer) NamesFor(_ context.Context, _ string, texts []string) (map[string]string, error) {
+	a.asks++
+	out := map[string]string{}
+	for _, t := range texts {
+		out[t] = fmt.Sprintf("name-%d", a.asks)
+	}
+	return out, nil
+}
+
+// A text keeps its made name in the session, so a call mem refused, sent
+// again, makes what the refusal named; a new text is asked for, and another
+// session names afresh.
+func TestNameForKeepsANameByText(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	agent := &freshNamer{mockSessionAgent: &mockSessionAgent{}}
+	c := &coordinator{mainAgent: agent}
+	const lower = "make Slug lower-case its output"
+	require.Equal(t, map[string]string{lower: "name-1"}, c.nameFor(ctx, "s1", []string{lower}))
+	require.Equal(t, map[string]string{lower: "name-1", "add a test": "name-2"}, c.nameFor(ctx, "s1", []string{lower, "add a test"}))
+	require.Equal(t, map[string]string{lower: "name-1"}, c.nameFor(ctx, "s1", []string{lower}))
+	require.Equal(t, 2, agent.asks, "a text named before is not asked for again")
+	require.Equal(t, map[string]string{lower: "name-3"}, c.nameFor(ctx, "s2", []string{lower}))
+}
+
 // newTestCoordinator creates a minimal coordinator for unit testing runSubAgent.
 func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCfg config.ProviderConfig) *coordinator {
 	cfg, err := config.Init(env.workingDir, "", false, config.TrustFolderForSession())

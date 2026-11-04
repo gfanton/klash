@@ -123,7 +123,7 @@ func (m *Mem) Frame(id ...string) *Frame {
 	case len(id) == 0:
 		return m.frame(m.present())
 	}
-	n := id[0]
+	n := m.resolve(id[0])
 	if n == "" {
 		return m.frame(bound())
 	}
@@ -385,6 +385,26 @@ func (m *Mem) nextAtRoot() string {
 	return ""
 }
 
+// pushChain enters todo id from the root together with the todos above it,
+// from the top, so that the stack matches the plan: popping id leaves the
+// session in its parent. A thought promoted from the root takes this way
+// into its new todo under its open frame. A todo above that another
+// session holds is passed over. (Next from the root enters the free todo
+// alone, as sessions sharing a plan take its todos, PARALLEL.md.)
+func (m *Mem) pushChain(id, thought string) {
+	var above []string
+	for p := parentOf(id); p != ""; p = parentOf(p) {
+		above = append([]string{p}, above...)
+	}
+	me := caller()
+	for _, p := range above {
+		if it := m.get(p); it.Status == "" && (it.Doing == "" || it.Doing == me) {
+			m.enter(p, "", true)
+		}
+	}
+	m.push(id, thought)
+}
+
 // Push steps into the frame: it becomes this session's, the top of its
 // stack, and from here the context will be cut when it is popped.
 func (f *Frame) Push() {
@@ -397,10 +417,16 @@ func (f *Frame) Push() {
 // push enters frame id. thought is the text of the thought the frame was
 // made from, when the push follows its making.
 func (m *Mem) push(id, thought string) {
+	m.enter(id, thought, false)
+}
+
+// enter enters frame id, as push; above, a todo entered on the way to one
+// under it (pushChain), says only where the model now also stands.
+func (m *Mem) enter(id, thought string, above bool) {
 	stack := frames()
 	switch {
 	case id == "":
-		panic("the root is not a frame to enter: push a todo, or make one: mem.Todo(\"…\").Push()")
+		panic("the root is not a frame to enter: push a todo, or make one: mem.Todo(\"…\").Push(); to add a todo at the top from inside a frame: mem.Frame(\"\").Todo(\"…\")")
 	case id == bound():
 		panic("you are in `" + id + "` already: it is this session's /goal; push its todos")
 	}
@@ -423,7 +449,19 @@ func (m *Mem) push(id, thought string) {
 		m.do(Op{Kind: "set", Name: id, Field: "doing", Old: it.Doing, New: me})
 	}
 	pushed(id, it.Title)
+	if above {
+		println("in " + ref(id, it.Title) + ", the todo above the next one")
+		return
+	}
 	println(pushText(id, it.Title, thought))
+	// The thoughts already on it, as a note left for it by another frame or
+	// session (mem.Note), or what it said when it was closed before: they
+	// reach the model as it starts the todo, with no search (QA,
+	// 2026-11-04: a test spec kept for this todo sat in mem while the next
+	// session wrote a different test).
+	if kept := thoughtLines(it.Notes, maxShownThoughts); kept != "" {
+		println("thoughts on it: " + kept)
+	}
 	if others := m.doneByOthers(id, me); others != "" {
 		print(others)
 	}
@@ -544,7 +582,7 @@ func (m *Mem) holdsOf(id string) string {
 // has a todo this session could enter, it says so, since a todo another
 // session holds, ended or not, does not hold the free ones under it.
 func (m *Mem) heldText(id string, it *Todo) string {
-	msg := "`" + id + "` is held by " + who(it.Doing) + ": only it can pop, close or drop it (resume that session if it has ended)"
+	msg := "`" + id + "` is held by " + who(it.Doing) + ": only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user"
 	if nt := m.nextTodo(id); nt != nil {
 		msg += "; its todo " + ref(nt.Id, nt.Purpose) + " is free: mem.Frame(" + quote(nt.Id) + ").Push() steps into it"
 	}
@@ -643,7 +681,10 @@ func top(stack []string) string {
 func (m *Mem) Pop(result string) {
 	stack := frames()
 	if len(stack) == 0 {
-		panic("nothing to pop: you are at the root")
+		// A todo entered with Next from the root is entered alone, without
+		// the todo above it: a model that popped its last job and then "the
+		// parent" lost both pops to this refusal (QA, 2026-11-04).
+		panic("nothing to pop: you are at the root. A todo mem.Next() entered from the root is entered without the todo above it: close that one with mem.Done(\"name\", \"…\") once its todos are done")
 	}
 	id := top(stack)
 	it := m.item(id)
@@ -658,8 +699,13 @@ func (m *Mem) Pop(result string) {
 // refuseFresh refuses to leave frame id done when the session entered it
 // in its round before this one with nothing in between (fresh()): its todo
 // was never done. Pop and Done of the present frame both ask.
+//
+// A todo whose own todos are all closed, some done, is not fresh: its work
+// was done in them, though it was entered only after (QA, 2026-11-04: a
+// parent entered with its jobs all done was refused, and the model re-ran
+// the tests only to have something between).
 func (m *Mem) refuseFresh(id string, it *Todo) {
-	if id == fresh() {
+	if id == fresh() && !(it.DoneSteps > 0 && it.OpenSteps == 0) {
 		panic("not popped: nothing came between your entering " + ref(id, it.Title) + " and this pop, so it is not done. Do it, or check that it is done, then pop it.")
 	}
 }
@@ -690,6 +736,7 @@ func (m *Mem) pop(id string, it *Todo, result string, dropped bool) {
 			msg += ", with its open todos " + names(outlineOrder(steps))
 		}
 		println(msg)
+		m.printKept(it)
 		return
 	}
 	if it.OpenSteps > 0 {
@@ -708,6 +755,50 @@ func (m *Mem) pop(id string, it *Todo, result string, dropped bool) {
 	m.do(Op{Kind: "set", Name: id, Field: "result", New: r})
 	popped(id, it.Title, r, len(it.Notes))
 	println("done " + ref(id, it.Title) + " → " + line(r, maxText))
+	m.printKept(it)
+	if parentOf(id) == "" {
+		// The close that ends a plan cuts the plan's work from the
+		// context; with none of it in sight, models took the plan for
+		// undone and started it again (QA, 2026-11-04).
+		println("That closes `" + id + "`, the whole plan: its work is done and stays done, though it is out of your context now. Tell the user what came of it from the results above.")
+	}
+}
+
+// printKept hands a popped frame's thoughts back in the receipt, word for
+// word: the pop takes everything else since the push out of the context,
+// and a thought kept for a later todo was otherwise never read again (QA,
+// 2026-11-04: "README must say --shout was added in version 1.4" was kept
+// before the pop and left out of the README).
+func (m *Mem) printKept(it *Todo) {
+	if kept := thoughtLines(it.Notes, maxShownThoughts); kept != "" {
+		println("its thoughts, kept: " + kept)
+	}
+}
+
+// maxShownThoughts is how many of a frame's thoughts a push or pop receipt
+// lists, and maxShownThought how much of each.
+const (
+	maxShownThoughts = 5
+	maxShownThought  = 600
+)
+
+// thoughtLines is notes as a receipt lists them, oldest first: "`name`:
+// text", and the todo a thought became; at most max, the rest counted; ""
+// for none.
+func thoughtLines(notes []note, max int) string {
+	var parts []string
+	for i, n := range notes {
+		if i == max {
+			parts = append(parts, "and "+strconv.Itoa(len(notes)-max)+" more, which mem.Show lists")
+			break
+		}
+		p := "`" + n.Name + "`: " + line(n.Text, maxShownThought)
+		if n.Step != "" {
+			p += " (now the todo `" + n.Step + "`)"
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, "; ")
 }
 
 // NextHint is what to do after frame id was popped, for gnosh to end the
@@ -767,7 +858,7 @@ func (m *Mem) NextHint(id string) string {
 func (m *Mem) Think(args ...string) Thought {
 	p := m.present()
 	if p == "" {
-		panic("you are at the root, in no frame: mem.Fact(\"…\") keeps something to remember")
+		panic("you are at the root, in no frame, so a thought has no frame to go on: mem.Note(\"todo-name\", \"…\") keeps it on a todo, and mem.Fact(\"name\", \"…\") keeps project knowledge")
 	}
 	it := m.item(p)
 	var name, thought string
@@ -808,7 +899,7 @@ func (m *Mem) thoughtName(id string, it *Todo, name string) string {
 	case name == "":
 		panic("a thought needs a name to find it by: mem.Think(\"port-env\", \"the port is read from an env var\")")
 	case name == id || strings.Contains(name, "/") && m.get(name) != nil:
-		panic("`" + name + "` is a frame; a thought's name is a label of your own on the frame you are in, `" + id + "`: mem.Think(\"attempt-1\", \"…\")")
+		panic("`" + name + "` is a frame; a thought's name is a label of your own on the frame you are in, `" + id + "`: mem.Think(\"attempt-1\", \"…\"); to note something on `" + name + "` itself: mem.Note(\"" + name + "\", \"…\")")
 	case strings.ToLower(name) != name && validName(strings.ToLower(name)):
 		panic("names are lowercase: `" + strings.ToLower(name) + "`")
 	case strings.Contains(name, "/") || !validName(name):
@@ -976,20 +1067,39 @@ func (m *Mem) pushThought(t Thought, why ...string) {
 	if it.Status != "" || !(frame == present || onStack(frames(), frame)) {
 		parent = present
 	}
-	if parent == "" {
-		why := "is not on your stack"
-		if it.Status != "" {
-			why = "is " + it.Status
-		}
-		panic("`" + frame + "` " + why + ", and you are at the root, in no frame: enter a frame to dive into `" + t.name + "` from")
-	}
 	purpose := ""
 	if len(why) == 1 {
 		purpose = clip(text("why", why[0]), maxTitle)
+	}
+	if parent == "" && it.Status != "" {
+		// From the root, a thought of a closed todo becomes a top-level todo:
+		// that is when a thought turns out to need work, after its todo was
+		// done, and the only place left for it. Refused, a model reopened
+		// the finished todo just to stand in it (QA, 2026-11-04).
+		title := purpose
+		if title == "" {
+			title = clip(text("the thought", n.Text), maxTitle)
+		}
+		m.refuseOpenTitle(title)
+		id := m.freeName(t.name, func(x string) bool { return m.freeTop(x) })
+		m.do(Op{Kind: "add", Name: id, New: title, By: caller()})
+		m.do(Op{Kind: "set", Name: frame + "#" + t.name, Field: "frame", Old: n.Step, New: id})
+		println("thought `" + t.name + "` is now the todo `" + id + "`, at the top")
+		m.push(id, n.Text)
+		return
+	}
+	if parent == "" {
+		// From the root, a thought of an open todo becomes a todo under it,
+		// entered with it (pushChain).
+		parent = frame
 	}
 	step := parent + "/" + m.freeStep(parent, t.name)
 	m.addStep(parent, step, purpose)
 	m.do(Op{Kind: "set", Name: frame + "#" + t.name, Field: "frame", Old: n.Step, New: step})
 	println("thought `" + t.name + "` is now the todo `" + step + "`")
+	if present == "" {
+		m.pushChain(step, n.Text)
+		return
+	}
 	m.push(step, n.Text)
 }

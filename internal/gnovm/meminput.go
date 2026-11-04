@@ -208,7 +208,7 @@ var (
 var memMoved = map[string]string{
 	"Add":      `mem.Todo("what to get done") adds a todo under the one you are in, a top-level one at the root, and names it for you`,
 	"Goal":     `mem.Todo("what to get done") adds a todo under the one you are in, a top-level one at the root, and names it for you; .Push() enters it`,
-	"Push":     `mem.Next() steps into the next todo under the frame you are in (at the root, of the newest open task); a particular frame: mem.Frame("name").Push(), mem.Todo("…").Push()`,
+	"Push":     `mem.Next() steps into the next todo under the frame you are in (at the root, of the newest open task, with the todos above it); a particular frame: mem.Frame("name").Push(), mem.Todo("…").Push()`,
 	"Step":     `mem.Todo("a todo") adds one under the todo you are in; mem.Frame("name").Todo("…") adds under another`,
 	"Steps":    `mem.Todo("a todo") adds one under the todo you are in, one call each, in order; mem.Frame("name").Todo("…") adds under another`,
 	"NewFrame": `mem.Todo("what to get done") adds a todo under the one you are in, and names it for you; .Push() enters it`,

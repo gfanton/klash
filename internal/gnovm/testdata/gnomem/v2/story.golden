@@ -63,7 +63,7 @@ dropped `bump-gno-pin` "bump the gno pin"
 > s1: mem.Reopen("bump-gno-pin")
 reopened `bump-gno-pin` "bump the gno pin"; it waits for: PR #6399 merged
 > s1: mem.Done("release-v2/tag", "tagged v2.0.0")
-error: `release-v2/tag` is held by session s2: only it can pop, close or drop it (resume that session if it has ended)
+error: `release-v2/tag` is held by session s2: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > s2: mem.Done("release-v2/tag", "tagged v2.0.0")
 done `release-v2/tag` "tag it" → tagged v2.0.0; next: `release-v2/ci-green` "CI is green"
 > s1: mem.Done("release-v2/ci-green", "go test ./... → ok")

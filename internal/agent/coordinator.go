@@ -214,6 +214,11 @@ type coordinator struct {
 	named *namedChanges
 	// jobs tells a session when a background job its agent started ends.
 	jobs *jobWatcher
+	// madeNames is the names the small model made for the texts kept in
+	// mem, by session and then text (nameFor), so a call sent again names
+	// its texts as before. Guarded by madeNamesMu; nil until the first.
+	madeNamesMu sync.Mutex
+	madeNames   map[string]map[string]string
 
 	// agentMu guards mainAgent and mainAgentName: SetMainAgent runs on
 	// HTTP handler goroutines while runs, cancels, and probes read the
@@ -2069,19 +2074,55 @@ func (c *coordinator) ContextUsage(ctx context.Context, sessionID string) (Conte
 }
 
 // nameFor is the names the small model gives the texts one call keeps in
-// mem without naming them (gnovmtools.Namer); nil when there is no agent or
-// no answer, and mem names them from their words.
+// mem without naming them (gnovmtools.Namer); none when there is no agent or
+// no answer, and mem names them from their words. A text named before in
+// the session keeps its name: a call mem refused keeps nothing, and its
+// refusal names what the call made, so the retry must make the same. Named
+// afresh each time, one call was refused 37 times in 10 minutes, each time
+// for the name the previous try had been given (QA, 2026-11-04).
 func (c *coordinator) nameFor(ctx context.Context, sessionID string, texts []string) map[string]string {
 	agent := c.currentAgent()
 	if agent == nil {
 		return nil
 	}
-	names, err := agent.NamesFor(ctx, sessionID, texts)
+	out := map[string]string{}
+	var ask []string
+	c.madeNamesMu.Lock()
+	for _, t := range texts {
+		if n, ok := c.madeNames[sessionID][t]; ok {
+			out[t] = n
+		} else {
+			ask = append(ask, t)
+		}
+	}
+	c.madeNamesMu.Unlock()
+	if len(ask) == 0 {
+		return out
+	}
+	names, err := agent.NamesFor(ctx, sessionID, ask)
 	if err != nil {
 		slog.Debug("No names from the small model; mem names them from the words", "error", err)
 	}
-	return names
+	c.madeNamesMu.Lock()
+	defer c.madeNamesMu.Unlock()
+	if c.madeNames == nil {
+		c.madeNames = map[string]map[string]string{}
+	}
+	known := c.madeNames[sessionID]
+	if known == nil || len(known) >= maxMadeNames {
+		known = map[string]string{}
+		c.madeNames[sessionID] = known
+	}
+	for t, n := range names {
+		known[t] = n
+		out[t] = n
+	}
+	return out
 }
+
+// maxMadeNames is how many texts' names nameFor keeps for a session before
+// it starts over.
+const maxMadeNames = 1000
 
 // GenerateTitle generates a session title using the current agent.
 func (c *coordinator) GenerateTitle(ctx context.Context, sessionID, prompt string) {

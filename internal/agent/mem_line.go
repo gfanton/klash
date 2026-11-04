@@ -16,7 +16,7 @@ import (
 // is kept with the prompt as a hidden part, as hook output is, so a rebuilt
 // conversation reads as it went out and a local server's cache of it
 // holds; the system prompt says how mem and the machines work.
-const memLine = "<system_reminder>Use mem and Gno whenever reasonable: work things out in Gno rather than in your head, and answer from what it returns. Keep goals, steps, facts and reminders in mem, and look there before answering from memory. Call nothing done until you've checked it and mem shows it done.</system_reminder>"
+const memLine = "<system_reminder>Use mem and Gno whenever reasonable: work things out in Gno rather than in your head, and answer from what it returns. Keep todos, thoughts, facts and reminders in mem, and look there before answering from memory. Call nothing done until you've checked it and mem shows it done.</system_reminder>"
 
 // memLineBlock is memLine for a prompt that takes it, with the frames in
 // mem the session is in after it (SessionAgentCall.frameLine); "" for a

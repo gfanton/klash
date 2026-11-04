@@ -1,7 +1,7 @@
 > s1: mem.Next()
 no next todo: nothing is open: make a todo, mem.Todo("…").Push().
 > s1: mem.Think("port", "the shared port is 8080")
-error: you are at the root, in no frame: mem.Fact("…") keeps something to remember
+error: you are at the root, in no frame, so a thought has no frame to go on: mem.Note("todo-name", "…") keeps it on a todo, and mem.Fact("name", "…") keeps project knowledge
 > s1: f := mem.Todo("fix the flaky test"); f.Todo("reproduce it"); f.Todo("find why TestFlaky fails"); f.Todo("rerun the suite 20 times")
 added `fix-flaky-test` "fix the flaky test"
 added `fix-flaky-test/reproduce` "reproduce it"
@@ -24,6 +24,7 @@ in `side-quest` "side quest": when it is done, pop it with what came of it and w
 error: `side-quest` is already on your stack
 > s1: mem.Pop("nothing to see yet")
 done `side-quest` "side quest" → nothing to see yet
+That closes `side-quest`, the whole plan: its work is done and stays done, though it is out of your context now. Tell the user what came of it from the results above.
   [pop `side-quest` → nothing to see yet]
 > s1: mem.Frame("fix-flaky-test/retry")
 error: there is no frame `fix-flaky-test/retry`; mem.Show() lists them
@@ -89,6 +90,7 @@ error: you are still in `fix-flaky-test/reproduce`: pop or drop it before `fix-f
 error: you are still in `fix-flaky-test/reproduce`: pop or drop it before `fix-flaky-test`
 > s1: mem.Done("fix-flaky-test/reproduce", "it fails 3 of 20 runs on the shared port")
 done `fix-flaky-test/reproduce` "reproduce it" → it fails 3 of 20 runs on the shared port
+its thoughts, kept: `port`: the user says the shared port is 8080; `fails-3-20-runs`: it fails 3 of 20 runs; `fix-pick-free-port`: the fix is to pick a free port in setup; `fix-pick-free-port-2`: the fix is to pick a free port in setup
 next: `fix-flaky-test/find-why-testflaky-fails` "find why TestFlaky fails": mem.Next()
   [pop `fix-flaky-test/reproduce` → it fails 3 of 20 runs on the shared port]
 > s1: mem.Pop("twice")
@@ -147,9 +149,11 @@ next: pop `fix-flaky-test/rerun-suite-20-times` with the evidence that it holds
 reopened `fix-flaky-test/rerun-suite-20-times/flake-rate` "measure it again after the fix"; next: `fix-flaky-test/rerun-suite-20-times/flake-rate` "measure it again after the fix"
 > s1: mem.Thought("flake-rate").Push()
 in `fix-flaky-test/rerun-suite-20-times/flake-rate` "measure it again after the fix": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+thoughts on it: `was-done-0-20`: was done: 0 of 20 after the fix
   [push `fix-flaky-test/rerun-suite-20-times/flake-rate`]
 > s1: mem.Pop("0 of 50 after the fix")
 done `fix-flaky-test/rerun-suite-20-times/flake-rate` "measure it again after the fix" → 0 of 50 after the fix
+its thoughts, kept: `was-done-0-20`: was done: 0 of 20 after the fix
 next: pop `fix-flaky-test/rerun-suite-20-times` with the evidence that it holds
   [pop `fix-flaky-test/rerun-suite-20-times/flake-rate` → 0 of 50 after the fix]
 > s1: mem.Todo("twenty runs")
@@ -165,6 +169,7 @@ next: `fix-flaky-test/rerun-suite-20-times/fifty-runs` "fifty runs": mem.Next()
   [pop `fix-flaky-test/rerun-suite-20-times/twenty-runs` → 20 of 20 passed]
 > s1: mem.Drop("fix-flaky-test/rerun-suite-20-times", "twenty runs were enough")
 dropped `fix-flaky-test/rerun-suite-20-times` "rerun the suite 20 times", with its open todos `fix-flaky-test/rerun-suite-20-times/fifty-runs`
+its thoughts, kept: `flake-rate`: 3 of 20 runs failed before the fix (now the todo `fix-flaky-test/rerun-suite-20-times/flake-rate`)
 next: `fix-flaky-test/rename-port-flag` "rename the port flag": mem.Next()
   [pop `fix-flaky-test/rerun-suite-20-times` → dropped: twenty runs were enough]
 > s2: mem.Frame("fix-flaky-test/rename-port-flag").Push()
@@ -173,21 +178,21 @@ in `fix-flaky-test/rename-port-flag` "rename the port flag": when it is done, po
 > s1: mem.Next()
 no next todo: nothing in `fix-flaky-test` can be done now: `fix-flaky-test/rename-port-flag` is held by session s2.
 > s1: mem.Done("fix-flaky-test/rename-port-flag", "renamed")
-error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it (resume that session if it has ended)
+error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > s1: mem.Drop("fix-flaky-test/rename-port-flag", "not needed")
-error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it (resume that session if it has ended)
+error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > s1: mem.Start("fix-flaky-test/rename-port-flag")
-error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it (resume that session if it has ended)
+error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > s1: mem.Frame("fix-flaky-test/rename-port-flag").Push()
-error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it (resume that session if it has ended)
+error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > s1: mem.Pop("the suite passes with the free port")
 error: `fix-flaky-test` "fix the flaky test" has open todos `fix-flaky-test/rename-port-flag` "rename the port flag": push and pop them, or drop them, first
 > user: mem.Forget("fix-flaky-test/rename-port-flag")
-error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it (resume that session if it has ended)
+error: `fix-flaky-test/rename-port-flag` is held by session s2: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > user: mem.Drop("fix-flaky-test", "the user gives up")
-error: `fix-flaky-test` is held by session s1: only it can pop, close or drop it (resume that session if it has ended)
+error: `fix-flaky-test` is held by session s1: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > s3: mem.Frame("fix-flaky-test").Push()
-error: `fix-flaky-test` is held by session s1: only it can pop, close or drop it (resume that session if it has ended)
+error: `fix-flaky-test` is held by session s1: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > s3: mem.Next()
 no next todo: `fix-flaky-test` "fix the flaky test": nothing in it can be done now: `fix-flaky-test/rename-port-flag` is held by session s2; or make a todo, mem.Todo("…").Push().
 > s2: mem.Pop("the flag is --port now")
@@ -198,6 +203,7 @@ next: mem.Done("fix-flaky-test", "…") once it holds
 no next todo: `fix-flaky-test` "fix the flaky test" has no open todo and is held by session s1, which pops it with its result; or make a todo, mem.Todo("…").Push().
 > s1: mem.Pop("the suite passes 20 of 20 with the free port")
 done `fix-flaky-test` "fix the flaky test" → the suite passes 20 of 20 with the free port
+That closes `fix-flaky-test`, the whole plan: its work is done and stays done, though it is out of your context now. Tell the user what came of it from the results above.
   [pop `fix-flaky-test` → the suite passes 20 of 20 with the free port]
 > s1: mem.Next()
 no next todo: nothing is open: make a todo, mem.Todo("…").Push().
@@ -223,21 +229,24 @@ no next todo: nothing is open: make a todo, mem.Todo("…").Push().
 reopened `side-quest` "side quest"; next: `side-quest` itself: mem.Done("side-quest", "…") once it holds
 > s3: mem.Frame("side-quest").Push()
 in `side-quest` "side quest": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+thoughts on it: `was-done-nothing-see`: was done: nothing to see yet
   [push `side-quest`]
 > s3: mem.Todo("look around").Push()
 added `side-quest/look-around` "look around"
 in `side-quest/look-around` "look around": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
   [push `side-quest/look-around`]
 > s1: mem.Frame("side-quest/look-around").Push()
-error: `side-quest/look-around` is held by session s3: only it can pop, close or drop it (resume that session if it has ended)
+error: `side-quest/look-around` is held by session s3: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > s1: mem.Done("side-quest", "nothing to see")
-error: `side-quest` is held by session s3: only it can pop, close or drop it (resume that session if it has ended)
+error: `side-quest` is held by session s3: only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user
 > s3: mem.Pop("nothing here")
 done `side-quest/look-around` "look around" → nothing here
 next: pop `side-quest` with the evidence that it holds
   [pop `side-quest/look-around` → nothing here]
 > s3: mem.Pop("nothing to see")
 done `side-quest` "side quest" → nothing to see
+its thoughts, kept: `was-done-nothing-see`: was done: nothing to see yet
+That closes `side-quest`, the whole plan: its work is done and stays done, though it is out of your context now. Tell the user what came of it from the results above.
   [pop `side-quest` → nothing to see]
 > user: mem.Bind("deploy the site")
 added `deploy-site` "deploy the site"
