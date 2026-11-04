@@ -814,7 +814,11 @@ conflicts will be worked out later.
 - **Contributions.** CONTRIBUTING.md grants a contribution to the Maintainer
   and, separately, to Charmbracelet, Inc., so that work can still go upstream.
   Those separate grants to Charm are what let the fork keep that path open;
-  they are not a grant of anyone's rights under this file.
+  they are not a grant of anyone's rights under this file. Work that belongs,
+  or is to be assigned, to Jae Kwon or a company he controls is licensed to
+  the Maintainer only; what was submitted under an earlier version of
+  CONTRIBUTING.md, such as pull request #6, may be licensed to Charm too,
+  except what Jae Kwon made.
 - **Remote users.** Section 13 of the License asks that whoever modifies the
   Program, and lets people use the modified version remotely (for instance
   through gnosh's server mode or its channels), offer them its Corresponding
