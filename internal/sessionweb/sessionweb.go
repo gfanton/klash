@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -64,7 +66,35 @@ func New(store Store, contextFn ContextFunc) *Server {
 	return s
 }
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
+// ServeHTTP refuses requests a browser sends on behalf of another site: a
+// Host that is not a loopback name, which is what a DNS-rebound name pointing
+// at 127.0.0.1 sends, and an Origin that is not the Host it was sent to.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !isLoopbackHost(r.Host) {
+		http.Error(w, "host not allowed", http.StatusForbidden)
+		return
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "origin not allowed", http.StatusForbidden)
+			return
+		}
+	}
+	s.mux.ServeHTTP(w, r)
+}
+
+func isLoopbackHost(hostport string) bool {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
 
 func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 	b, err := pageHTML.ReadFile("page.html")
