@@ -697,9 +697,9 @@ func TestMemBlock(t *testing.T) {
 		"mem: 5 todos open · 1 question for the user · 1 fact\n"+
 		"due: `renew-tls-cert` \"renew the TLS cert\" (since 2026-12-01)\n"+
 		"waiting on the user: `release-v2/tag-v2-0-0/which-key-signs-tag` \"which key signs the &lt;tag&gt;?\"\n"+
-		"open todos, newest first:\n"+
-		"- `renew-tls-cert` \"renew the TLS cert\" (32d ago) due since 2026-12-01\n"+
+		"open todos, in the order made:\n"+
 		"- `release-v2` \"release v2\" (0/2 done · 32d ago) next: `release-v2/bump-version` \"bump the version\"\n"+
+		"- `renew-tls-cert` \"renew the TLS cert\" (32d ago) due since 2026-12-01\n"+
 		"facts, newest first: `cmd/test` = go test -race ./...\n"+
 		"</mem>", block)
 }
@@ -726,22 +726,22 @@ func TestMemBlockCapsItsLists(t *testing.T) {
 }
 
 // A goal that waits for something said in words stays in the block when
-// newer goals push it out of the open goals listed (MEMPLAN §3 row 47).
+// the open goals listed are cut before it (MEMPLAN §3 row 47).
 func TestMemBlockNamesWhatWaitsForWords(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	h := newTestMemHost(t, dir)
-	memOK(t, h, `mem.Todo("bump the gno pin").Wait("PR #6399 merged")`)
 	code := ""
 	for i := 1; i <= 25; i++ {
 		code += `mem.Todo("task number ` + strconv.Itoa(i) + `")` + "\n"
 	}
 	memOK(t, h, code)
+	memOK(t, h, `mem.Todo("bump the gno pin").Wait("PR #6399 merged")`)
 	st, ok := readMemStatus(dir)
 	require.True(t, ok)
 	block := memBlock(st, time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC))
 	require.Contains(t, block, "waiting for something said: `bump-gno-pin` \"bump the gno pin\" (PR #6399 merged)\n")
-	require.NotContains(t, block, "- `bump-gno-pin`", "not among the newest goals listed")
+	require.NotContains(t, block, "- `bump-gno-pin`", "not among the goals listed, the first made")
 }
 
 // The user is told at a session's start what in mem is due that day and

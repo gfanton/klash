@@ -50,9 +50,9 @@ const maxMemBlock = 2000
 // memBlock is what a new session is told of mem, from its status: the
 // user's rules in full, first; then, within about maxMemBlock bytes, the
 // counts, what is due today, the questions for the user, what waits for
-// something said in words (older than the goals listed), the open goals
-// newest first with their next, and the newest facts. "" when mem holds
-// none of these.
+// something said in words (and is not among the goals listed), the open
+// goals in the order made, as Next takes them, with their next, and the
+// newest facts. "" when mem holds none of these.
 func memBlock(st memStatus, now time.Time) string {
 	var m memJSON
 	if json.Unmarshal(st.Mem, &m) != nil {
@@ -101,7 +101,7 @@ func memBlock(st memStatus, now time.Time) string {
 		b.WriteString("waiting on the user: " + memFew(asks, m.Counts.ForUser) + "\n")
 	}
 	// A goal that waits for words ("PR #6399 merged") is easy to lose once
-	// newer goals push it out of the list below: it is named here.
+	// the list below is cut: it is named here.
 	listed := map[string]bool{}
 	for _, g := range m.Goals {
 		listed[g.Name] = true
@@ -122,7 +122,7 @@ func memBlock(st memStatus, now time.Time) string {
 			break
 		}
 		if i == 0 {
-			b.WriteString("open todos, newest first:\n")
+			b.WriteString("open todos, in the order made:\n")
 		}
 		var aside []string
 		if g.StepsOpen+g.StepsDone > 0 {

@@ -168,19 +168,13 @@ func (m *Mem) Start(name string) {
 // frame of the stack under it, is refused; and nobody closes a frame
 // another session holds.
 //
-// Done with what came of it alone, words where the name goes, closes the
-// todo you are in, as Pop does: models write it (QA, 2026-11-04).
+// Words alone, where the name goes, are refused with the call that does
+// what was meant: models wrote what came of the todo they were in as if
+// Done were Pop (QA, 2026-11-04), and closing the todo they stand in on
+// that guess could close the wrong one.
 func (m *Mem) Done(name string, result ...string) {
 	if len(result) == 0 && strings.ContainsRune(strings.TrimSpace(name), ' ') && m.get(name) == nil {
-		switch {
-		case len(frames()) > 0:
-			m.Pop(name)
-			return
-		case bound() != "":
-			m.Done(bound(), name)
-			return
-		}
-		panic("you are at the root, in no todo: mem.Done(\"name\", \"what came of it\") closes a todo by its name")
+		panic(m.wordsForDone(name))
 	}
 	name = m.resolve(name)
 	it := m.item(name)
@@ -214,7 +208,7 @@ func (m *Mem) Done(name string, result ...string) {
 	if it.Doing != "" {
 		m.do(Op{Kind: "set", Name: name, Field: "doing", Old: it.Doing})
 	}
-	m.do(Op{Kind: "set", Name: name, Field: "status", New: "done"})
+	m.do(Op{Kind: "set", Name: name, Field: "status", New: "done", By: caller()})
 	if r != "" {
 		m.do(Op{Kind: "set", Name: name, Field: "result", New: r})
 	}
@@ -223,6 +217,26 @@ func (m *Mem) Done(name string, result ...string) {
 		verb = "answered "
 	}
 	println(verb + ref(name, it.Title) + arrow(r) + m.whatNext(goalOf(name)))
+}
+
+// wordsForDone says what to send for mem.Done(words): the todo whose task
+// the words are, or, standing in a todo, the pop that closes it with them.
+func (m *Mem) wordsForDone(words string) string {
+	msg := "mem.Done takes a todo's name, then what came of it"
+	if id := m.taskNamed(words); id != "" {
+		return msg + ": " + strconv.Quote(words) + " is the task of `" + id + "`, so mem.Done(\"" + id + "\", \"what came of it\")"
+	}
+	at := top(frames())
+	if at == "" {
+		at = bound()
+	}
+	if at != "" && at == top(frames()) {
+		return msg + "; to close `" + at + "`, the todo you are in, with those words: mem.Pop(" + quote(line(words, 200)) + ")"
+	}
+	if at != "" {
+		return msg + "; to close `" + at + "`, this session's /goal, with those words: mem.Done(\"" + at + "\", " + quote(line(words, 200)) + ")"
+	}
+	return msg + ": mem.Done(\"name\", " + quote(line(words, 200)) + "), mem.Show() lists the names"
 }
 
 // Drop closes open item name as not to be done, with why. Its open steps

@@ -12,11 +12,11 @@ added `fix-flaky-test/rerun-suite-20-times` "rerun the suite 20 times"
 > s1: mem.Frame()
 mem: 2 todos open
 todos:
+  [ ] `side-quest` "side quest" (this session · 2m ago)
   [ ] `fix-flaky-test` "fix the flaky test" (0/3 done · this session · 1m ago)
     [ ] `fix-flaky-test/reproduce` "reproduce it"  ← next
     [ ] `fix-flaky-test/find-why-testflaky-fails` "find why TestFlaky fails"
     [ ] `fix-flaky-test/rerun-suite-20-times` "rerun the suite 20 times"
-  [ ] `side-quest` "side quest" (this session · 2m ago)
 > s1: mem.Next()
 in `side-quest` "side quest": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
   [push `side-quest`]
@@ -334,7 +334,7 @@ in `ship-docs/write-guide` "write the guide": when it is done, pop it with what 
   [push `ship-docs`]
   [push `ship-docs/write-guide`]
 > s5: mem.Leave("the user wants the guide after the links")
-left `ship-docs/write-guide` "write the guide" open: it stays a todo, held by nobody, and is off your stack; to take another todo of `ship-docs`: mem.Frame("name").Push(), mem.Show("ship-docs") lists them
+left `ship-docs/write-guide` "write the guide" open: it stays a todo, held by nobody, and is off your stack; to take another todo of `ship-docs`: mem.Frame("name").Push(), mem.Show("ship-docs") lists them (mem.Next() would take this one again)
   [pop `ship-docs/write-guide` → left open: the user wants the guide after the links]
 > s5: mem.Frame("ship-docs/check-links").Push()
 in `ship-docs/check-links` "check the links": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.

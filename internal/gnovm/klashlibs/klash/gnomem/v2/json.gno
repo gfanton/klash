@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// maxJSONGoals is how many open goals JSON() lists, newest first: more than
+// maxJSONGoals is how many open goals JSON() lists, in the order made: more than
 // the <mem> block shows, and few enough to compute after every change; and
 // maxJSONDays and maxJSONAsks how many items waiting for a day, and
 // questions for the user (counts.for_user counts them all).
@@ -117,8 +117,8 @@ func (m *Mem) JSON(names ...string) string {
 	j.key("goals")
 	j.open("[")
 	i = 0
-	m.open.ReverseIterate("", "", func(_ string, v any) bool {
-		m.goalJSON(&j, v.(string), false)
+	m.eachTask(func(task string, _ *Todo) bool {
+		m.goalJSON(&j, task, false)
 		i++
 		return i == maxJSONGoals
 	})
@@ -157,7 +157,7 @@ func (m *Mem) goalJSON(j *jsonWriter, name string, withSteps bool) {
 	}
 	session := caller()
 	j.open("{")
-	for _, kv := range [][2]string{{"name", name}, {"title", g.Title}, {"status", g.Status}, {"result", g.Result}, {"wait", g.Wait}, {"for", g.For}, {"doing", g.Doing}, {"by", g.By}} {
+	for _, kv := range [][2]string{{"name", name}, {"title", g.Title}, {"status", g.Status}, {"result", g.Result}, {"wait", g.Wait}, {"for", g.For}, {"doing", m.doer(name, g)}, {"by", g.By}} {
 		j.field(kv[0], kv[1])
 	}
 	j.key("changed")
@@ -198,7 +198,7 @@ func (m *Mem) goalJSON(j *jsonWriter, name string, withSteps bool) {
 		n := 0
 		m.eachStep(name, func(step string, s *Todo) bool {
 			j.open("{")
-			for _, kv := range [][2]string{{"name", step}, {"title", s.Title}, {"status", s.Status}, {"for", s.For}, {"doing", s.Doing}} {
+			for _, kv := range [][2]string{{"name", step}, {"title", s.Title}, {"status", s.Status}, {"for", s.For}, {"doing", m.doer(step, s)}} {
 				j.field(kv[0], kv[1])
 			}
 			if s.Parallel {
@@ -218,7 +218,7 @@ func (m *Mem) goalJSON(j *jsonWriter, name string, withSteps bool) {
 		for i, n := range names {
 			it := m.get(n)
 			j.open("{")
-			for _, kv := range [][2]string{{"name", n}, {"why", why[i]}, {"title", it.Title}, {"wait", m.waitOn(n)}, {"doing", it.Doing}} {
+			for _, kv := range [][2]string{{"name", n}, {"why", why[i]}, {"title", it.Title}, {"wait", m.waitOn(n)}, {"doing", m.doer(n, it)}} {
 				j.field(kv[0], kv[1])
 			}
 			j.key("changed")

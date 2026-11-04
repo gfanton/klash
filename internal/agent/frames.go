@@ -308,12 +308,28 @@ func refusedFreshText(frame string) string {
 }
 
 // memWork is a statement of a call to mem that changes it, a thought and a
-// todo planned on a frame among them: not mem.Fact(name) or
-// mem.Thought(name), which read one, a name having no space and the call
-// no second argument.
-var memWork = regexp.MustCompile(`\bmem\.(Think|Note|Rule|Todo|Later|Wait|Ask|Done|Drop|Reopen|Forget|Redact|Start)\(` +
-	`|\bmem\.(Fact|Thought)\(([^)]*,|\s*"[^"\s]*\s)` +
-	`|\.(Todo|Wait|Ask|Parallel|Done|Drop|Reopen|Note|Think)\(`)
+// todo planned on a frame among them; memKeep is a Fact or a Thought, which
+// changes mem unless it is one name alone, which reads one (memChanged).
+var (
+	memWork  = regexp.MustCompile(`\bmem\.(Think|Note|Rule|Todo|Later|Wait|Ask|Done|Drop|Reopen|Forget|Redact|Start)\(|\.(Todo|Wait|Ask|Parallel|Done|Drop|Reopen|Note|Think)\(`)
+	memKeep  = regexp.MustCompile(`\bmem\.(Fact|Thought)\(\s*("(?:[^"\\]|\\.)*")?\s*(\)?)`)
+	memNamed = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)*$`)
+)
+
+// memChanged reports whether code calls mem in a way that changes it: not
+// mem.Fact("cmd/test") or mem.Thought("port"), a read of one by its name.
+func memChanged(code string) bool {
+	if memWork.MatchString(code) {
+		return true
+	}
+	for _, m := range memKeep.FindAllStringSubmatch(code, -1) {
+		name, err := strconv.Unquote(m[2])
+		if m[3] != ")" || err != nil || !memNamed.MatchString(name) {
+			return true
+		}
+	}
+	return false
+}
 
 // memWorked reports whether a call to mem in rows, one mem did not refuse,
 // changed it.
@@ -334,7 +350,7 @@ func memWorked(rows []message.Message) bool {
 			var input struct {
 				Code string `json:"code"`
 			}
-			if json.Unmarshal([]byte(call.Input), &input) == nil && memWork.MatchString(input.Code) {
+			if json.Unmarshal([]byte(call.Input), &input) == nil && memChanged(input.Code) {
 				return true
 			}
 		}
@@ -941,8 +957,13 @@ func editedFiles(rows []message.Message, calls map[string]message.ToolCall, work
 }
 
 // memStatement is a call to mem in an input, by its first word and the
-// name it was given: mem.Fact("port", …).
-var memStatement = regexp.MustCompile(`(?m)^\s*mem\.([A-Z]\w*)\(\s*(?:"((?:[^"\\]|\\.)*)")?`)
+// name it was given, and whether that was all it was given: mem.Fact("port",
+// …); memFrameVerb is a verb called on a todo by its name:
+// mem.Frame("x").Done(…).
+var (
+	memStatement = regexp.MustCompile(`(?m)^\s*mem\.([A-Z]\w*)\(\s*(?:"((?:[^"\\]|\\.)*)"\s*(\))?)?`)
+	memFrameVerb = regexp.MustCompile(`(?m)^\s*mem\.Frame\(\s*"((?:[^"\\]|\\.)*)"\s*\)\.(Done|Drop|Reopen|Note|Wait|Ask|Todo|Parallel)\(`)
+)
 
 // memChanges is the calls to mem in rows' inputs that changed it, other
 // than Think and the frame calls themselves, by first word and name:
@@ -971,15 +992,22 @@ func memChanges(rows []message.Message) []string {
 			}
 			for _, m := range memStatement.FindAllStringSubmatch(input.Code, -1) {
 				switch m[1] {
-				case "Think", "Push", "Pop", "Frame", "Thought", "Recall",
-					"Show", "Find", "Next", "JSON", "Check", "String", "Bind", "Apply":
+				case "Think", "Push", "Pop", "Leave", "Frame", "Thought", "Recall",
+					"Show", "Find", "Next", "JSON", "Check", "String", "Bind", "Apply", "Help":
 					continue
+				case "Fact":
+					if m[3] == ")" && memNamed.MatchString(m[2]) {
+						continue // a read
+					}
 				}
 				change := m[1]
 				if m[2] != "" {
 					change += " `" + m[2] + "`"
 				}
 				changes = append(changes, change)
+			}
+			for _, m := range memFrameVerb.FindAllStringSubmatch(input.Code, -1) {
+				changes = append(changes, m[2]+" `"+m[1]+"`")
 			}
 		}
 	}

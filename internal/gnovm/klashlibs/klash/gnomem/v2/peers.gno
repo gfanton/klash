@@ -182,8 +182,10 @@ func (m *Mem) waitsFor(anchor, session string, enter bool) []string {
 	done := func(n string) bool { return set[n] }
 	would := m.pickFor(anchor, session, enter, done) != ""
 	if !would && m.openUnder(anchor, done) == 0 {
+		// In a frame it could pop the frame then, unless another session
+		// holds it now; at the root, take the task itself, if free.
 		a := m.get(anchor)
-		would = enter || a.Status == "" && m.free(anchor, a, session)
+		would = enter && m.holder(anchor, a, session) == "" || !enter && a.Status == "" && m.free(anchor, a, session)
 	}
 	if !would {
 		return nil

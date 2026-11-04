@@ -273,7 +273,9 @@ func TestMemTakesTheShapesModelsWrite(t *testing.T) {
 	names := addedNames(s.ok(`mem.Todo("tidy up", "fix the typos", "fix the links")`).Output)
 	require.Len(t, names, 3)
 	s.ok(`mem.Next()`)
-	res := s.ok(`mem.Done("All typos fixed in README.md")`)
+	res := s.run(`mem.Done("All typos fixed in README.md")`)
+	require.ErrorContains(t, res.Err, "mem.Done takes a todo's name, then what came of it; to close `"+names[1]+"`, the todo you are in, with those words: mem.Pop(\"All typos fixed in README.md\")")
+	res = s.ok(`mem.Pop("All typos fixed in README.md")`)
 	require.Contains(t, res.Output, "done `"+names[1]+"`")
 	s.ok(`mem.Next()`)
 	res = s.ok(`mem.Pop("` + names[2] + `", "two links fixed")`)
@@ -288,6 +290,23 @@ func TestMemTakesTheShapesModelsWrite(t *testing.T) {
 	require.Contains(t, res.Output, "two links point at the old wiki")
 	res = s.run(`mem.Pop()`)
 	require.ErrorContains(t, res.Err, "to step out of it and leave it open: mem.Leave(\"why\")")
+
+	// A todo's task where its name goes is named in the refusal; Pop takes
+	// the present todo's last part, or its task, before the result.
+	s2 := newMemSession(t)
+	more := addedNames(s2.ok(`mem.Todo("tidy more", "fix the spelling", "fix the dates")`).Output)
+	require.Len(t, more, 3)
+	s2.ok(`mem.Next()`)
+	require.Equal(t, more[:2], s2.stack)
+	res = s2.run(`mem.Done("fix the dates")`)
+	require.ErrorContains(t, res.Err, "\"fix the dates\" is the task of `"+more[2]+"`, so mem.Done(\""+more[2]+"\", \"what came of it\")")
+	res = s2.ok(`mem.Done("` + more[2] + `", "dates are ISO 8601 now")`)
+	require.Contains(t, res.Output, "done `"+more[2]+"`")
+	require.Equal(t, more[:2], s2.stack, "the present todo stays open")
+	res = s2.ok(`mem.Pop("` + more[1][strings.LastIndexByte(more[1], '/')+1:] + `", "spelling fixed")`)
+	require.Contains(t, res.Output, "done `"+more[1]+"`")
+	res = s2.ok(`mem.Pop("tidy more", "both fixed")`)
+	require.Contains(t, res.Output, "done `"+more[0]+"`")
 }
 
 // A fresh frame with no todos of its own is still refused.

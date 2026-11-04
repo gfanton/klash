@@ -43,8 +43,8 @@ todos:
     [ ] `release-v2/tag` "tag it" (held by session s2, 2m ago)
       [x] `release-v2/tag/which-key-signs-tag` "which key signs the tag?" → the YubiKey
     [ ] `release-v2/ci-green` "CI is green"  ← next
-  [ ] `bump-gno-pin` "bump the gno pin" (this session · 3m ago · waits for: PR #6399 merged)
   [ ] `renew-tls-cert` "renew the TLS cert" (this session · 4m ago · waits until 2026-12-01)
+  [ ] `bump-gno-pin` "bump the gno pin" (this session · 3m ago · waits for: PR #6399 merged)
 
 > s1: mem.Fact("cmd/test", "go test ./...")
 fact `cmd/test` is new
@@ -75,8 +75,8 @@ mem: 2 todos open · 1 closed · 1 rule · 3 facts
 rules:
   `push-after-landing` = push gnosh main to GitHub only after land-branch.sh prints landed:
 todos:
-  [ ] `bump-gno-pin` "bump the gno pin" (this session · 5m ago · waits for: PR #6399 merged)
   [ ] `renew-tls-cert` "renew the TLS cert" (this session · 17m ago · waits until 2026-12-01)
+  [ ] `bump-gno-pin` "bump the gno pin" (this session · 5m ago · waits for: PR #6399 merged)
 closed lately:
   [x] `release-v2` "release v2" → shipped (2026-10-29)
 facts, newest first:
@@ -198,9 +198,9 @@ questions for the user:
 due:
   [ ] `renew-tls-cert` "renew the TLS cert" (since 2026-12-01)
 todos:
+  [ ] `renew-tls-cert` "renew the TLS cert" (this session · 33d ago · due since 2026-12-01)
   [ ] `bump-gno-pin` "bump the gno pin" (this session · 33d ago · waits for: PR #6399 merged)
-  [ ] `rotate-staging-key` "rotate the staging key" (0/1 done · this session · 33d ago · waits on the user)
-    [?] `rotate-staging-key/which-day-suits-you` "which day suits you?"
+  [ ] `make-tea-2` "make tea" (this session · 33d ago)
   [ ] `port-tests-gno` "port the tests to gno" (7/10 done · this session · 33d ago)
     [x] `port-tests-gno/arith` … `port-tests-gno/fmt`: 5 done
     [x] `port-tests-gno/io` "io" → ported
@@ -208,8 +208,8 @@ todos:
     [ ] `port-tests-gno/sort` "sort"  ← next
     [ ] `port-tests-gno/strings` "strings"
     [ ] `port-tests-gno/time` "time"
-  [ ] `make-tea-2` "make tea" (this session · 33d ago)
-  [ ] `renew-tls-cert` "renew the TLS cert" (this session · 33d ago · due since 2026-12-01)
+  [ ] `rotate-staging-key` "rotate the staging key" (0/1 done · this session · 33d ago · waits on the user)
+    [?] `rotate-staging-key/which-day-suits-you` "which day suits you?"
 closed lately:
   [-] `tidy-docs` "tidy the docs" → moved to the docs session (2026-10-29)
   [-] `make-tea` "make tea" → no kettle (2026-10-29)

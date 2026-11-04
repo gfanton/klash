@@ -143,12 +143,12 @@ func (m *Mem) present() string {
 }
 
 // frame is frame id, with its todos one level deep and its thoughts; the
-// unbound root's todos are the open top-level ones, newest first.
+// unbound root's todos are the open top-level ones, in the order made.
 func (m *Mem) frame(id string) *Frame {
 	f := m.shallow(id)
 	if id == "" {
-		m.open.ReverseIterate("", "", func(_ string, v any) bool {
-			f.Todos = append(f.Todos, m.shallow(v.(string)))
+		m.eachTask(func(task string, _ *Todo) bool {
+			f.Todos = append(f.Todos, m.shallow(task))
 			return false
 		})
 		return f
@@ -372,7 +372,7 @@ func (m *Mem) Next() {
 	p := m.present()
 	if p == "" {
 		if n := m.nextAtRoot(); n != "" {
-			m.enterFromRoot(n)
+			m.pushChain(n, "")
 			return
 		}
 	} else if f := m.nextTodo(p); f != nil {
@@ -384,7 +384,10 @@ func (m *Mem) Next() {
 		var held []string
 		switch {
 		case p == "":
-			m.eachTask(func(task string, _ *Todo) bool {
+			m.eachTask(func(task string, g *Todo) bool {
+				if g.For != "" || m.waiting(g) {
+					return false // as nextAtRoot passes it over
+				}
 				held = m.waitsFor(task, me, false)
 				return len(held) > 0
 			})
@@ -434,33 +437,25 @@ func (m *Mem) eachTask(fn func(name string, it *Todo) bool) {
 	})
 }
 
-// enterFromRoot enters todo id, which Next took from the root, with the
-// todos above it, so that the stack matches the plan: a model that popped
-// its last todo and then "the parent", never on its stack, lost both pops
-// (QA, 2026-11-04). Under a parallel todo, whose todos are any session's
-// and whose own work is whoever's comes when they are done, it enters id
-// alone (PARALLEL.md).
-func (m *Mem) enterFromRoot(id string) {
-	for p := parentOf(id); p != ""; p = parentOf(p) {
-		if m.get(p).Parallel {
-			m.push(id, "")
-			return
-		}
-	}
-	m.pushChain(id, "")
-}
-
 // pushChain enters todo id from the root together with the todos above it,
 // from the top, so that the stack matches the plan: popping id leaves the
-// session in its parent. The todos above are entered on the way (Via), not
-// held: they are this session's while it works, and anyone's once it
-// stops, so a plan carried into a new session can still be closed. A todo
-// above that another session holds, or that a working session entered on
-// its way, is passed over. A thought promoted from the root takes this way
-// into its new todo under its open frame.
+// session in its parent. A model that popped its last todo and then "the
+// parent", never on its stack, lost both pops (QA, 2026-11-04). The todos
+// above are entered on the way (Via), not held: they are this session's
+// while it works, and anyone's once it stops, so a plan carried into a new
+// session can still be closed. A todo above that another session holds, or
+// that a working session entered on its way, is passed over. Under a
+// parallel todo, whose todos are any session's and whose own work is
+// whoever's comes when they are done, id is entered alone (PARALLEL.md).
+// Next from the root, and a thought promoted from the root into a todo
+// under its open frame, take this way.
 func (m *Mem) pushChain(id, thought string) {
 	var above []string
 	for p := parentOf(id); p != ""; p = parentOf(p) {
+		if m.get(p).Parallel {
+			m.push(id, thought)
+			return
+		}
 		above = append([]string{p}, above...)
 	}
 	me := caller()
@@ -559,7 +554,7 @@ func (m *Mem) Leave(why ...string) {
 	popped(id, it.Title, result, len(it.Notes))
 	msg := "left " + ref(id, it.Title) + " open: it stays a todo, held by nobody, and is off your stack"
 	if p := parentOf(id); p != "" && onStack(frames(), p) {
-		msg += "; to take another todo of `" + p + "`: mem.Frame(\"name\").Push(), mem.Show(\"" + p + "\") lists them"
+		msg += "; to take another todo of `" + p + "`: mem.Frame(\"name\").Push(), mem.Show(\"" + p + "\") lists them (mem.Next() would take this one again)"
 	}
 	println(msg)
 }
@@ -706,6 +701,12 @@ func (m *Mem) nothingNext() string {
 	if len(frames()) == 0 {
 		return "no next todo: `" + p + "` is this session's /goal and has no open todo: mem.Todo(\"…\") to plan more, or mem.Done when it holds."
 	}
+	if it.Status != "" {
+		return "no next todo: `" + p + "` is " + it.Status + " already" + arrow(it.Result) + ": mem.Pop(\"…\") takes it off your stack."
+	}
+	if h := m.holder(p, it, caller()); h != "" {
+		return "no next todo: `" + p + "` has no open todo, and " + who(h) + " holds it now and pops it: mem.Leave() steps out of it."
+	}
 	return m.doneByOthers(p, caller()) + "no next todo: `" + p + "` has no open todo: pop it with its result."
 }
 
@@ -753,7 +754,7 @@ func (m *Mem) heldText(id string, it *Todo) string {
 		h = it.Doing
 	}
 	msg := "`" + id + "` is held by " + who(h) + ": only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user"
-	if onStack(frames(), id) {
+	if top(frames()) == id {
 		msg += "; it is on your stack from before it took it: mem.Leave() steps out of it"
 	}
 	if nt := m.nextTodo(id); nt != nil {
@@ -872,7 +873,7 @@ func (m *Mem) Pop(result ...string) {
 	case 2:
 		// The shape of Done, its name first: models write it (QA,
 		// 2026-11-04).
-		if m.resolve(result[0]) != id {
+		if n := result[0]; m.resolve(n) != id && n != stepName(id) && sameTitle(n) != sameTitle(it.Title) {
 			panic("you are in `" + id + "`, not " + named(result[0]) + ": mem.Pop(\"…\") closes `" + id + "`, and mem.Done(\"name\", \"…\") closes a todo by its name")
 		}
 		r = result[1]
@@ -882,6 +883,41 @@ func (m *Mem) Pop(result ...string) {
 	m.refuseTaken(id, it)
 	m.refuseFresh(id, it)
 	m.pop(id, it, r, false)
+}
+
+// taskNamed is the open todo whose task text is: one at the top, or one on
+// the stack, or under a frame on it, the top's first; "" for none.
+// Done(text) then means that todo, not a result for the present one.
+func (m *Mem) taskNamed(text string) string {
+	if n := m.titled(text); n != "" {
+		return n
+	}
+	want := sameTitle(text)
+	stack := frames()
+	if b := bound(); b != "" {
+		stack = append([]string{b}, stack...)
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		f := stack[i]
+		it := m.get(f)
+		if it == nil || it.Status != "" {
+			continue
+		}
+		if sameTitle(it.Title) == want {
+			return f
+		}
+		found := ""
+		m.eachStep(f, func(step string, s *Todo) bool {
+			if s.Status == "" && sameTitle(s.Title) == want {
+				found = step
+			}
+			return found != ""
+		})
+		if found != "" {
+			return found
+		}
+	}
+	return ""
 }
 
 // refuseTaken refuses to close frame id, on this session's stack, when
@@ -950,7 +986,7 @@ func (m *Mem) pop(id string, it *Todo, result string, dropped bool) {
 	if it.Doing != "" {
 		m.do(Op{Kind: "set", Name: id, Field: "doing", Old: it.Doing})
 	}
-	m.do(Op{Kind: "set", Name: id, Field: "status", New: "done"})
+	m.do(Op{Kind: "set", Name: id, Field: "status", New: "done", By: caller()})
 	m.do(Op{Kind: "set", Name: id, Field: "result", New: r})
 	popped(id, it.Title, r, len(it.Notes))
 	println("done " + ref(id, it.Title) + " → " + line(r, maxText))
@@ -1043,6 +1079,8 @@ func (m *Mem) NextHint(id string) string {
 	switch {
 	case p.OpenSteps > 0:
 		return "next: nothing in `" + parent + "` can be done now: " + m.holdsOf(parent)
+	case parent == present && onStack(frames(), parent) && m.holder(parent, p, caller()) != "":
+		return "next: `" + parent + "` is held by " + who(m.holder(parent, p, caller())) + " now, which pops it: mem.Leave() steps out of it"
 	case parent == present && onStack(frames(), parent):
 		return m.doneByOthers(parent, caller()) + "next: pop `" + parent + "` with the evidence that it holds"
 	}

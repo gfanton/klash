@@ -104,7 +104,7 @@ type Op struct {
 	Field string // set: "status", "result", "wait", "for", "doing", "via", "parallel", or "frame" (a thought's step); redact: "item", "fact", "rule" or "statements"; forget: "" (an item), "fact" or "rule"
 	Old   string // set, fact, rule: before; unadd: the title; unnote, redact: the text taken out
 	New   string // add: the title; set, fact, rule: after; note: the text
-	By    string // add, unadd: who made the item; rule: who set it
+	By    string // add, unadd: who made the item; rule: who set it; a set of "status" that closes an item: who closed it, kept as its Did
 }
 
 // The kinds of Op, and the inverse undo applies:

@@ -302,9 +302,22 @@ func TestMemWorkMatchesChanges(t *testing.T) {
 		`mem.Leave("the user wants it later")`:    false,
 		`println(mem.Show())`:                     false,
 		`mem.Help("Todo")`:                        false,
+		`mem.Fact("Postgres")`:                    true,
 	} {
-		require.Equal(t, want, memWork.MatchString(code), code)
+		require.Equal(t, want, memChanged(code), code)
 	}
+}
+
+// The pop receipt's "you also changed mem" lists a verb on a todo by the
+// todo's name, and leaves out a fact read by its name, Help and Leave.
+func TestMemChangesListsWhatChanged(t *testing.T) {
+	t.Parallel()
+	code := "mem.Fact(\"cmd/test\")\nmem.Help(\"Todo\")\nmem.Fact(\"cmd/build\", \"go build ./...\")\nmem.Frame(\"release/tag\").Done(\"tagged\")\nmem.Later(\"fix the flaky test\")\nmem.Leave(\"later\")"
+	rows := []message.Message{
+		row(message.Assistant, "a1", message.ToolCall{ID: "m1", Name: "gnovm_run", Input: `{"name":"mem","code":` + strconv.Quote(code) + `}`, Finished: true}),
+		row(message.Tool, "t1", message.ToolResult{ToolCallID: "m1", Name: "gnovm_run", Content: "ok · mem · ran 3ms · kept as entry 4\n"}),
+	}
+	require.Equal(t, []string{"Fact `cmd/build`", "Later `fix the flaky test`", "Done `release/tag`"}, memChanges(rows))
 }
 
 // A frame is fresh, and mem refuses its pop, until work came between: a

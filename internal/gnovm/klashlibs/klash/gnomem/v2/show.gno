@@ -26,7 +26,7 @@ const (
 )
 
 // Show returns mem as an outline: the rules, the questions for the user,
-// what is due, the open goals newest first with their steps and progress,
+// what is due, the open goals in the order made with their steps and progress,
 // the newest closed goals, then the newest facts. Given names, it shows
 // those items, facts or rules in full; a name that only has names under it
 // ("cmd") lists them. About 3000 bytes at most.
@@ -66,9 +66,11 @@ func (m *Mem) Show(names ...string) string {
 	}
 	if m.open.Size() > 0 {
 		sb.WriteString("todos:\n")
-		// Newest first.
-		m.open.ReverseIterate("", "", func(_ string, v any) bool {
-			m.outline(&sb, v.(string))
+		// In the order made, the order Next takes them in from the root:
+		// listed newest first, a plan's steps made as todos at the top
+		// read backwards (QA, 2026-11-04).
+		m.eachTask(func(task string, _ *Todo) bool {
+			m.outline(&sb, task)
 			return sb.Len() > maxShow
 		})
 	}
@@ -254,8 +256,11 @@ func (m *Mem) aside(name string, it *Todo, top bool) string {
 		case m.asksUnder(name):
 			parts = append(parts, "waits on the user")
 		}
-		if it.Doing != "" {
+		switch d := m.doer(name, it); {
+		case it.Doing != "":
 			parts = append(parts, "held by "+who(it.Doing)+", "+ago(it.Changed))
+		case d != "":
+			parts = append(parts, who(d)+" is in it")
 		}
 	}
 	if len(parts) == 0 {
@@ -378,6 +383,8 @@ func (m *Mem) showItem(sb *strings.Builder, name string, it *Todo) {
 	}
 	if it.Doing != "" {
 		sb.WriteString("  held by " + who(it.Doing) + "\n")
+	} else if d := m.doer(name, it); d != "" {
+		sb.WriteString("  " + who(d) + " is in it, on the way to a todo under it\n")
 	}
 	sb.WriteString("  made by " + who(it.By) + ", changed " + ago(it.Changed) + "\n")
 	for _, n := range it.Notes {

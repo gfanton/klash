@@ -830,9 +830,9 @@ func (m *Mem) Help(call ...string) string                 // the calls to know, 
   stays, prompts, replies and tool results, and Gnosh names the sessions
   that still show a redacted secret.
 - **Short by construction.** Show's outline stays under about 3000 bytes:
-  the rules, what is due, the open todos newest first (a long run of finished
-  todos folded into one line), the todos closed lately, and the newest facts,
-  with the rest of them by group.
+  the rules, what is due, the open todos in the order made, as Next takes
+  them (a long run of finished todos folded into one line), the todos
+  closed lately, and the newest facts, with the rest of them by group.
 
 ## The machines
 

@@ -192,6 +192,11 @@ func (m *Mem) applySet(op Op, at int64) {
 		return
 	}
 	it := m.mustItem(op.Name)
+	if op.Field == "via" && it.Status != "" {
+		// Nobody is in a closed todo: closing cleared its Via, and an undo
+		// that would put one back, or take one out, changes nothing.
+		return
+	}
 	var cur string
 	switch op.Field {
 	case "status":
@@ -219,6 +224,11 @@ func (m *Mem) applySet(op Op, at int64) {
 	switch op.Field {
 	case "status":
 		m.setStatus(op.Name, it, op.New, at)
+		if op.New != "" && op.By != "" {
+			// Who closed it did it, held or not: a todo closed by its name,
+			// or popped by the session that entered it on the way.
+			it.Did = op.By
+		}
 	case "result":
 		it.Result = op.New
 	case "wait":
