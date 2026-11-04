@@ -271,6 +271,23 @@ func TestConnect_RestoresADataDirRemovedTwice(t *testing.T) {
 	}
 }
 
+// A data directory removed since the last check, just before gnosh exits,
+// is restored before the pool closes the removed file.
+func TestRelease_RestoresARemovalSinceTheLastCheck(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	t.Cleanup(ResetPool)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "kept", Title: "kept"})
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dataDir))
+
+	require.NoError(t, Release(dataDir))
+	ids, err := sessionIDsIn(t.Context(), filepath.Join(dataDir, "gnosh.db"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"kept"}, ids)
+}
+
 // A restored data directory is locked again when it was locked before.
 func TestConnect_LocksRestoredDataDir(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), ".gnosh")

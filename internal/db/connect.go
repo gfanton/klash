@@ -226,7 +226,9 @@ func poolKey(dataDir string) string {
 	return abs
 }
 
-// watchFile checks the database file every interval until ctx ends.
+// watchFile checks the database file every interval until ctx ends, and
+// once more then, so a removal since the last check is restored before
+// the pool closes the removed file.
 func (e *connEntry) watchFile(ctx context.Context, interval time.Duration, done chan<- struct{}) {
 	defer close(done)
 	ticker := time.NewTicker(interval)
@@ -234,6 +236,7 @@ func (e *connEntry) watchFile(ctx context.Context, interval time.Duration, done 
 	for {
 		select {
 		case <-ctx.Done():
+			e.checkFile(context.WithoutCancel(ctx))
 			return
 		case <-ticker.C:
 			e.checkFile(ctx)
