@@ -1,0 +1,46 @@
+A plan inside a todo: the first of two todos is three jobs, and the user
+asks for them to be planned under it when it is reached. The agent goes
+two frames deep: each job is entered, done and closed, then the todo
+above them, then the second todo. Every job must be done and recorded,
+nothing left open, and the second todo must still be done after the
+deeper frames close.
+
+-- project/go.mod --
+module shop
+
+go 1.22
+-- project/api.go --
+// Package api creates users, orders and items.
+package api
+
+// CreateUser creates a user.
+func CreateUser(name string) error {
+	return nil
+}
+
+// CreateOrder creates an order of qty units.
+func CreateOrder(qty int) error {
+	return nil
+}
+
+// CreateItem creates an item with a stock-keeping unit.
+func CreateItem(sku string) error {
+	return nil
+}
+-- project/README.md --
+# shop
+
+## API
+
+- CreateUser(name)
+- CreateOrder(qty)
+- CreateItem(sku)
+-- prompt --
+Two todos for mem: (1) add input validation to the three Create functions in api.go, each with a test: CreateUser's name must not be empty, CreateOrder's qty must be from 1 to 100, CreateItem's sku must look like ABC-1234 (three capital letters, a hyphen, four digits). (1) is three jobs, so when you get to it, plan one todo per function under it. (2) Document the rules in README.md's API section. Do both.
+-- check --
+turn 1 tool gnovm_run >= 3
+cmd go test ./...
+cmd printf 'package api\n\nimport "testing"\n\nfunc TestQAChecks(t *testing.T) {\n\tif CreateUser("") == nil || CreateUser("ann") != nil {\n\t\tt.Fatal("CreateUser")\n\t}\n\tif CreateOrder(0) == nil || CreateOrder(101) == nil || CreateOrder(5) != nil {\n\t\tt.Fatal("CreateOrder")\n\t}\n\tif CreateItem("abc-1234") == nil || CreateItem("ABC-123") == nil || CreateItem("ABC-1234") != nil {\n\t\tt.Fatal("CreateItem")\n\t}\n}\n' > qa_checks_test.go && go test -run TestQAChecks ./...
+cmd grep -qE '100' README.md && grep -qiE 'empty|blank' README.md && grep -qE 'ABC-1234|\[A-Z\]' README.md
+mem-count open == 0
+mem-count done >= 5
