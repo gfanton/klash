@@ -139,6 +139,20 @@ func TestCoderPromptNamesTheAddedDirs(t *testing.T) {
 	require.Contains(t, withDirs, "\nAdditional working directories: /src/gno, /src/bubblerumble\nIs directory a git repo:")
 }
 
+// The coder is told to keep gnosh's data folder, under the older names
+// too, which a project from before the renames still keeps its sessions
+// in. The names are written out rather than the project's own folder, so
+// the system prompt stays the same from one project to the next.
+func TestCoderPromptKeepsTheDataFolder(t *testing.T) {
+	store := config.NewTestStore(&config.Config{Options: &config.Options{}})
+	p, err := coderPrompt(prompt.WithWorkingDir(t.TempDir()))
+	require.NoError(t, err)
+
+	text, err := p.Build(t.Context(), "", "", store)
+	require.NoError(t, err)
+	require.Contains(t, text, "Never delete or move `.gnosh/` either, nor `.klash/` or `.crush/` in an older project:")
+}
+
 // The task sub-agent's environment names them too, as Claude Code's
 // environment does for every agent.
 func TestTaskPromptNamesTheAddedDirs(t *testing.T) {
