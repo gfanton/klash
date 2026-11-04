@@ -22,20 +22,22 @@ func NewPlan(cur realm, id, title string, open bool, lease int) string {
 	if !validName(id, 40) {
 		panic("a plan id is 1 to 40 of a-z, 0-9 and -")
 	}
-	if plans.Has(id) {
+	if hasPlan(id) {
 		panic("plan " + id + " exists")
 	}
 	if lease < minLease || lease > maxLease {
 		panic("a lease is " + strconv.Itoa(minLease) + " to " + strconv.Itoa(maxLease) + " seconds")
 	}
 	p := &Plan{ID: id, Owner: prev.Address(), Open: open, Lease: int64(lease)}
+	p.Self = p
 	root := &Todo{ID: "t", Title: cleanText("the title", title, maxTitle)}
-	p.Todos.Set(root.ID, root)
+	p.Root = root
+	p.putTodo(root)
 	p.Count, p.OpenN = 1, 1
-	plans.Set(id, p)
-	touched, served = nil, 0
+	putPlan(p)
+	c := &call{p: p, now: now()}
 	p.emit("plan", root.ID, "owner", p.Owner.String(), "open", strconv.FormatBool(open), "lease", strconv.Itoa(lease), "title", root.Title)
-	p.update(root)
+	c.update(root)
 	return id
 }
 
@@ -47,7 +49,10 @@ func AddMember(cur realm, plan, addr string) {
 	if !a.IsValid() {
 		panic("not an address: " + addr)
 	}
-	p.Members.Set(a.String(), true)
+	if p.Members == nil {
+		p.Members = map[string]bool{}
+	}
+	p.Members[a.String()] = true
 	p.emit("member", "", "address", a.String())
 }
 
@@ -59,7 +64,7 @@ func AddTodos(cur realm, plan, label, parent, names, titles string) string {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
+	c := p.begin()
 	pt := p.todo(parent)
 	if pt.Status != "" {
 		panic(parent + " is " + pt.Status + "; reopen it first")
@@ -75,35 +80,37 @@ func AddTodos(cur realm, plan, label, parent, names, titles string) string {
 	if len(ns) > maxAdd {
 		panic("add at most " + strconv.Itoa(maxAdd) + " todos in one call")
 	}
-	if len(pt.Children)+len(ns) > maxChildren {
+	if len(pt.Kids)+len(ns) > maxChildren {
 		panic("a todo holds at most " + strconv.Itoa(maxChildren) + " todos")
 	}
-	var ids []string
+	var added []*Todo
+	ids := make([]string, 0, len(ns))
 	for i, name := range ns {
 		if !validName(name, maxName) {
 			panic("a todo name is 1 to " + strconv.Itoa(maxName) + " of a-z, 0-9 and -: " + strconv.Quote(name))
 		}
 		id := pt.ID + "/" + name
-		if p.Todos.Has(id) {
+		if p.lookup(id) != nil {
 			panic("a todo named " + id + " exists")
 		}
-		t := &Todo{ID: id, Parent: pt.ID, Index: len(pt.Children), Title: cleanText("a title", ts[i], maxTitle)}
-		p.Todos.Set(id, t)
-		pt.Children = append(pt.Children, id)
+		t := &Todo{ID: id, Parent: pt.ID, Up: pt, Index: len(pt.Kids), Title: cleanText("a title", ts[i], maxTitle)}
+		p.putTodo(t)
+		pt.Kids = append(pt.Kids, t)
 		pt.OpenKids++
 		p.Count++
 		p.OpenN++
 		p.emit("added", id, "parent", pt.ID, "title", t.Title)
+		added = append(added, t)
 		ids = append(ids, id)
 	}
 	if !pt.Parallel {
-		p.advance(pt)
+		c.advance(pt)
 	}
-	for _, id := range ids {
-		p.update(p.todo(id))
+	for _, t := range added {
+		c.update(t)
 	}
-	p.update(pt)
-	p.end()
+	c.update(pt)
+	c.end()
 	return strings.Join(ids, "\n")
 }
 
@@ -113,9 +120,10 @@ func Parallel(cur realm, plan, label, id string) {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
+	c := p.begin()
 	t := p.todo(id)
 	if t.Parallel {
+		c.end()
 		return
 	}
 	if t.OpenKids > maxParallel {
@@ -123,11 +131,11 @@ func Parallel(cur realm, plan, label, id string) {
 	}
 	t.Parallel = true
 	p.emit("parallel", id)
-	for _, c := range t.Children {
-		p.update(p.todo(c))
+	for _, k := range t.Kids {
+		c.update(k)
 	}
-	p.update(t)
-	p.end()
+	c.update(t)
+	c.end()
 }
 
 // Next gives the caller the next free todo in frame (a todo id, or "" for
@@ -136,33 +144,32 @@ func Parallel(cur realm, plan, label, id string) {
 // in frame's queue: "waiting\t<frame>"; a todo it gets later comes as an
 // "assigned" event. When the frame the caller holds has nothing open under
 // it, it is the caller's to pop: "pop\t<frame>". With nothing open in
-// frame: "nothing\t<frame>".
+// frame: "nothing\t<frame>". A caller waits in one frame at a time.
 func Next(cur realm, plan, label, frame string) string {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
-	p.mayHoldMore(holder)
-	f := p.root()
-	if frame != "" {
-		f = p.todo(frame)
-	}
-	out := ""
-	if t := p.walk(f); t != nil {
-		p.unwait(holder, frame)
-		p.take(t, holder, "held")
-		out = "held\t" + t.ID + "\t" + strconv.FormatInt(t.Token, 10) + "\t" + t.Title
-	} else if f.Status == "" && f.OpenKids == 0 && f.Holder == holder {
-		p.unwait(holder, frame)
-		out = "pop\t" + frame
-	} else if f.Status != "" || (frame == "" && p.OpenN == 0) {
-		p.unwait(holder, frame)
-		out = "nothing\t" + frame
-	} else {
-		p.wait(holder, frame)
-		out = "waiting\t" + frame
-	}
-	p.end()
+	c := p.begin()
+	c.me = c.agent(holder, true)
+	out := c.next(c.me, frame)
+	c.end()
+	return out
+}
+
+// PopNext pops id as Pop does, then gives the caller its next todo in
+// frame as Next does, in one call: a worker's whole turn between two
+// todos. Waiters are served what the pop freed before the caller looks
+// for more, so the oldest waiter gets a todo first. It answers as Next.
+func PopNext(cur realm, plan, label, id string, token int, result, frame string) string {
+	holder := holderOf(cur, label)
+	p := getPlan(plan)
+	p.mayWork(holder)
+	c := p.begin()
+	c.me = c.agent(holder, false)
+	c.pop(c.me, id, token, result)
+	c.serve()
+	out := c.next(c.me, frame)
+	c.end()
 	return out
 }
 
@@ -172,7 +179,7 @@ func Take(cur realm, plan, label, id string) string {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
+	c := p.begin()
 	t := p.todo(id)
 	if t.Status != "" {
 		panic(id + " is " + t.Status)
@@ -180,8 +187,9 @@ func Take(cur realm, plan, label, id string) string {
 	if t.Holder != "" {
 		panic(id + " is held by " + t.Holder)
 	}
-	p.take(t, holder, "held")
-	p.end()
+	c.me = c.agent(holder, true)
+	c.take(t, c.me, "held")
+	c.end()
 	return "held\t" + t.ID + "\t" + strconv.FormatInt(t.Token, 10) + "\t" + t.Title
 }
 
@@ -192,19 +200,10 @@ func Pop(cur realm, plan, label, id string, token int, result string) {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
-	t := p.todo(id)
-	p.mustHold(t, holder, token)
-	if t.OpenKids > 0 {
-		panic(id + " has open todos")
-	}
-	r := cleanText("the result", result, maxResult)
-	sum := sha256.Sum256([]byte(r))
-	t.Status = "done"
-	t.Result = hex.EncodeToString(sum[:])
-	p.emit("done", id, "holder", holder, "result", r)
-	p.closed(t)
-	p.end()
+	c := p.begin()
+	c.me = c.agent(holder, false)
+	c.pop(c.me, id, token, result)
+	c.end()
 }
 
 // Drop closes id as not to be done, with why, and its open todos with it
@@ -213,35 +212,45 @@ func Drop(cur realm, plan, label, id, why string) {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
+	c := p.begin()
 	t := p.todo(id)
 	if t.Status != "" {
 		panic(id + " is " + t.Status + " already")
 	}
-	if addressOf(holder) != p.Owner.String() && t.Holder != holder {
+	if strings.SplitN(holder, "|", 2)[0] != p.Owner.String() && t.Holder != holder {
 		panic("only the plan's owner or the holder of " + id + " may drop it")
 	}
 	w := cleanText("why", why, maxResult)
-	var under []string
-	p.Todos.Iterate(id+"/", id+"0", func(k string, v any) bool {
-		if v.(*Todo).Status == "" {
-			under = append(under, k)
+	// its open todos, each before those under it; closed ones are not
+	// entered
+	var under []*Todo
+	stack := []*Todo{t}
+	for len(stack) > 0 {
+		x := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if x.OpenKids == 0 {
+			continue
 		}
-		return len(under) > maxDropUnder
-	})
-	if len(under) > maxDropUnder {
-		panic(id + " has more than " + strconv.Itoa(maxDropUnder) + " open todos: drop some of them first")
+		for k := len(x.Kids) - 1; k >= 0; k-- {
+			if kid := x.Kids[k]; kid.Status == "" {
+				under = append(under, kid)
+				if len(under) > maxDropUnder {
+					panic(id + " has more than " + strconv.Itoa(maxDropUnder) + " open todos: drop some of them first")
+				}
+				stack = append(stack, kid)
+			}
+		}
 	}
 	for i := len(under) - 1; i >= 0; i-- { // the deepest first
-		u := p.todo(under[i])
+		u := under[i]
 		u.Status = "dropped"
 		p.emit("dropped", u.ID, "why", "dropped with "+id)
-		p.closed(u)
+		c.closed(u)
 	}
 	t.Status = "dropped"
 	p.emit("dropped", id, "holder", holder, "why", w)
-	p.closed(t)
-	p.end()
+	c.closed(t)
+	c.end()
 }
 
 // Reopen opens id again, done or dropped, with why; a closed parent
@@ -250,7 +259,7 @@ func Reopen(cur realm, plan, label, id, why string) {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
+	c := p.begin()
 	t := p.todo(id)
 	if t.Status == "" {
 		panic(id + " is open")
@@ -259,8 +268,8 @@ func Reopen(cur realm, plan, label, id, why string) {
 	t.Status = ""
 	t.Result = ""
 	p.emit("reopened", id, "holder", holder, "why", w)
-	p.reopened(t)
-	p.end()
+	c.reopened(t)
+	c.end()
 }
 
 // Renew extends the caller's holds on ids (space-separated) for another
@@ -270,18 +279,22 @@ func Renew(cur realm, plan, label, ids, frame string, waiting bool) {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
+	c := p.begin()
 	for _, id := range fields(ids) {
 		t := p.todo(id)
 		if t.Holder != holder {
 			panic("you do not hold " + id)
 		}
-		p.extend(t)
+		c.extend(t)
 	}
 	if waiting {
-		p.wait(holder, frame)
+		if frame != "" {
+			p.todo(frame)
+		}
+		c.me = c.agent(holder, true)
+		c.wait(c.me, frame)
 	}
-	p.end()
+	c.end()
 }
 
 // Release gives up the caller's holds on ids (space-separated) and its
@@ -291,17 +304,20 @@ func Release(cur realm, plan, label, ids, frame string) {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
-	p.unwait(holder, frame)
+	c := p.begin()
+	c.me = c.agent(holder, false)
+	if c.me != nil && c.me.Wait != 0 && c.me.Frame == frame {
+		c.unwait(c.me)
+	}
 	for _, id := range fields(ids) {
 		t := p.todo(id)
 		if t.Holder != holder {
 			continue
 		}
-		p.letGo(t)
+		c.letGo(t)
 		p.emit("released", id, "holder", holder)
 	}
-	p.end()
+	c.end()
 }
 
 // Reclaim takes back expired holds and serves waiters, with no other
@@ -311,8 +327,8 @@ func Reclaim(cur realm, plan, label string) {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
 	p.mayWork(holder)
-	p.begin()
-	p.end()
+	c := p.begin()
+	c.end()
 }
 
 // Close ends plan: nothing more may change in it. Only its owner.
@@ -323,13 +339,9 @@ func Close(cur realm, plan string) {
 	p.emit("closed", "")
 }
 
-func (p *Plan) mustHold(t *Todo, holder string, token int) {
-	if t.Holder != holder {
-		panic("you do not hold " + t.ID + ": your hold was lost (its lease ran out, or it was dropped or released)")
-	}
-	if t.Token != int64(token) {
-		panic("your hold on " + t.ID + " was lost and taken again (token " + strconv.FormatInt(t.Token, 10) + ", not " + strconv.Itoa(token) + ")")
-	}
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 func fields(s string) []string {

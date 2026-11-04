@@ -1,6 +1,7 @@
 package mem
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ func holderFor(a address, label string) string { return a.String() + "|-|" + lab
 // clearing every plan a test before made (realm state outlives a test).
 func fresh(cur realm, t *testing.T, id string) {
 	t.Helper()
-	plans = avlTree()
+	resetPlans()
 	testing.SetRealm(user(owner))
 	NewPlan(cross(cur), id, "the task", true, 60)
 }
@@ -226,4 +227,326 @@ func TestViews(cur realm, t *testing.T) {
 	uassert.True(t, strings.Contains(page, `\"quoted\"`), page)
 	rest := PlanPage("view", "t/a", 10)
 	uassert.True(t, strings.HasPrefix(rest, `[{"id":"t/b"`), rest)
+}
+
+// labelled calls: one address, many agents.
+func nextAs(cur realm, who address, label, plan, frame string) string {
+	testing.SetRealm(user(who))
+	return Next(cross(cur), plan, label, frame)
+}
+
+func popNextAs(cur realm, who address, label, plan, id string, token int, frame string) string {
+	testing.SetRealm(user(who))
+	return PopNext(cross(cur), plan, label, id, token, label+" did "+id, frame)
+}
+
+// PopNext pops and takes the next todo in one call; with nothing free it
+// waits, and what a pop frees goes to the oldest waiter first.
+func TestPopNext(cur realm, t *testing.T) {
+	fresh(cur, t, "pn")
+	par(cur, owner, "pn", "t")
+	add(cur, owner, "pn", "t", "a\nb\nc", "a\nb\nc")
+	a, ta := held(t, nextAs(cur, w1, "x", "pn", ""))
+	uassert.Equal(t, "t/a", a)
+	b, tb := held(t, popNextAs(cur, w1, "x", "pn", a, ta, ""))
+	uassert.Equal(t, "t/b", b)
+	c, tc := held(t, nextAs(cur, w2, "y", "pn", ""))
+	uassert.Equal(t, "t/c", c)
+	uassert.Equal(t, "waiting\t", popNextAs(cur, w2, "y", "pn", c, tc, ""), "b is held: y waits")
+	j := PlanJSON("pn")
+	uassert.True(t, strings.Contains(j, `"held":1`), j)
+	uassert.True(t, strings.Contains(j, `"waiting":1`), j)
+	// b's pop leaves the root with nothing open: its check goes to y, the
+	// waiter, before x looks for more
+	uassert.Equal(t, "waiting\t", popNextAs(cur, w1, "x", "pn", b, tb, ""))
+	uassert.Equal(t, w2.String()+"|-|y", holderOfTodo("pn", "t"))
+	testing.SetRealm(user(w2))
+	Pop(cross(cur), "pn", "y", "t", int(getPlan("pn").Root.Token), "all checked")
+	uassert.Equal(t, "nothing\t", nextAs(cur, w1, "x", "pn", ""))
+	j = PlanJSON("pn")
+	uassert.True(t, strings.Contains(j, `"open_todos":0`), j)
+	uassert.True(t, strings.Contains(j, `"held":0`), j)
+	uassert.True(t, strings.Contains(j, `"waiting":0`), j)
+}
+
+// PopNext refuses what Pop refuses: a hold the caller does not have, a
+// stale token.
+func TestPopNextRefusals(cur realm, t *testing.T) {
+	fresh(cur, t, "pnr")
+	add(cur, owner, "pnr", "t", "a\nb", "a\nb")
+	a, ta := held(t, nextAs(cur, w1, "x", "pnr", ""))
+	uassert.AbortsContains(t, cur, "you do not hold t/a", func() { popNextAs(cur, w2, "y", "pnr", a, ta, "") })
+	uassert.AbortsContains(t, cur, "lost and taken again", func() { popNextAs(cur, w1, "x", "pnr", a, ta+1, "") })
+	b, _ := held(t, popNextAs(cur, w1, "x", "pnr", a, ta, ""))
+	uassert.Equal(t, "t/b", b, "a sequential root's next todo")
+}
+
+// Avail is a bitset: twenty children span three bytes, are offered in
+// order, and one released goes back to the waiter.
+func TestManyChildren(cur realm, t *testing.T) {
+	fresh(cur, t, "many")
+	par(cur, owner, "many", "t")
+	var names, titles []string
+	for i := 0; i < 20; i++ {
+		names = append(names, "k"+strconv.Itoa(i))
+		titles = append(titles, "kid "+strconv.Itoa(i))
+	}
+	add(cur, owner, "many", "t", strings.Join(names, "\n"), strings.Join(titles, "\n"))
+	toks := map[string]int{}
+	for i := 0; i < 20; i++ {
+		id, tok := held(t, nextAs(cur, w1, "a"+strconv.Itoa(i), "many", ""))
+		uassert.Equal(t, "t/k"+strconv.Itoa(i), id)
+		toks[id] = tok
+	}
+	uassert.Equal(t, "waiting\t", nextAs(cur, w2, "late", "many", ""))
+	testing.SetRealm(user(w1))
+	Release(cross(cur), "many", "a12", "t/k12", "")
+	uassert.Equal(t, w2.String()+"|-|late", holderOfTodo("many", "t/k12"), "the released todo went to the waiter")
+	for i := 0; i < 20; i++ {
+		if i == 12 {
+			continue
+		}
+		id := "t/k" + strconv.Itoa(i)
+		testing.SetRealm(user(w1))
+		Pop(cross(cur), "many", "a"+strconv.Itoa(i), id, toks[id], "done")
+	}
+	testing.SetRealm(user(w2))
+	Pop(cross(cur), "many", "late", "t/k12", int(getPlan("many").todo("t/k12").Token), "done")
+	id, _ := held(t, nextAs(cur, w3, "z", "many", ""))
+	uassert.Equal(t, "t", id, "all twenty done: the root's check")
+}
+
+// Leases run out in every group: each call takes back up to four, and the
+// expiring index empties.
+func TestLapseAcrossGroups(cur realm, t *testing.T) {
+	fresh(cur, t, "lap")
+	par(cur, owner, "lap", "t")
+	add(cur, owner, "lap", "t", "g1\ng2", "g1\ng2")
+	par(cur, owner, "lap", "t/g1")
+	par(cur, owner, "lap", "t/g2")
+	add(cur, owner, "lap", "t/g1", "a\nb\nc", "a\nb\nc")
+	add(cur, owner, "lap", "t/g2", "a\nb\nc", "a\nb\nc")
+	for i := 0; i < 6; i++ {
+		held(t, nextAs(cur, w1, "h"+strconv.Itoa(i), "lap", ""))
+	}
+	uassert.True(t, strings.Contains(PlanJSON("lap"), `"held":6`))
+	testing.SkipHeights(13) // 65 s: every lease has run out
+	got, _ := held(t, nextAs(cur, w2, "new", "lap", ""))
+	uassert.Equal(t, "t/g1/a", got, "the first lapsed todo is free again")
+	j := PlanJSON("lap")
+	uassert.True(t, strings.Contains(j, `"held":3`), "four lapsed, one taken: "+j)
+	testing.SetRealm(user(w2))
+	Reclaim(cross(cur), "lap", "new")
+	j = PlanJSON("lap")
+	uassert.True(t, strings.Contains(j, `"held":1`), "the other two lapsed: "+j)
+	uassert.Equal(t, "", getPlan("lap").todo("t/g2").Held)
+	uassert.Equal(t, 1, strings.Count(getPlan("lap").Due, "\n"), "only g1 holds a lease: "+getPlan("lap").Due)
+}
+
+// One agent holds at most maxHolds todos.
+func TestMaxHolds(cur realm, t *testing.T) {
+	fresh(cur, t, "cap")
+	par(cur, owner, "cap", "t")
+	var names []string
+	for i := 0; i < 10; i++ {
+		names = append(names, "k"+strconv.Itoa(i))
+	}
+	add(cur, owner, "cap", "t", strings.Join(names, "\n"), strings.Join(names, "\n"))
+	for i := 0; i < 8; i++ {
+		held(t, nextAs(cur, w1, "greedy", "cap", ""))
+	}
+	uassert.AbortsContains(t, cur, "holds 8 todos", func() { nextAs(cur, w1, "greedy", "cap", "") })
+	held(t, nextAs(cur, w1, "other", "cap", ""))
+}
+
+// A waiter whose place ran out is passed over; the next one gets the todo.
+func TestWaiterLapses(cur realm, t *testing.T) {
+	fresh(cur, t, "wl")
+	par(cur, owner, "wl", "t")
+	add(cur, owner, "wl", "t", "a", "a")
+	_, tok := held(t, nextAs(cur, w1, "x", "wl", ""))
+	uassert.Equal(t, "waiting\t", nextAs(cur, w2, "early", "wl", ""))
+	testing.SkipHeights(8) // 40 s
+	testing.SetRealm(user(w1))
+	Renew(cross(cur), "wl", "x", "t/a", "", false)
+	uassert.Equal(t, "waiting\t", nextAs(cur, w3, "late", "wl", ""))
+	testing.SkipHeights(8) // the early waiter's place has run out, not the late one's
+	add(cur, owner, "wl", "t", "b", "b")
+	uassert.Equal(t, w3.String()+"|-|late", holderOfTodo("wl", "t/b"))
+	uassert.True(t, strings.Contains(PlanJSON("wl"), `"waiting":0`))
+	testing.SetRealm(user(w1))
+	Pop(cross(cur), "wl", "x", "t/a", tok, "done")
+}
+
+// Waiters past one page of the queue are served in order.
+func TestQueuePages(cur realm, t *testing.T) {
+	fresh(cur, t, "qp")
+	par(cur, owner, "qp", "t")
+	add(cur, owner, "qp", "t", "first", "first")
+	held(t, nextAs(cur, w1, "x", "qp", ""))
+	for i := 0; i < 40; i++ {
+		uassert.Equal(t, "waiting\t", nextAs(cur, w2, "q"+strconv.Itoa(i), "qp", ""))
+	}
+	w := WaitingJSON("qp")
+	uassert.Equal(t, 40, strings.Count(w, `"holder"`), w)
+	for i := 0; i < 40; i++ {
+		id := "t/n" + strconv.Itoa(i)
+		add(cur, owner, "qp", "t", "n"+strconv.Itoa(i), "n")
+		uassert.Equal(t, w2.String()+"|-|q"+strconv.Itoa(i), holderOfTodo("qp", id))
+	}
+	uassert.True(t, strings.Contains(PlanJSON("qp"), `"waiting":0`))
+	uassert.Equal(t, "[]", WaitingJSON("qp"))
+}
+
+// Drop lets go of the holds under what it drops.
+func TestDropHeld(cur realm, t *testing.T) {
+	fresh(cur, t, "dh")
+	par(cur, owner, "dh", "t")
+	add(cur, owner, "dh", "t", "g", "g")
+	par(cur, owner, "dh", "t/g")
+	add(cur, owner, "dh", "t/g", "a\nb", "a\nb")
+	held(t, nextAs(cur, w1, "x", "dh", ""))
+	held(t, nextAs(cur, w2, "y", "dh", ""))
+	testing.SetRealm(user(owner))
+	Drop(cross(cur), "dh", "w", "t/g", "not needed")
+	j := PlanJSON("dh")
+	uassert.True(t, strings.Contains(j, `"held":0`), j)
+	uassert.Equal(t, "", getPlan("dh").Due)
+	id, _ := held(t, nextAs(cur, w1, "x", "dh", ""))
+	uassert.Equal(t, "t", id, "only the root is left")
+}
+
+// Waiters who left (Esc) take their entries with them: the waiter behind
+// them is served in the call that frees a todo (review, 2026-11-04).
+func TestLeftWaitersDoNotStarve(cur realm, t *testing.T) {
+	fresh(cur, t, "st")
+	par(cur, owner, "st", "t")
+	add(cur, owner, "st", "t", "a", "a")
+	held(t, nextAs(cur, w1, "x", "st", ""))
+	for i := 0; i < 12; i++ {
+		l := "s" + strconv.Itoa(i)
+		uassert.Equal(t, "waiting\t", nextAs(cur, w2, l, "st", ""))
+		testing.SetRealm(user(w2))
+		Release(cross(cur), "st", l, "", "")
+	}
+	uassert.Equal(t, "waiting\t", nextAs(cur, w3, "late", "st", ""))
+	add(cur, owner, "st", "t", "b", "b")
+	uassert.Equal(t, w3.String()+"|-|late", holderOfTodo("st", "t/b"))
+}
+
+// The same across queues: a deeper frame's leavers do not stop the whole
+// plan's waiter from being served.
+func TestServeAcrossQueues(cur realm, t *testing.T) {
+	fresh(cur, t, "cq")
+	par(cur, owner, "cq", "t")
+	add(cur, owner, "cq", "t", "g", "g")
+	par(cur, owner, "cq", "t/g")
+	add(cur, owner, "cq", "t/g", "a", "a")
+	held(t, nextAs(cur, w1, "x", "cq", ""))
+	for i := 0; i < 12; i++ {
+		l := "s" + strconv.Itoa(i)
+		uassert.Equal(t, "waiting\tt/g", nextAs(cur, w2, l, "cq", "t/g"))
+		testing.SetRealm(user(w2))
+		Release(cross(cur), "cq", l, "", "t/g")
+	}
+	uassert.Equal(t, "waiting\t", nextAs(cur, w3, "late", "cq", ""))
+	add(cur, owner, "cq", "t/g", "b", "b")
+	uassert.Equal(t, w3.String()+"|-|late", holderOfTodo("cq", "t/g/b"))
+}
+
+// A frame to wait in must be a todo, and a queue nobody waits in goes.
+func TestQueuesGo(cur realm, t *testing.T) {
+	fresh(cur, t, "qg")
+	par(cur, owner, "qg", "t")
+	add(cur, owner, "qg", "t", "a", "a")
+	_, tok := held(t, nextAs(cur, w1, "x", "qg", ""))
+	uassert.AbortsContains(t, cur, "no todo", func() {
+		testing.SetRealm(user(w2))
+		Renew(cross(cur), "qg", "g", "", "no-such-frame", true)
+	})
+	uassert.Equal(t, "waiting\tt", nextAs(cur, w2, "y", "qg", "t"))
+	uassert.Equal(t, "waiting\t", nextAs(cur, w3, "z", "qg", ""))
+	uassert.Equal(t, 2, len(getPlan("qg").Queues))
+	testing.SetRealm(user(w2))
+	Release(cross(cur), "qg", "y", "", "t")
+	uassert.Equal(t, 1, len(getPlan("qg").Queues), "t's queue went with its last waiter")
+	testing.SetRealm(user(w1))
+	Pop(cross(cur), "qg", "x", "t/a", tok, "done")
+	uassert.Equal(t, w3.String()+"|-|z", holderOfTodo("qg", "t"), "the root's check went to the waiter")
+	uassert.Equal(t, 0, len(getPlan("qg").Queues))
+	uassert.Equal(t, 0, getPlan("qg").WaitN)
+}
+
+// A call serves at most two waiters; the todos it freed beyond that are
+// served by the calls after it, a Reclaim too.
+func TestPendingServed(cur realm, t *testing.T) {
+	fresh(cur, t, "pd")
+	par(cur, owner, "pd", "t")
+	add(cur, owner, "pd", "t", "a", "a")
+	held(t, nextAs(cur, w1, "x", "pd", ""))
+	for i := 0; i < 5; i++ {
+		uassert.Equal(t, "waiting\t", nextAs(cur, w2, "q"+strconv.Itoa(i), "pd", ""))
+	}
+	add(cur, owner, "pd", "t", "b\nc\nd\ne\nf", "b\nc\nd\ne\nf")
+	uassert.True(t, strings.Contains(PlanJSON("pd"), `"waiting":3`), PlanJSON("pd"))
+	testing.SetRealm(user(w1))
+	Reclaim(cross(cur), "pd", "x")
+	uassert.True(t, strings.Contains(PlanJSON("pd"), `"waiting":1`), PlanJSON("pd"))
+	Reclaim(cross(cur), "pd", "x")
+	uassert.True(t, strings.Contains(PlanJSON("pd"), `"waiting":0`), PlanJSON("pd"))
+	for i, id := range []string{"t/b", "t/c", "t/d", "t/e", "t/f"} {
+		uassert.Equal(t, w2.String()+"|-|q"+strconv.Itoa(i), holderOfTodo("pd", id), "oldest first")
+	}
+	uassert.Equal(t, "", getPlan("pd").Pending)
+}
+
+// Due stays sorted, so the earliest lease to run out comes back first.
+func TestDueSorted(cur realm, t *testing.T) {
+	fresh(cur, t, "ds")
+	par(cur, owner, "ds", "t")
+	add(cur, owner, "ds", "t", "g1\ng2\ng3", "g1\ng2\ng3")
+	for _, g := range []string{"t/g1", "t/g2", "t/g3"} {
+		add(cur, owner, "ds", g, "a", "a")
+	}
+	// g1's leaf first, g2's 10 s later, g3's 10 s after that; then g1's
+	// hold renewed, so it runs out last
+	got, _ := held(t, nextAs(cur, w1, "h1", "ds", ""))
+	uassert.Equal(t, "t/g1/a", got)
+	testing.SkipHeights(2)
+	got, _ = held(t, nextAs(cur, w1, "h2", "ds", ""))
+	uassert.Equal(t, "t/g2/a", got)
+	testing.SkipHeights(2)
+	got, _ = held(t, nextAs(cur, w1, "h3", "ds", ""))
+	uassert.Equal(t, "t/g3/a", got)
+	testing.SkipHeights(2)
+	testing.SetRealm(user(w1))
+	Renew(cross(cur), "ds", "h1", "t/g1/a", "", false)
+	d := getPlan("ds").Due
+	lines := strings.Split(strings.TrimSpace(d), "\n")
+	uassert.Equal(t, 3, len(lines), d)
+	uassert.True(t, strings.HasSuffix(lines[0], " t/g2") && strings.HasSuffix(lines[1], " t/g3") && strings.HasSuffix(lines[2], " t/g1"), "sorted by lease end: "+d)
+	// 55 s on: g2's and g3's leases ran out, g1's renewed one did not
+	testing.SkipHeights(11)
+	testing.SetRealm(user(w2))
+	Reclaim(cross(cur), "ds", "y")
+	uassert.Equal(t, "", holderOfTodo("ds", "t/g2/a"))
+	uassert.Equal(t, "", holderOfTodo("ds", "t/g3/a"))
+	uassert.Equal(t, w1.String()+"|-|h1", holderOfTodo("ds", "t/g1/a"))
+	uassert.True(t, strings.HasSuffix(strings.TrimSpace(getPlan("ds").Due), " t/g1"), getPlan("ds").Due)
+}
+
+// Parallel on a todo already parallel still serves what its call took
+// back.
+func TestParallelAgainServes(cur realm, t *testing.T) {
+	fresh(cur, t, "pa")
+	par(cur, owner, "pa", "t")
+	add(cur, owner, "pa", "t", "a", "a")
+	held(t, nextAs(cur, w1, "x", "pa", ""))
+	uassert.Equal(t, "waiting\t", nextAs(cur, w2, "y", "pa", ""))
+	testing.SkipHeights(8)
+	testing.SetRealm(user(w2))
+	Renew(cross(cur), "pa", "y", "", "", true)
+	testing.SkipHeights(6) // x's lease ran out; y's place did not
+	par(cur, owner, "pa", "t")
+	uassert.Equal(t, w2.String()+"|-|y", holderOfTodo("pa", "t/a"))
 }

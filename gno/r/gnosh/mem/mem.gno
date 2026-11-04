@@ -3,8 +3,9 @@
 //
 // A plan is a tree of todos. Next gives the caller the next free todo
 // inside the frame it stands in, held by a lease, in the same order gnosh's
-// local mem picks ("first free leaf, enter-mode in a frame"). Every call is
-// one transaction and the chain runs them one at a time, so two callers
+// local mem picks ("first free leaf, enter-mode in a frame"). PopNext pops
+// the caller's todo and gives it the next one in the same call. Every call
+// is one transaction and the chain runs them one at a time, so two callers
 // never get the same todo. When nothing is free but some todos are still
 // held, the caller waits in a queue on chain, and the realm hands the next
 // todo that frees up to the oldest waiter of that frame, in the call that
@@ -13,6 +14,39 @@
 // Nothing here is private: titles, holders and results are public. The
 // realm keeps no log of changes; every change goes out as an event, which
 // each machine's watcher reads from the block.
+//
+// # Storage, for gas
+//
+// On gno.land a call pays for every stored object it touches: 59,000 gas
+// to read one (plus 17 a byte), 24,000 to write one (plus 14 a byte), and a
+// call starts cold, so it reads each object it uses once. What is behind a
+// pointer is two objects (a heap item and the struct); a nested struct, a
+// slice, an array and a map are one each; strings and numbers sit inside
+// their object. An avl.Tree costs two reads a level and copies its path on
+// every change. So the hot path (Next, PopNext, Pop) uses no tree:
+//
+//   - a plan is found in a small map (plans, by a hash of its id);
+//   - a todo's children are pointers (Kids) and it points up (Up), so a
+//     walk down from the root, or up from a todo, is two reads a step;
+//   - which children may be offered now is a bitset string (Avail);
+//   - the holds run out in lease order, so the expiring index is a string
+//     of held children on each parent (Held) and one line per such parent
+//     on the plan (Due): nothing to read unless a lease has run out;
+//   - each holder has an Agent (found in a small map by a hash of the
+//     holder) listing what it holds, so Pop finds its todo there;
+//   - a frame's waiters are pages of lines, read and written at their ends;
+//     an agent's line goes when it stops waiting, and an empty queue goes.
+//
+// The plan's Todos maps, by id, serve the calls that name a todo (Take,
+// Drop, Reopen, Renew, Release, AddTodos' parent); the paged view walks
+// the tree. No avl.Tree at all: a call reads the type of every field of
+// what it loads, and avl's types alone cost 700,000 gas a call.
+//
+// A plan, a queue and a page point at themselves (Self): an object
+// referenced twice is stored on its own, so a change to it rewrites it
+// (and its 20-byte hash in the state tree, 248,000 gas) alone, not the map
+// it sits in and everything above. Todos are each referenced from the
+// Todos maps and from their parent, so they are too.
 package mem
 
 import (
@@ -21,12 +55,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"gno.land/p/nt/avl/v0"
 )
 
-// Bounds: everything a call walks or writes is capped, so no call's gas
-// grows with a plan's size.
+// Bounds: everything a call walks is capped. What it reads grows only
+// slowly with a plan: a bucket map holds a 32nd of the plan's todos or
+// agents, and Due one line per todo whose children are held.
 const (
 	maxTitle     = 200  // bytes in a todo's title
 	maxName      = 60   // bytes in a todo's name
@@ -37,29 +70,48 @@ const (
 	maxHolds     = 8    // todos one holder holds in a plan at once
 	maxReclaim   = 4    // expired holds one call takes back
 	maxServe     = 2    // waiters one call serves
+	maxSkip      = 8    // stale or lapsed waiter entries one call passes over
+	maxTouched   = 8    // todos made offered whose waiters a call may serve
 	maxPage      = 200  // todos in one PlanPage
 	maxLabel     = 64   // bytes in an agent label
 	maxDropUnder = 32   // open todos one Drop closes with it
 	maxParallel  = 16   // open todos under a todo when it is made parallel
 	minLease     = 30   // seconds
 	maxLease     = 3600 // seconds
+
+	planBuckets  = 16 // maps the plans are spread over
+	todoBuckets  = 32 // maps a plan's todos are spread over, by id
+	agentBuckets = 32 // maps a plan's agents are spread over
+	pageLines    = 32 // waiter entries in one page of a queue
+	heldRec      = 16 // bytes of one Held record: 4-digit index, 12-digit lease end
 )
 
 // Plan is one shared plan. Its root todo is "t".
 type Plan struct {
+	Self    *Plan // stores the plan on its own: see Storage
 	ID      string
 	Owner   address
-	Open    bool     // anyone may work it; else its members only
-	Members avl.Tree // address string → true
-	Lease   int64    // seconds a hold lasts unless renewed
-	Seq     int64    // events emitted so far
+	Open    bool  // anyone may work it; else its members only
+	Lease   int64 // seconds a hold lasts unless renewed
+	Seq     int64 // events emitted so far
 	Closed  bool
-	Todos   avl.Tree // id → *Todo
-	Expiry  avl.Tree // lease end (padded) + " " + id → id
-	Waits   avl.Tree // frame id ("" for the whole plan) → *Queue
-	Held    avl.Tree // holder → number of todos it holds
-	Count   int      // todos
-	OpenN   int      // todos still open
+	Count   int // todos
+	OpenN   int // todos still open
+	HeldN   int // holds
+	WaitN   int // holders waiting
+	Root    *Todo
+	Todos   [todoBuckets]map[string]*Todo // id → todo
+	Members map[string]bool               // address string → true
+	// Due is the expiring index's top: one line "<until> <id>\n" for each
+	// todo with held children, with the earliest lease end among them
+	// (12 digits, so lines compare as strings), sorted, earliest first;
+	// "<until> \n" (no id) is the root's own hold.
+	Due string
+	// Pending is the todos calls freed but could not serve to waiters (at
+	// most maxServe a call), one id a line: the next call tries them.
+	Pending string
+	Agents [agentBuckets]map[string]*Agent // holder → its agent
+	Queues map[string]*Queue               // frame id ("" for the whole plan) → its waiters
 }
 
 // Todo is one todo of a plan, and its hold if someone holds it.
@@ -67,35 +119,55 @@ type Todo struct {
 	ID       string // its parent's id, "/", and its name; the root is "t"
 	Title    string
 	Parent   string
-	Index    int      // its place among its parent's children, from 0
-	Children []string // ids, in the order they were added
-	Cursor   int      // a sequential todo's first open child, by Index
-	Parallel bool     // its todos may be done at once, by anyone
-	Status   string   // "", "done" or "dropped"
-	Result   string   // sha256 of the result, hex; the text is in the event
-	OpenKids int      // children still open
-	Avail    avl.Tree // padded Index → id: the children that may be offered now
-	Offered  bool     // it is in its parent's Avail
-	Holder   string   // address|session key|label; "" when nobody holds it
-	Token    int64    // the seq of the event that gave the hold; Pop names it
-	Until    int64    // the hold's lease end, unix seconds of block time
+	Up       *Todo   // its parent; nil for the root
+	Index    int     // its place among its parent's Kids, from 0
+	Kids     []*Todo // its todos, in the order they were added
+	Cursor   int     // a sequential todo's first open child, by Index
+	Parallel bool    // its todos may be done at once, by anyone
+	Status   string  // "", "done" or "dropped"
+	Result   string  // sha256 of the result, hex; the text is in the event
+	OpenKids int     // children still open
+	Avail    string  // bitset over Kids, by Index: the children that may be offered now ("" when none)
+	Offered  bool    // its bit is set in its parent's Avail
+	Holder   string  // address|session key|label; "" when nobody holds it
+	Token    int64   // the seq of the event that gave the hold; Pop names it
+	Until    int64   // the hold's lease end, unix seconds of block time
+	Held     string  // its held children, one heldRec record each, in the order held
 }
 
-// Queue is a frame's waiters, oldest first.
-type Queue struct {
-	Order avl.Tree // seq (padded) → *Waiter
-	By    avl.Tree // holder → seq (padded)
-}
-
-// Waiter is a holder waiting for a todo inside a frame, until its lease
-// ends unless renewed.
-type Waiter struct {
+// Agent is one holder's standing in a plan: what it holds, and where it
+// waits.
+type Agent struct {
 	Holder string
-	Frame  string
-	Until  int64
+	Holds  []*Todo // in the order taken
+	Frame  string  // the frame it waits in ("" for the whole plan), when Wait is set
+	Wait   int64   // the seq of its "waiting" event: its place in Frame's queue; 0 when it does not wait
+	Until  int64   // its place's lease end
+	Page   int     // the page of Frame's queue its entry is in
 }
 
-var plans avl.Tree // id → *Plan
+// Queue is a frame's waiters, oldest first: entries "<seq> <holder>\n" in
+// pages of up to pageLines, read from page Head at byte Pos and written to
+// page Tail. An agent's entry goes when it stops waiting (served, its place
+// ran out, it took a todo itself, left, or waits elsewhere now), and a
+// queue with nobody in it goes.
+type Queue struct {
+	Self  *Queue
+	Pages map[int]*Page
+	Head  int
+	Pos   int
+	Tail  int
+	N     int // entries
+}
+
+// Page is a run of a queue's entries.
+type Page struct {
+	Self  *Page
+	Lines string
+	N     int // entries ever written to it: a page takes pageLines
+}
+
+var plans [planBuckets]map[string]*Plan // id → plan, spread by a hash of the id
 
 // holderOf is who calls: the user's address, the session key it signs with
 // (none for the account's own key), and the agent's label. The label is the
@@ -116,24 +188,80 @@ func holderOf(cur realm, label string) string {
 	return prev.Address().String() + "|" + session + "|" + label
 }
 
-func addressOf(holder string) string {
-	return strings.SplitN(holder, "|", 2)[0]
+// hash spreads keys over n maps (FNV-1a).
+func hash(s string, n int) int {
+	h := uint32(2166136261)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return int(h % uint32(n))
 }
 
 func getPlan(id string) *Plan {
-	v := plans.Get(id)
-	if v == nil {
-		panic("no plan " + strconv.Quote(id))
+	if m := plans[hash(id, planBuckets)]; m != nil {
+		if p, ok := m[id]; ok {
+			return p
+		}
 	}
-	return v.(*Plan)
+	panic("no plan " + strconv.Quote(id))
+}
+
+func hasPlan(id string) bool {
+	m := plans[hash(id, planBuckets)]
+	if m == nil {
+		return false
+	}
+	_, ok := m[id]
+	return ok
+}
+
+func putPlan(p *Plan) {
+	b := hash(p.ID, planBuckets)
+	if plans[b] == nil {
+		plans[b] = map[string]*Plan{}
+	}
+	plans[b][p.ID] = p
 }
 
 func (p *Plan) todo(id string) *Todo {
-	v := p.Todos.Get(id)
-	if v == nil {
-		panic("no todo " + strconv.Quote(id) + " in plan " + p.ID)
+	if t := p.lookup(id); t != nil {
+		return t
 	}
-	return v.(*Todo)
+	panic("no todo " + strconv.Quote(id) + " in plan " + p.ID)
+}
+
+// lookup is todo id, or nil.
+func (p *Plan) lookup(id string) *Todo {
+	if id == "t" {
+		return p.Root
+	}
+	if m := p.Todos[hash(id, todoBuckets)]; m != nil {
+		return m[id]
+	}
+	return nil
+}
+
+func (p *Plan) putTodo(t *Todo) {
+	b := hash(t.ID, todoBuckets)
+	if p.Todos[b] == nil {
+		p.Todos[b] = map[string]*Todo{}
+	}
+	p.Todos[b][t.ID] = t
+}
+
+// after is the todo after t in the tree's order (a todo, then its todos,
+// in the order added), or nil.
+func (t *Todo) after() *Todo {
+	if len(t.Kids) > 0 {
+		return t.Kids[0]
+	}
+	for x := t; x.Up != nil; x = x.Up {
+		if x.Index+1 < len(x.Up.Kids) {
+			return x.Up.Kids[x.Index+1]
+		}
+	}
+	return nil
 }
 
 // mayWork refuses a caller who is neither the owner nor a member of a plan
@@ -142,11 +270,14 @@ func (p *Plan) mayWork(holder string) {
 	if p.Closed {
 		panic("plan " + p.ID + " is closed")
 	}
-	a := addressOf(holder)
-	if p.Open || a == p.Owner.String() {
+	if p.Open {
 		return
 	}
-	if !p.Members.Has(a) {
+	a := strings.SplitN(holder, "|", 2)[0]
+	if a == p.Owner.String() {
+		return
+	}
+	if !p.Members[a] {
 		panic(a + " is not a member of plan " + p.ID)
 	}
 }
@@ -166,17 +297,6 @@ func (p *Plan) emit(kind, id string, attrs ...string) int64 {
 	return p.Seq
 }
 
-func now() int64 { return time.Now().Unix() }
-
-// pad makes n sort as a string: 12 digits, zero-padded.
-func pad(n int64) string {
-	s := strconv.FormatInt(n, 10)
-	for len(s) < 12 {
-		s = "0" + s
-	}
-	return s
-}
-
 func cleanText(what, s string, max int) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -193,5 +313,7 @@ func cleanText(what, s string, max int) string {
 	return s
 }
 
-// avlTree makes an empty tree (tests reset the plans with it).
-func avlTree() avl.Tree { return avl.Tree{} }
+// resetPlans forgets every plan (tests: realm state outlives a test).
+func resetPlans() { plans = [planBuckets]map[string]*Plan{} }
+
+func now() int64 { return time.Now().Unix() }

@@ -17,13 +17,15 @@ func PlanJSON(plan string) string {
 	b.WriteString(`,"open":` + strconv.FormatBool(p.Open) + `,"closed":` + strconv.FormatBool(p.Closed))
 	b.WriteString(`,"lease":` + ji(p.Lease) + `,"seq":` + ji(p.Seq))
 	b.WriteString(`,"todos":` + strconv.Itoa(p.Count) + `,"open_todos":` + strconv.Itoa(p.OpenN))
-	b.WriteString(`,"held":` + strconv.Itoa(p.Expiry.Size()))
-	b.WriteString(`,"waiting":` + strconv.Itoa(p.waitingCount()) + `}`)
+	b.WriteString(`,"held":` + strconv.Itoa(p.HeldN))
+	b.WriteString(`,"waiting":` + strconv.Itoa(p.WaitN) + `}`)
 	return b.String()
 }
 
-// PlanPage is up to limit of plan's todos with ids after after (by id), as
-// a JSON array, each with its hold if it has one: a page of a snapshot.
+// PlanPage is up to limit of plan's todos after the todo after (from the
+// root when after is ""), in the tree's order (a todo, then its todos in
+// the order added), as a JSON array, each with its hold if it has one: a
+// page of a snapshot.
 func PlanPage(plan, after string, limit int) string {
 	p := getPlan(plan)
 	if limit <= 0 || limit > maxPage {
@@ -31,42 +33,56 @@ func PlanPage(plan, after string, limit int) string {
 	}
 	var b strings.Builder
 	b.WriteByte('[')
-	n := 0
-	start := ""
+	t := p.Root
 	if after != "" {
-		start = after + "\x00"
+		t = p.todo(after).after()
 	}
-	p.Todos.Iterate(start, "", func(_ string, v any) bool {
-		t := v.(*Todo)
+	for n := 0; t != nil && n < limit; n++ {
 		if n > 0 {
 			b.WriteByte(',')
 		}
 		b.WriteString(todoJSON(p, t))
-		n++
-		return n >= limit
-	})
+		t = t.after()
+	}
 	b.WriteByte(']')
 	return b.String()
 }
 
-// WaitingJSON is who waits in plan, by frame, oldest first.
+// WaitingJSON is who waits in plan, by frame (in the order frames were
+// first waited in), oldest first: at most maxPage.
 func WaitingJSON(plan string) string {
 	p := getPlan(plan)
+	c := &call{p: p, now: now()}
 	var b strings.Builder
 	b.WriteByte('[')
 	n := 0
-	p.Waits.Iterate("", "", func(frame string, v any) bool {
-		v.(*Queue).Order.Iterate("", "", func(k string, w any) bool {
-			if n > 0 {
-				b.WriteByte(',')
+	for frame, q := range p.Queues {
+		pos := q.Pos
+		for pg := q.Head; pg <= q.Tail && n < maxPage; pg++ {
+			page := q.Pages[pg]
+			if page == nil {
+				continue
 			}
-			x := w.(*Waiter)
-			b.WriteString(`{"frame":` + js(frame) + `,"holder":` + js(x.Holder) + `,"until":` + ji(x.Until) + `}`)
-			n++
-			return n >= maxPage
-		})
-		return n >= maxPage
-	})
+			lines := page.Lines[pos:]
+			pos = 0
+			for lines != "" && n < maxPage {
+				j := strings.IndexByte(lines, '\n')
+				line := lines[:j]
+				lines = lines[j+1:]
+				sp := strings.IndexByte(line, ' ')
+				seq, _ := strconv.ParseInt(line[:sp], 10, 64)
+				a := c.agent(line[sp+1:], false)
+				if a == nil || a.Wait != seq || a.Frame != frame {
+					continue
+				}
+				if n > 0 {
+					b.WriteByte(',')
+				}
+				b.WriteString(`{"frame":` + js(frame) + `,"holder":` + js(a.Holder) + `,"until":` + ji(a.Until) + `}`)
+				n++
+			}
+		}
+	}
 	b.WriteByte(']')
 	return b.String()
 }
@@ -82,15 +98,6 @@ func todoJSON(p *Plan, t *Todo) string {
 	}
 	b.WriteByte('}')
 	return b.String()
-}
-
-func (p *Plan) waitingCount() int {
-	n := 0
-	p.Waits.Iterate("", "", func(_ string, v any) bool {
-		n += v.(*Queue).Order.Size()
-		return false
-	})
-	return n
 }
 
 func js(s string) string {
