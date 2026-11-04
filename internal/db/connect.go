@@ -72,7 +72,7 @@ var (
 
 // dbFileCheckInterval is how often a pooled database checks that its file
 // is still at its path.
-var dbFileCheckInterval = 2 * time.Second
+const dbFileCheckInterval = 2 * time.Second
 
 // ConnectOption configures a Connect call. Options are applied in
 // order; later options override earlier ones for the same field.
@@ -82,6 +82,7 @@ type ConnectOption func(*connectOptions)
 type connectOptions struct {
 	lockDataDir bool
 	restore     bool
+	checkEvery  time.Duration
 }
 
 // WithDataDirLock toggles acquisition of the per-data-directory lock
@@ -101,6 +102,11 @@ func WithRestore(enable bool) ConnectOption {
 	return func(o *connectOptions) { o.restore = enable }
 }
 
+// withFileCheckInterval sets how often a restoring pool checks its file.
+func withFileCheckInterval(every time.Duration) ConnectOption {
+	return func(o *connectOptions) { o.checkEvery = every }
+}
+
 // Connect opens a SQLite database connection for the given data
 // directory and runs migrations. If a connection to the same database
 // file already exists, the existing connection is returned with its
@@ -111,7 +117,7 @@ func Connect(ctx context.Context, dataDir string, opts ...ConnectOption) (*sql.D
 		return nil, fmt.Errorf("data.dir is not set")
 	}
 
-	var cfg connectOptions
+	cfg := connectOptions{checkEvery: dbFileCheckInterval}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -204,7 +210,7 @@ func Connect(ctx context.Context, dataDir string, opts ...ConnectOption) (*sql.D
 		entry.path, entry.file = dbPath, info
 		watchCtx, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
-		go entry.watchFile(watchCtx, dbFileCheckInterval, done)
+		go entry.watchFile(watchCtx, cfg.checkEvery, done)
 		entry.stopWatch = func() {
 			cancel()
 			<-done

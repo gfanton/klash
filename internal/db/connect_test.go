@@ -216,11 +216,9 @@ func TestConnect_ServerPathFailsWhenDataDirLocked(t *testing.T) {
 // wants an empty folder) is written back from the open database, and
 // what is written after goes to the restored file.
 func TestConnect_RestoresRemovedDataDir(t *testing.T) {
-	shortenDBFileCheck(t)
-	t.Cleanup(ResetPool)
-
 	dataDir := filepath.Join(t.TempDir(), ".gnosh")
-	conn, err := Connect(t.Context(), dataDir, WithRestore(true))
+	t.Cleanup(ResetPool)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkOften)
 	require.NoError(t, err)
 	q := New(conn)
 	createSession := func(id string) {
@@ -254,11 +252,9 @@ func TestConnect_RestoresRemovedDataDir(t *testing.T) {
 
 // A restored data directory is locked again when it was locked before.
 func TestConnect_LocksRestoredDataDir(t *testing.T) {
-	shortenDBFileCheck(t)
-	t.Cleanup(ResetPool)
-
 	dataDir := filepath.Join(t.TempDir(), ".gnosh")
-	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true))
+	t.Cleanup(ResetPool)
+	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkOften)
 	require.NoError(t, err)
 	require.NoError(t, os.RemoveAll(dataDir))
 
@@ -276,11 +272,9 @@ func TestConnect_LocksRestoredDataDir(t *testing.T) {
 // over. An empty one, since VACUUM INTO itself refuses a file with
 // anything in it.
 func TestConnect_LeavesAnotherFileAtTheDatabasePath(t *testing.T) {
-	shortenDBFileCheck(t)
-	t.Cleanup(ResetPool)
-
 	dataDir := t.TempDir()
-	conn, err := Connect(t.Context(), dataDir, WithRestore(true))
+	t.Cleanup(ResetPool)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkOften)
 	require.NoError(t, err)
 	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "ours", Title: "ours"})
 	require.NoError(t, err)
@@ -305,9 +299,8 @@ func TestConnect_StopsCheckingWhenDropped(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			ignore := goleak.IgnoreCurrent()
-			t.Cleanup(ResetPool)
-
 			dataDir := t.TempDir()
+			t.Cleanup(ResetPool)
 			_, err := Connect(t.Context(), dataDir, WithRestore(true))
 			require.NoError(t, err)
 
@@ -328,12 +321,10 @@ func TestConnect_ChecksNoFileWithoutRestore(t *testing.T) {
 	goleak.VerifyNone(t, ignore, goleak.IgnoreTopFunction("database/sql.(*DB).connectionOpener"))
 }
 
-func shortenDBFileCheck(t *testing.T) {
-	t.Helper()
-	old := dbFileCheckInterval
-	dbFileCheckInterval = 10 * time.Millisecond
-	t.Cleanup(func() { dbFileCheckInterval = old })
-}
+// checkOften has a restoring pool check its file every few milliseconds.
+// A test that uses it creates its data directory before it registers
+// ResetPool, so the check stops before t.TempDir's folder is removed.
+var checkOften = withFileCheckInterval(10 * time.Millisecond)
 
 // sessionIDsIn reads the database file at dbPath on a connection of its
 // own, not the pool's.
