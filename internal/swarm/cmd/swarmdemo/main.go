@@ -1,11 +1,16 @@
 // Command swarmdemo runs demo A of SWARM.md: N workers, each with its own
 // key, work one plan on the shared mem realm through a chain, with no
-// model: a todo's work is a fixed sleep, so what is measured is the
+// model: a todo's work is a sleep, so what is measured is the
 // coordination. It is a demo and test tool; nothing in gnosh runs it.
 //
 //	swarmdemo keys -seed S -n 100 -amount 100000000000ugnot > balances.txt
 //	swarmdemo run -rpc http://127.0.0.1:36657 -chain dev -seed S -n 100 \
-//	    -groups 10 -leaves 20 -work 2s -out run.json
+//	    -groups 10 -leaves 20 -work 20s -work-max 40s -out run.json
+//
+// With -work-max, a todo's work takes between -work and -work-max, by a
+// hash of its id, so every run does the same work. A worker sends Next
+// once, then one PopNext per todo (pop it, take the next); -popnext=false
+// sends Pop and then Next, two calls a todo.
 //
 // Keys come from the seed, so the same seed makes the same worker keys the
 // chain was funded with. They are demo keys: never fund them on a chain
@@ -18,6 +23,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"strconv"
 	"strings"
@@ -202,9 +208,10 @@ func (f *follower) assignment(ctx context.Context, holder string) (assignment, e
 type todoStat struct {
 	ID      string  `json:"id"`
 	Worker  int     `json:"worker"`
-	Claimed float64 `json:"claimed"` // seconds from the start
-	Done    float64 `json:"done"`
-	How     string  `json:"how"` // held or assigned
+	Claimed float64 `json:"claimed"` // seconds from the start: when the worker had it
+	Done    float64 `json:"done"`    // when the chain had it done
+	Work    float64 `json:"work"`    // seconds of work
+	How     string  `json:"how"`     // held or assigned
 }
 
 type txStat struct {
@@ -220,6 +227,10 @@ type report struct {
 	Groups  int         `json:"groups"`
 	Leaves  int         `json:"leaves"`
 	Work    float64     `json:"work_seconds"`
+	WorkMax float64     `json:"work_max_seconds"`
+	Check   float64     `json:"check_seconds"`
+	WorkSum float64     `json:"work_sum_seconds"` // the plan's work, all todos
+	PopNext bool        `json:"popnext"`
 	Lease   int         `json:"lease"`
 	Plan    string      `json:"plan"`
 	Start   time.Time   `json:"start"`
@@ -242,10 +253,14 @@ func run(args []string) error {
 	n := fs.Int("n", 10, "workers")
 	groups := fs.Int("groups", 4, "parallel groups under the root")
 	leaves := fs.Int("leaves", 10, "todos per group")
-	work := fs.Duration("work", 2*time.Second, "time a todo's work takes")
+	work := fs.Duration("work", 2*time.Second, "time a todo's work takes (the least, with -work-max)")
+	workMax := fs.Duration("work-max", 0, "the most a todo's work takes; each todo's is fixed by its id")
+	check := fs.Duration("check", 0, "time a check takes (a group's todo, the root's: what has todos under it); 0: as -work")
+	popNext := fs.Bool("popnext", true, "one PopNext a todo; false: Pop, then Next")
 	lease := fs.Int("lease", 300, "lease, seconds")
 	gasNext := fs.Int64("gas-next", 60_000_000, "gas wanted for a Next")
 	gasPop := fs.Int64("gas-pop", 60_000_000, "gas wanted for a Pop")
+	gasPopNext := fs.Int64("gas-popnext", 60_000_000, "gas wanted for a PopNext")
 	every := fs.Duration("every", 200*time.Millisecond, "how often the follower asks for new blocks")
 	conns := fs.Int("conns", 200, "sends at once (the node's RPC takes 900 connections)")
 	maxDeposit := fs.Int64("max-deposit", 100_000_000, "storage deposit a call may lock, ugnot")
@@ -262,7 +277,23 @@ func run(args []string) error {
 	}
 	c.MaxDeposit = *maxDeposit
 	c.Pool(*conns + 16)
-	rep := &report{Workers: *n, Groups: *groups, Leaves: *leaves, Work: work.Seconds(), Lease: *lease, Plan: *planID}
+	if *workMax < *work {
+		*workMax = *work
+	}
+	workOf := func(id string) time.Duration {
+		if *check > 0 && strings.Count(id, "/") < 2 {
+			return *check
+		}
+		return workFor(id, *work, *workMax)
+	}
+	rep := &report{Workers: *n, Groups: *groups, Leaves: *leaves, Work: work.Seconds(), WorkMax: workMax.Seconds(), Check: check.Seconds(), PopNext: *popNext, Lease: *lease, Plan: *planID}
+	rep.WorkSum = workOf("t").Seconds()
+	for g := 1; g <= *groups; g++ {
+		rep.WorkSum += workOf("t/g" + strconv.Itoa(g)).Seconds()
+		for l := 1; l <= *leaves; l++ {
+			rep.WorkSum += workOf("t/g" + strconv.Itoa(g) + "/l" + strconv.Itoa(l)).Seconds()
+		}
+	}
 
 	// Setup by the owner, each call committed before the next (Call waits).
 	owner := c.WithSigner(signer(*seed, "owner"))
@@ -382,18 +413,23 @@ func run(args []string) error {
 				}
 				return o, err
 			}
-			for attempt := 0; ; {
-				o, err := sendGas("Next", *gasNext, gnochain.MsgCallOf{PkgPath: *realm, Func: "Next", Args: []string{*planID, label, ""}})
-				if err != nil {
-					attempt++
-					if attempt > 20 {
+			// ask sends Next until the chain takes it (a busy node may refuse
+			// a send for a while).
+			ask := func() (gnochain.Outcome, bool) {
+				for attempt := 0; ; attempt++ {
+					o, err := sendGas("Next", *gasNext, gnochain.MsgCallOf{PkgPath: *realm, Func: "Next", Args: []string{*planID, label, ""}})
+					if err == nil {
+						return o, true
+					}
+					if attempt >= 20 {
 						fmt.Fprintln(os.Stderr, label, "gives up:", err)
-						return
+						return o, false
 					}
 					time.Sleep(time.Second)
-					continue
 				}
-				attempt = 0
+			}
+			o, ok := ask()
+			for ok {
 				parts := strings.Split(o.Values[0], "\t")
 				var a assignment
 				how := "held"
@@ -412,14 +448,26 @@ func run(args []string) error {
 					return
 				}
 				claimed := since()
-				time.Sleep(*work)
-				if _, err := sendGas("Pop", *gasPop, gnochain.MsgCallOf{PkgPath: *realm, Func: "Pop", Args: []string{*planID, label, a.ID, strconv.Itoa(a.Token), label + " did " + a.ID}}); err != nil {
+				w := workOf(a.ID)
+				time.Sleep(w)
+				result := label + " did " + a.ID
+				var err error
+				if *popNext {
+					o, err = sendGas("PopNext", *gasPopNext, gnochain.MsgCallOf{PkgPath: *realm, Func: "PopNext", Args: []string{*planID, label, a.ID, strconv.Itoa(a.Token), result, ""}})
+				} else {
+					_, err = sendGas("Pop", *gasPop, gnochain.MsgCallOf{PkgPath: *realm, Func: "Pop", Args: []string{*planID, label, a.ID, strconv.Itoa(a.Token), result}})
+				}
+				if err != nil {
 					fmt.Fprintln(os.Stderr, label, "pop", a.ID, err)
+					o, ok = ask()
 					continue
 				}
 				mu.Lock()
-				rep.Todos = append(rep.Todos, todoStat{ID: a.ID, Worker: i, Claimed: claimed, Done: since(), How: how})
+				rep.Todos = append(rep.Todos, todoStat{ID: a.ID, Worker: i, Claimed: claimed, Done: since(), Work: w.Seconds(), How: how})
 				mu.Unlock()
+				if !*popNext {
+					o, ok = ask()
+				}
 			}
 		}(i)
 	}
@@ -431,18 +479,39 @@ func run(args []string) error {
 	fol.mu.Unlock()
 	rep.Refused, rep.Waits = refused.Load(), waits.Load()
 	total := *groups**leaves + *groups + 1
-	perWorker := float64(total) / float64(*n)
-	if perWorker < 1 {
-		perWorker = 1
+	// The best any number of workers could do: the work spread evenly, or
+	// the longest chain of todos that must go one after another (a leaf,
+	// its group's check, the root's), whichever is longer.
+	chainLen := 0.0
+	for g := 1; g <= *groups; g++ {
+		gid := "t/g" + strconv.Itoa(g)
+		most := 0.0
+		for l := 1; l <= *leaves; l++ {
+			most = max(most, workOf(gid+"/l"+strconv.Itoa(l)).Seconds())
+		}
+		chainLen = max(chainLen, most+workOf(gid).Seconds())
 	}
-	rep.Ideal = perWorker * work.Seconds()
-	fmt.Printf("workers %d, todos %d (done %d), wall %.1fs, ideal %.1fs, waits %d, refused %d, blocks %d\n",
-		*n, total, len(rep.Todos), rep.Wall, rep.Ideal, rep.Waits, rep.Refused, len(rep.Blocks))
+	chainLen += workOf("t").Seconds()
+	rep.Ideal = max(rep.WorkSum/float64(*n), chainLen)
+	fmt.Printf("workers %d, todos %d (done %d), work %.0fs, wall %.1fs, ideal %.1fs, waits %d, refused %d, blocks %d\n",
+		*n, total, len(rep.Todos), rep.WorkSum, rep.Wall, rep.Ideal, rep.Waits, rep.Refused, len(rep.Blocks))
 	if *out != "" {
 		bz, _ := json.MarshalIndent(rep, "", " ")
 		return os.WriteFile(*out, bz, 0o644)
 	}
 	return nil
+}
+
+// workFor is how long todo id's work takes: from least to most, by a hash
+// of the id, so every run does the same work.
+func workFor(id string, least, most time.Duration) time.Duration {
+	if most <= least {
+		return least
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(id))
+	f := float64(h.Sum64()%10000) / 10000
+	return least + time.Duration(f*float64(most-least))
 }
 
 func firstLine(s string) string {
