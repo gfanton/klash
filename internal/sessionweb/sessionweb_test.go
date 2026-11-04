@@ -98,6 +98,8 @@ func do(t *testing.T, method, url string, body any) (*http.Response, []byte) {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// The page's own requests carry this, and a write without it is refused.
+	req.Header.Set("Origin", "http://"+req.URL.Host)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

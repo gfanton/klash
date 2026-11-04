@@ -66,12 +66,25 @@ func New(store Store, contextFn ContextFunc) *Server {
 	return s
 }
 
-// ServeHTTP refuses requests a browser sends on behalf of another site: a
-// Host that is not a loopback name, which is what a DNS-rebound name pointing
-// at 127.0.0.1 sends, and an Origin that is not the Host it was sent to.
+// ServeHTTP refuses the three ways another site can reach this server
+// through the user's browser: a Host that is not a loopback name, which is
+// what a DNS-rebound name pointing at 127.0.0.1 sends; a request the browser
+// marks as coming from somewhere else, which is the only sign a frame or a
+// navigation gives, since neither carries an Origin; and an Origin that is
+// not the Host it was sent to. A write with no Origin is refused too: a
+// browser always sends one, so the allowance below is for reads by a client
+// that is not a browser, and a write from one has to name its Origin.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !isLoopbackHost(r.Host) {
 		http.Error(w, "host not allowed", http.StatusForbidden)
+		return
+	}
+	// Sec-Fetch-Site is a forbidden header name, so a page cannot set it, and
+	// a browser sends it on everything, a frame and a top-level navigation
+	// included: none for a typed URL or a bookmark, same-origin for the
+	// page's own requests. A client that is not a browser sends nothing here.
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		http.Error(w, "cross-site request not allowed", http.StatusForbidden)
 		return
 	}
 	if origin := r.Header.Get("Origin"); origin != "" {
@@ -80,20 +93,54 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "origin not allowed", http.StatusForbidden)
 			return
 		}
+	} else if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "a write needs an Origin naming the Host", http.StatusForbidden)
+		return
 	}
 	s.mux.ServeHTTP(w, r)
 }
 
+// isLoopbackHost reports whether hostport names this machine. A Host header
+// is case-insensitive and localhost. is the same name fully qualified, so
+// both are normalised away first; the comparison itself stays exact, because
+// evil.localhost is another name entirely.
 func isLoopbackHost(hostport string) bool {
 	host, _, err := net.SplitHostPort(hostport)
 	if err != nil {
 		host = hostport
 	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	if host == "localhost" {
 		return true
 	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	return ip != nil && ip.IsLoopback()
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+		return ip.IsLoopback()
+	}
+	return isShorthandLoopbackIPv4(host)
+}
+
+// isShorthandLoopbackIPv4 reports whether host is one of the shorter dotted
+// decimal spellings of an address in 127.0.0.0/8, such as 127.1 or 127.0.1.
+// net.ParseIP takes the four field form alone, while curl and the C library
+// read the shorter ones, so without this they are read as names and refused.
+// Only the first field decides the /8, and a name an attacker can register is
+// never all digits and dots.
+func isShorthandLoopbackIPv4(host string) bool {
+	fields := strings.Split(host, ".")
+	if len(fields) < 2 || len(fields) > 3 {
+		return false
+	}
+	for _, f := range fields {
+		if f == "" {
+			return false
+		}
+		for i := 0; i < len(f); i++ {
+			if f[i] < '0' || f[i] > '9' {
+				return false
+			}
+		}
+	}
+	return fields[0] == "127"
 }
 
 func (s *Server) page(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +149,10 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// For a browser too old to send Sec-Fetch-Site, which ServeHTTP would
+	// then have nothing to refuse the frame by. Framing the editor is what
+	// puts it under another site's clicks.
+	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(b)
 }
