@@ -382,14 +382,7 @@ func Release(dataDir string) error {
 	}
 
 	delete(pool, key)
-	if entry.stopWatch != nil {
-		entry.stopWatch()
-	}
-	closeErr := entry.db.Close()
-	if entry.lock != nil {
-		entry.lock.release()
-	}
-	return closeErr
+	return entry.close()
 }
 
 // ResetPool closes all pooled connections and clears the pool. This is
@@ -397,16 +390,23 @@ func Release(dataDir string) error {
 func ResetPool() {
 	poolMu.Lock()
 	defer poolMu.Unlock()
-	for path, entry := range pool {
-		if entry.stopWatch != nil {
-			entry.stopWatch()
-		}
-		entry.db.Close()
-		if entry.lock != nil {
-			entry.lock.release()
-		}
-		delete(pool, path)
+	for key, entry := range pool {
+		_ = entry.close()
+		delete(pool, key)
 	}
+}
+
+// close stops the check of the database file, which may restore it first,
+// then closes the pool and releases the lock.
+func (e *connEntry) close() error {
+	if e.stopWatch != nil {
+		e.stopWatch()
+	}
+	err := e.db.Close()
+	if e.lock != nil {
+		e.lock.release()
+	}
+	return err
 }
 
 // ConnectReadOnly opens a read-only SQLite database connection without running
