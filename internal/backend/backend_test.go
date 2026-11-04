@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/lock"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -418,6 +419,37 @@ func TestPathDedupe_FullCreate(t *testing.T) {
 	require.Contains(t, wsA.clients, cidA)
 	require.Contains(t, wsA.clients, cidB)
 	wsA.clientsMu.Unlock()
+}
+
+// A workspace whose app fails to start releases its database: the data
+// directory is not left locked, nor its database checked and restored,
+// with no workspace using either.
+func TestCreateWorkspace_ReleasesTheDatabaseWhenTheAppFails(t *testing.T) {
+	xdgIsolated(t)
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GOOGLE_API_KEY", "")
+	cwd := t.TempDir()
+	dataDir := t.TempDir()
+	// A google provider with no API key: the coder agent cannot be built.
+	crushJSON := `{
+  "options": {"disable_default_providers": true, "disable_provider_auto_update": true},
+  "providers": {"gem": {"type": "google", "base_url": "http://127.0.0.1:9",
+    "models": [{"id": "m1", "name": "m1", "context_window": 100000}]}},
+  "models": {"large": {"provider": "gem", "model": "m1"},
+             "small": {"provider": "gem", "model": "m1"}}
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(cwd, "crush.json"), []byte(crushJSON), 0o644))
+
+	b := New(context.Background(), nil, func() {})
+	t.Cleanup(func() { drainBackend(t, b) })
+	args := protoWS(cwd, dataDir, uuid.New().String())
+	args.TrustFolder = true
+	_, _, err := b.CreateWorkspace(args)
+	require.ErrorContains(t, err, "failed to create app workspace")
+
+	release, err := lock.TryFile(filepath.Join(dataDir, "gnosh.lock"))
+	require.NoError(t, err, "the data directory is still locked")
+	release()
 }
 
 // TestPathDedupe_DifferentPaths_DifferentWorkspaces confirms that two

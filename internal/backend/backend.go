@@ -463,6 +463,7 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 
 	appWorkspace, err := app.New(b.ctx, conn, cfg, skillsMgr)
 	if err != nil {
+		_ = db.Release(cfg.Config().Options.DataDirectory)
 		return nil, proto.Workspace{}, fmt.Errorf("failed to create app workspace: %w", err)
 	}
 
