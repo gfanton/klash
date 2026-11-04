@@ -1349,6 +1349,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// The tool calls the agent was caught repeating, when that is what
 	// stopped the run; see loopContinuation.
 	var loopCalls []fantasy.ToolCallContent
+	var loopSaid []string
 	sanitizedToolCalls := make(map[string]bool)
 	// Full names of tool calls that completed without error this turn.
 	// Written only from the streaming callbacks (which run sequentially)
@@ -1663,8 +1664,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				}
 				return false
 			},
-			loopStopCondition(func(repeated []fantasy.ToolCallContent) {
-				loopCalls = repeated
+			loopStopCondition(func(repeated []fantasy.ToolCallContent, said []string) {
+				loopCalls, loopSaid = repeated, said
 			}),
 		},
 	})
@@ -1798,7 +1799,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				"session_id", call.SessionID,
 				"tool", loopCalls[0].ToolName,
 			)
-			a.queueContinuation(loopContinuation(call, loopCalls))
+			a.queueContinuation(loopContinuation(call, loopCalls, loopSaid))
 			continued = true
 		} else if next, nothing := emptyAnswerContinuation(call, currentAssistant); nothing {
 			// The model said nothing at all. Asking the Stop hooks or the goal

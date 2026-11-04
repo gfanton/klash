@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"charm.land/fantasy"
@@ -302,7 +303,7 @@ func TestLoopStopCondition(t *testing.T) {
 	}
 	run := func(last fantasy.StepResult) (bool, []fantasy.ToolCallContent) {
 		var found []fantasy.ToolCallContent
-		stop := loopStopCondition(func(repeated []fantasy.ToolCallContent) { found = repeated })
+		stop := loopStopCondition(func(repeated []fantasy.ToolCallContent, _ []string) { found = repeated })
 		return stop(append(firstNine(), last)), found
 	}
 
@@ -319,5 +320,21 @@ func TestLoopStopCondition(t *testing.T) {
 
 	if stopped, found := run(toolStep(`{"file_path":"b.go"}`, true)); stopped || found != nil {
 		t.Fatal("a call that halted the turn, such as a denied permission, must not be resumed")
+	}
+}
+
+// A loop of a close mem refuses, nothing done since the todo was entered,
+// is told the work is still to do, not only not to repeat it.
+func TestLoopNudgeForARefusedClose(t *testing.T) {
+	t.Parallel()
+	call := []fantasy.ToolCallContent{{ToolName: "gnovm_run", Input: `{"name":"mem","code":"mem.Pop(\"Median added\")"}`}}
+	said := []string{"ERROR — nothing from this call was kept: not popped: nothing came between your entering `stats/median-test` \"add Median with a test\" and this pop, so it is not done."}
+	got := loopNudgePrompt(call, said)
+	if !strings.Contains(got, "mem has refused to close `stats/median-test` again and again: nothing was done in it since you entered it") ||
+		!strings.Contains(got, "Do the work now") {
+		t.Fatalf("a refused close is told the work is to do: %s", got)
+	}
+	if got := loopNudgePrompt(call, []string{"ok"}); !strings.Contains(got, "over and over") {
+		t.Fatalf("any other loop is told not to repeat: %s", got)
 	}
 }

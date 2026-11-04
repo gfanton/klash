@@ -71,14 +71,18 @@ func repeatedToolCalls(steps []fantasy.StepResult, windowSize, maxRepeats int) (
 // step ends it anyway is over: with an answer, which a nudge to change
 // approach would replace, or with a call that halted the turn, such as a
 // permission the user denied, which the nudge would resume.
-func loopStopCondition(found func([]fantasy.ToolCallContent)) fantasy.StopCondition {
+func loopStopCondition(found func(calls []fantasy.ToolCallContent, said []string)) fantasy.StopCondition {
 	return func(steps []fantasy.StepResult) bool {
 		if len(steps) == 0 || !stepContinuesTurn(steps[len(steps)-1]) {
 			return false
 		}
 		repeated, ok := repeatedToolCalls(steps, loopDetectionWindowSize, loopDetectionMaxRepeats)
 		if ok {
-			found(repeated)
+			var said []string
+			for _, r := range steps[len(steps)-1].Content.ToolResults() {
+				said = append(said, toolResultOutputString(r.Result))
+			}
+			found(repeated, said)
 		}
 		return ok
 	}
@@ -112,9 +116,9 @@ func stepContinuesTurn(step fantasy.StepResult) bool {
 // deliberately no cap on how often it happens, as with Stop hooks; each
 // time, the loop detector needs a fresh window of steps before it can
 // fire again, and the user can always cancel.
-func loopContinuation(call SessionAgentCall, repeated []fantasy.ToolCallContent) SessionAgentCall {
+func loopContinuation(call SessionAgentCall, repeated []fantasy.ToolCallContent, said []string) SessionAgentCall {
 	next := call
-	next.Prompt = loopNudgePrompt(repeated)
+	next.Prompt = loopNudgePrompt(repeated, said)
 	// Generated, not typed: keep it out of the transcript the user reads.
 	next.HiddenUserMessage = true
 	// Attachments belong to the user's original prompt and were already
@@ -126,7 +130,23 @@ func loopContinuation(call SessionAgentCall, repeated []fantasy.ToolCallContent)
 	return next
 }
 
-func loopNudgePrompt(repeated []fantasy.ToolCallContent) string {
+// loopNudgePrompt is what an agent repeating calls is told: what it repeats
+// and that the answer will not change; and when the call is a close mem
+// refuses because nothing was done in the todo since it was entered, that
+// the work is still to do. Told only not to repeat it, a model that wrote
+// a todo's result before its work sent the same refused close 300 times
+// in 40 minutes, nudged 30 times (QA, 2026-11-04).
+func loopNudgePrompt(repeated []fantasy.ToolCallContent, said []string) string {
+	for _, s := range said {
+		if m := freshRefusal.FindStringSubmatch(s); m != nil {
+			return fmt.Sprintf(
+				"mem has refused to close `%s` again and again: nothing was done in it since you entered it, "+
+					"no file changed and no command run there, so its work is not done, whatever the result you send says, "+
+					"and the same close is refused every time. Do the work now: look at the files it needs, make the change, "+
+					"check it, then close it with what came of it. If it cannot be done, stop and tell the user plainly that it is not done.",
+				m[1])
+		}
+	}
 	var calls strings.Builder
 	for _, tc := range repeated {
 		fmt.Fprintf(&calls, "- %s %s\n", tc.ToolName, compactReason(tc.Input))
@@ -180,6 +200,10 @@ func getToolInteractionSignature(content fantasy.ResponseContent) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+// freshRefusal is mem's refusal of a close with nothing done since the
+// todo was entered, naming the todo.
+var freshRefusal = regexp.MustCompile("not popped: nothing came between your entering `([^`]+)`")
 
 // runNumbers is the numbers in mem's answer, blanked for its signature.
 var runNumbers = regexp.MustCompile(`[0-9]+(\.[0-9]+)?`)

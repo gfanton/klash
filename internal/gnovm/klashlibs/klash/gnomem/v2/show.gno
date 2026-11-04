@@ -288,6 +288,17 @@ func progress(it *Todo) string {
 }
 
 func (m *Mem) showName(sb *strings.Builder, name string) {
+	// A thought's address, item#name: the thought, as mem.Thought would
+	// give it. A session that asked Show for one was told to call Thought,
+	// and read the files again instead (QA, 2026-11-04).
+	if item, tname := splitAddr(name); tname != "" {
+		if it := m.get(item); it != nil && it.Status != "forgotten" {
+			if n := noteNamed(it, tname); n != nil {
+				sb.WriteString(m.thoughtOf(item, *n).String())
+				return
+			}
+		}
+	}
 	shown := false
 	if it := m.get(name); it != nil && it.Status != "forgotten" {
 		m.showItem(sb, name, it)

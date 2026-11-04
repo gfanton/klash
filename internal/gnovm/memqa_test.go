@@ -248,6 +248,17 @@ func TestMemFactReadsAFactByName(t *testing.T) {
 	require.Contains(t, res.Output, "is new")
 }
 
+// Show of a thought's address shows the thought (QA, 2026-11-04: a session
+// told to call Thought read the files again instead).
+func TestMemShowsAThoughtByItsAddress(t *testing.T) {
+	t.Parallel()
+	s := newMemSession(t)
+	name := addedNames(s.ok(`mem.Todo("trace the auth flow").Push()`).Output)[0]
+	s.ok(`mem.Think("auth-flow", "Verify checks the MAC, then the expiry (auth/tokens.go:42)")`)
+	res := s.ok(`mem.Show("` + name + `#auth-flow")`)
+	require.Equal(t, "thought `auth-flow` on `"+name+"`: Verify checks the MAC, then the expiry (auth/tokens.go:42)\n", res.Output)
+}
+
 // mem.Help() lists the calls to know; mem.Help(name) says what one does.
 func TestMemHelp(t *testing.T) {
 	t.Parallel()
