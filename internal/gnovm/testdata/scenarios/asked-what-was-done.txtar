@@ -1,0 +1,50 @@
+Asked what was done, after the cut: the agent works through two todos,
+and closing them removes how it did them from its context. The user then
+asks what the TODOs were and how each was handled, without the files
+being opened again. Only what the pops kept can answer, so each pop must
+say what came of it, and the answer must not make up what it lost.
+
+-- project/go.mod --
+module config
+
+go 1.22
+-- project/config.go --
+// Package config reads key=value files.
+package config
+
+import (
+	"bufio"
+	"io"
+	"strings"
+)
+
+// Parse reads key=value lines.
+func Parse(r io.Reader) (map[string]string, error) {
+	m := map[string]string{}
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		line := s.Text()
+		// TODO: skip blank lines and lines starting with '#'.
+		k, v, _ := strings.Cut(line, "=")
+		// TODO: trim spaces around the key and the value.
+		// TODO: return an error naming the line number when a line has no '='.
+		m[k] = v
+	}
+	return m, s.Err()
+}
+-- prompt --
+Two todos in mem: (1) do the three TODOs in config.go, (2) add a test for each of them in config_test.go. Do both.
+-- prompt --
+Without opening the files again: which TODOs were there, and how did you handle each one?
+-- check --
+turn 1 tool gnovm_run >= 2
+turn 2 tool view == 0
+turn 2 tool grep == 0
+turn 2 tool bash == 0
+cmd go test ./...
+cmd printf 'package config\n\nimport (\n\t"strings"\n\t"testing"\n)\n\nfunc TestQAChecks(t *testing.T) {\n\tm, err := Parse(strings.NewReader(" a = 1 \\n\\n# c\\nb=2\\n"))\n\tif err != nil || len(m) != 2 || m["a"] != "1" || m["b"] != "2" {\n\t\tt.Fatalf("got %%v %%v", m, err)\n\t}\n\tif _, err := Parse(strings.NewReader("a=1\\nx\\n")); err == nil || !strings.Contains(err.Error(), "2") {\n\t\tt.Fatalf("no line number: %%v", err)\n\t}\n}\n' > qa_checks_test.go && go test -run TestQAChecks ./...
+answer last matches (?i)blank|empty
+answer last matches (?i)#|comment
+answer last matches (?i)trim|whitespace|spaces
+answer last matches (?i)line number|line no|no ['"`]?=|without ['"`]?=|missing ['"`]?=
+mem-count done >= 2
