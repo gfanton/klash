@@ -265,6 +265,22 @@ func TestTurnRows(t *testing.T) {
 	kept, spared = turnRows(quiet, poppedRows(quiet, "c1", "c2"), "c2")
 	require.Equal(t, []string{"a1b", "u1", "a2b"}, rowIDs(kept))
 	require.Equal(t, 1, spared)
+
+	// A turn cancelled while a tool ran ends there: the prompt typed after
+	// its tool row begins the next turn, not a prompt folded into it.
+	cancelled := []message.Message{
+		typed("u0", "do only (1) now"),
+		row(message.Assistant, "a1", callPart("c1")), // push
+		row(message.Tool, "t1", resultPart("c1")),
+		row(message.Assistant, "a2", callPart("v1"), message.Finish{Reason: message.FinishReasonCanceled}),
+		row(message.Tool, "t2", resultPart("v1")),
+		typed("u1", "now do (2) and (3)"),
+		row(message.Assistant, "a3", callPart("c2")), // the pop
+	}
+	require.Equal(t, 5, turnStart(cancelled, "c2"))
+	kept, spared = turnRows(cancelled, poppedRows(cancelled, "c1", "c2"), "c2")
+	require.Equal(t, []string{"a2", "t2"}, rowIDs(kept))
+	require.Equal(t, 1, spared)
 }
 
 // A frame is fresh, and mem refuses its pop, until work came between: a
@@ -278,23 +294,39 @@ func TestWorkIn(t *testing.T) {
 	}
 	refused := []message.Message{
 		row(message.Assistant, "a1", memCall("m1", `mem.Pop("main.go now calls Get; build passes")`)),
-		row(message.Tool, "t1", message.ToolResult{ToolCallID: "m1", Name: "gnovm_run", Content: "ERROR — not popped: nothing came between\nfailed · mem · ran 2ms · nothing kept\n"}),
+		row(message.Tool, "t1", message.ToolResult{ToolCallID: "m1", Name: "gnovm_run", IsError: true, Content: "ERROR — nothing from this call was kept: not popped: nothing came between your entering `update-caller` \"update the caller\" and this pop, so it is not done.\nfailed · mem · ran 2ms · nothing kept\n"}),
 		row(message.Assistant, "a2", memCall("m2", "mem.Show()\nmem.Next()")),
 		row(message.Tool, "t2", message.ToolResult{ToolCallID: "m2", Name: "gnovm_run", Content: "ok"}),
 		row(message.User, "u1", message.TextContent{Text: "go on"}),
 	}
-	require.False(t, workIn(refused), "a refused pop, a read and a Next are no work")
-	require.False(t, workIn(nil))
+	require.False(t, workIn(refused, "update-caller"), "a refused pop, a read and a Next are no work")
+	require.False(t, workIn(nil, "update-caller"))
+
+	claimed := append(slices.Clone(refused), row(message.Assistant, "a5", message.TextContent{Text: "Fixed: main.go calls Get."}))
+	require.False(t, workIn(claimed, "update-caller"), "an answer after a refused close is the claim, not work")
+	answered := []message.Message{row(message.Assistant, "a6", message.TextContent{Text: "Retries back off by doubling the wait, up to 30s."}), row(message.User, "u2", message.TextContent{Text: "thanks"})}
+	require.True(t, workIn(answered, "explain-retry"), "an answer is the work of a todo that asks for one")
+
+	thought := []message.Message{
+		row(message.Assistant, "a7", memCall("m4", `mem.Think("retry-cap", "the cap is 30s")`)),
+		row(message.Tool, "t7", message.ToolResult{ToolCallID: "m4", Name: "gnovm_run", Content: "thought `retry-cap` kept on `x`\nok · mem · ran 2ms · kept as entry 5\n"}),
+	}
+	require.True(t, workIn(thought, "x"), "a thought kept is work done in mem")
+	planned := []message.Message{
+		row(message.Assistant, "a8", memCall("m5", `mem.Frame("release").Todo("tag it")`)),
+		row(message.Tool, "t8", message.ToolResult{ToolCallID: "m5", Name: "gnovm_run", Content: "added `release/tag-it` \"tag it\"\nok · mem · ran 2ms · kept as entry 6\n"}),
+	}
+	require.True(t, workIn(planned, "x"), "a todo planned is work done in mem")
 
 	viewed := append(slices.Clone(refused),
 		row(message.Assistant, "a3", message.ToolCall{ID: "v1", Name: tools.ViewToolName, Input: `{"file_path":"main.go"}`, Finished: true}),
 		row(message.Tool, "t3", message.ToolResult{ToolCallID: "v1", Name: tools.ViewToolName, Content: "package main"}))
-	require.True(t, workIn(viewed), "a view is work")
+	require.True(t, workIn(viewed, "update-caller"), "a view is work")
 
 	kept := append(slices.Clone(refused),
 		row(message.Assistant, "a4", memCall("m3", `mem.Fact("staging", "staging2.acme.test")`)),
 		row(message.Tool, "t4", message.ToolResult{ToolCallID: "m3", Name: "gnovm_run", Content: "fact `staging` is new\nok · mem · ran 3ms · kept as entry 4\n"}))
-	require.True(t, workIn(kept), "a fact kept is work done in mem")
+	require.True(t, workIn(kept, "update-caller"), "a fact kept is work done in mem")
 }
 
 // Rows of a session, for poppedRows.

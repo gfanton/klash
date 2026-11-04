@@ -742,7 +742,7 @@ func (f *Frame) Ask(question string) *Frame // a question for you, as a todo und
 func (f *Frame) Push()                      // enter it: from here the context will be cut
 func (f *Frame) NextTodo() *Frame           // the first todo under it to do; nil for none
 func (m *Mem) Frame(id ...string) *Frame    // the present frame, or one by id
-func (m *Mem) Next()                        // step into the next open todo under the present frame; at the root, of the newest open task, with the todos above it
+func (m *Mem) Next()                        // step into the next open todo under the present frame; at the root, of the newest open task
 func (m *Mem) Pop(result string)            // leave it done: everything since the push is removed
 func (m *Mem) Think(args ...string) Thought // Think(text): a thought on the present frame, named for the agent; or Think(name, text)
 func (m *Mem) Thought(name string) Thought  // a thought by name, from anywhere

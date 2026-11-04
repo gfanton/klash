@@ -184,6 +184,17 @@ func TestRepeatedToolCalls(t *testing.T) {
 		}
 	})
 
+	t.Run("another VM's numbers still count", func(t *testing.T) {
+		steps := make([]fantasy.StepResult, 10)
+		for i := range steps {
+			steps[i] = makeToolStep(gnovmtools.RunToolName, `{"name":"sim","code":"s.Step(); println(s.N)"}`,
+				fmt.Sprintf("%d\nok · sim · ran 2ms", i))
+		}
+		if _, result := repeatedToolCalls(steps, 10, 5); result {
+			t.Error("expected false: a scratch VM whose output moves on is not a loop")
+		}
+	})
+
 	t.Run("other tools' numbers still count", func(t *testing.T) {
 		steps := make([]fantasy.StepResult, 10)
 		for i := range steps {

@@ -716,6 +716,7 @@ func (m *Mem) refuseFresh(id string, it *Todo) {
 func (m *Mem) popClosed(id string, it *Todo) {
 	popped(id, it.Title, it.Result, len(it.Notes))
 	println("`" + id + "` was already " + it.Status + arrow(it.Result) + ": it is off your stack now")
+	m.printKept(it)
 }
 
 // pop leaves frame id, the top of the stack: done with result, or, with

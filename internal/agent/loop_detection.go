@@ -3,12 +3,14 @@ package agent
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
 	"strings"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/gnovm"
 	gnovmtools "github.com/charmbracelet/crush/internal/gnovm/tools"
 )
 
@@ -161,11 +163,12 @@ func getToolInteractionSignature(content fantasy.ResponseContent) string {
 		if tr, ok := resultsByID[tc.ToolCallID]; ok {
 			output = toolResultOutputString(tr.Result)
 		}
-		if tc.ToolName == gnovmtools.RunToolName {
-			// A Gno VM's answer ends with what the run took ("ran 31ms ·
-			// kept as entry 23", gas and memory), different every time:
-			// with its numbers blanked, the same call answered the same
-			// way signs the same, and a loop of calls to mem is seen.
+		if memRun(tc) {
+			// mem's answer ends with what the run took ("ran 31ms · kept
+			// as entry 23"), different every time: with its numbers
+			// blanked, the same call answered the same way signs the
+			// same, and a loop of calls to mem is seen. Another VM's
+			// numbers can be its work, a counter moving on.
 			output = runNumbers.ReplaceAllString(output, "#")
 		}
 		io.WriteString(h, tc.ToolName)
@@ -178,8 +181,19 @@ func getToolInteractionSignature(content fantasy.ResponseContent) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// runNumbers is the numbers in a Gno VM's answer, blanked for its signature.
+// runNumbers is the numbers in mem's answer, blanked for its signature.
 var runNumbers = regexp.MustCompile(`[0-9]+(\.[0-9]+)?`)
+
+// memRun reports whether tc is a call to mem.
+func memRun(tc fantasy.ToolCallContent) bool {
+	if tc.ToolName != gnovmtools.RunToolName {
+		return false
+	}
+	var input struct {
+		Name string `json:"name"`
+	}
+	return json.Unmarshal([]byte(tc.Input), &input) == nil && input.Name == gnovm.MemVM
+}
 
 // toolResultOutputString converts a ToolResultOutputContent to a stable string
 // representation for signature comparison.

@@ -267,24 +267,75 @@ func (f *frameStacks) fresh(ctx context.Context, sessionID, callID string) strin
 		return slices.IndexFunc(msgs, func(m message.Message) bool { return m.Role == message.Assistant && hasToolCall(m, id) })
 	}
 	push, now := round(top.callID), round(callID)
-	if push < 0 || now <= push || workIn(poppedRows(msgs, top.callID, callID)) {
+	if push < 0 || now <= push || workIn(poppedRows(msgs, top.callID, callID), top.id) {
 		return ""
 	}
 	return top.id
 }
 
-// workIn reports whether rows hold work: a call to a tool other than mem,
-// or a call to mem that changed it (memChanges), which a refused one did
-// not.
-func workIn(rows []message.Message) bool {
+// workIn reports whether rows, inside frame, hold work: a call to a tool
+// other than mem; a call to mem that changed it (a fact, a note, a thought,
+// a todo planned), which a refused one did not; or an answer the model gave
+// the user (an assistant row with text and no tool call), as a todo asking
+// for an explanation is done by giving it, unless mem had refused to close
+// the frame before it: then the answer was the claim, as "Fixed." after a
+// refused close was (QA, 2026-11-04). A read of mem, a Next, and a pop or
+// close mem refused are no work.
+func workIn(rows []message.Message, frame string) bool {
+	refused := false
 	for _, row := range rows {
+		if row.Role == message.Assistant && len(row.ToolCalls()) == 0 && strings.TrimSpace(row.Content().Text) != "" && !refused {
+			return true
+		}
 		for _, call := range row.ToolCalls() {
 			if !isMemCall(call) {
 				return true
 			}
 		}
+		for _, r := range row.ToolResults() {
+			if r.IsError && strings.Contains(r.Content, refusedFreshText(frame)) {
+				refused = true
+			}
+		}
 	}
-	return len(memChanges(rows)) > 0
+	return memWorked(rows)
+}
+
+// refusedFreshText is how mem's refusal of a pop of frame as never done
+// begins (refuseFresh).
+func refusedFreshText(frame string) string {
+	return "not popped: nothing came between your entering `" + frame + "`"
+}
+
+// memWork is a statement of a call to mem that changes it, a thought and a
+// todo planned on a frame among them.
+var memWork = regexp.MustCompile(`\bmem\.(Think|Note|Fact|Rule|Todo|Wait|Ask|Done|Drop|Reopen|Forget|Redact|Start)\(|\.(Todo|Wait|Ask|Parallel)\(`)
+
+// memWorked reports whether a call to mem in rows, one mem did not refuse,
+// changed it.
+func memWorked(rows []message.Message) bool {
+	failed := map[string]bool{}
+	for _, row := range rows {
+		for _, res := range row.ToolResults() {
+			if res.IsError || strings.Contains("\n"+res.Content, "\nfailed · ") {
+				failed[res.ToolCallID] = true
+			}
+		}
+	}
+	for _, row := range rows {
+		for _, call := range row.ToolCalls() {
+			if !isMemCall(call) || failed[call.ID] {
+				continue
+			}
+			var input struct {
+				Code string `json:"code"`
+			}
+			if json.Unmarshal([]byte(call.Input), &input) == nil && memWork.MatchString(input.Code) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // top is a copy of the frame on top of the session's stack, and false
@@ -740,11 +791,24 @@ func turnStartAt(msgs []message.Message, end int) int {
 		for j >= 0 && msgs[j].Role == message.User {
 			j--
 		}
-		if j < 0 || msgs[j].IsSummaryMessage || msgs[j].Role == message.Assistant && len(msgs[j].ToolCalls()) == 0 {
+		if j < 0 || msgs[j].IsSummaryMessage || msgs[j].Role == message.Assistant && len(msgs[j].ToolCalls()) == 0 || cutShort(msgs[:j+1]) {
 			return j + 1
 		}
 	}
 	return 0
+}
+
+// cutShort reports whether the last assistant row of msgs ended its turn
+// cancelled or failed: a prompt typed after it begins a turn of its own,
+// though a tool row came before it, as a prompt folded into a turn does.
+func cutShort(msgs []message.Message) bool {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == message.Assistant {
+			r := msgs[i].FinishReason()
+			return r == message.FinishReasonCanceled || r == message.FinishReasonError
+		}
+	}
+	return false
 }
 
 // turnRows is between, the rows a pop of popCallID removes, without the

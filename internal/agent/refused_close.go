@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/crush/internal/agent/notify"
@@ -43,16 +44,16 @@ const refusedClosePrompt = "mem refused to close `%s`: nothing was done in it, a
 
 // refusedCloseLeft reports whether, in the turn msgs end with, mem refused
 // a pop or close of frame id as never done (refuseFresh), and no work came
-// after the last such refusal (workIn).
+// in or after the step that made the last such refusal (workIn).
 func refusedCloseLeft(msgs []message.Message, id string) bool {
-	refusal := "not popped: nothing came between your entering `" + id + "`"
-	last := -1
+	refusal := refusedFreshText(id)
+	step := -1
 	for i := turnStartAt(msgs, len(msgs)); i < len(msgs); i++ {
 		for _, r := range msgs[i].ToolResults() {
 			if r.IsError && strings.Contains(r.Content, refusal) {
-				last = i
+				step = slices.IndexFunc(msgs[:i], func(m message.Message) bool { return m.Role == message.Assistant && hasToolCall(m, r.ToolCallID) })
 			}
 		}
 	}
-	return last >= 0 && !workIn(msgs[last+1:])
+	return step >= 0 && !workIn(msgs[step:], id)
 }
