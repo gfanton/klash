@@ -3,9 +3,12 @@ package db
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -217,6 +220,7 @@ func TestConnect_ServerPathFailsWhenDataDirLocked(t *testing.T) {
 // wants an empty folder) is written back from the open database, and
 // what is written after goes to the restored file.
 func TestConnect_RestoresRemovedDataDir(t *testing.T) {
+	warnings := captureWarnings(t)
 	dataDir := filepath.Join(t.TempDir(), ".gnosh")
 	t.Cleanup(ResetPool)
 	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkOften)
@@ -249,6 +253,10 @@ func TestConnect_RestoresRemovedDataDir(t *testing.T) {
 	gitIgnore, err := os.ReadFile(filepath.Join(dataDir, ".gitignore"))
 	require.NoError(t, err)
 	require.Equal(t, "*\n", string(gitIgnore))
+
+	require.Eventually(t, func() bool {
+		return strings.Contains(warnings(), "Data directory was removed while in use; restored the database")
+	}, 5*time.Second, 10*time.Millisecond, warnings())
 }
 
 // A data directory removed again after a restore, with no query in
@@ -342,6 +350,7 @@ func TestConnect_LeavesARemovedDataDirAnotherLocked(t *testing.T) {
 // over. An empty one, since VACUUM INTO itself refuses a file with
 // anything in it.
 func TestConnect_LeavesAnotherFileAtTheDatabasePath(t *testing.T) {
+	warnings := captureWarnings(t)
 	dataDir := t.TempDir()
 	t.Cleanup(ResetPool)
 	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkOften)
@@ -359,6 +368,7 @@ func TestConnect_LeavesAnotherFileAtTheDatabasePath(t *testing.T) {
 		info, err := os.Stat(dbPath)
 		return err != nil || info.Size() != 0
 	}, 300*time.Millisecond, 10*time.Millisecond, "the other file at the database path was changed")
+	require.Contains(t, warnings(), "Another file is at the database path")
 }
 
 // A file put at the database path after the check found it missing is
@@ -439,6 +449,61 @@ func TestConnect_FindsARemovedDataDirByItsPath(t *testing.T) {
 	require.NoError(t, Release(dataDir))
 	require.NoError(t, Release(dataDir))
 	goleak.VerifyNone(t, ignore)
+}
+
+// Each new trouble with the database file is logged, though an earlier
+// one was: a failed restore after another file stood at the path.
+func TestConnect_WarnsOfEachNewTrouble(t *testing.T) {
+	warnings := captureWarnings(t)
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	t.Cleanup(ResetPool)
+	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	entry := pool[poolKey(dataDir)]
+
+	other := filepath.Join(dataDir, "other.db")
+	require.NoError(t, os.WriteFile(other, nil, 0o600))
+	require.NoError(t, os.Rename(other, filepath.Join(dataDir, "gnosh.db")))
+	entry.checkFile(t.Context())
+	entry.checkFile(t.Context())
+	require.Equal(t, 1, strings.Count(warnings(), "Another file is at the database path"), warnings())
+
+	require.NoError(t, os.RemoveAll(dataDir))
+	require.NoError(t, os.Mkdir(dataDir, 0o700))
+	release, err := lock.TryFile(filepath.Join(dataDir, "gnosh.lock"))
+	require.NoError(t, err)
+	defer release()
+	entry.checkFile(t.Context())
+	require.Contains(t, warnings(), "Failed to restore the removed database")
+}
+
+// captureWarnings logs warnings to a buffer for the rest of the test, and
+// returns what was logged so far.
+func captureWarnings(t *testing.T) func() string {
+	t.Helper()
+	var buf logBuffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return buf.String
+}
+
+// logBuffer is written by a pool's check while the test reads it.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // checkOften has a restoring pool check its file every few milliseconds.

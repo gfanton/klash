@@ -59,9 +59,10 @@ type connEntry struct {
 	lock *dataDirLock
 	// path is the database file and file the one the pool has open there;
 	// they and stopWatch are set only WithRestore.
-	path      string
-	file      os.FileInfo
-	warned    bool
+	path string
+	file os.FileInfo
+	// warned is the last warning logged, so a new one is logged once.
+	warned    string
 	stopWatch func()
 }
 
@@ -270,7 +271,7 @@ func (e *connEntry) restore(ctx context.Context) {
 		e.lock.release()
 		e.lock = lock
 	}
-	e.warned = false
+	e.warned = ""
 	// A connection holds the restored file, as one held the removed file,
 	// so a second removal leaves it open to restore again. A read, not a
 	// ping: a connection whose first read comes after its files are
@@ -354,10 +355,10 @@ func (e *connEntry) copyFile(ctx context.Context, conn *sql.Conn, dataDir string
 }
 
 func (e *connEntry) warnOnce(msg string, args ...any) {
-	if e.warned {
+	if e.warned == msg {
 		return
 	}
-	e.warned = true
+	e.warned = msg
 	slog.Warn(msg, args...)
 }
 
