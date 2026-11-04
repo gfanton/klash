@@ -70,9 +70,9 @@ turn 1 tool edit == 0
 turn 1 tool write == 0
 turn 1 tool gnovm_run >= 1
 turn 2 tool gnovm_run >= 1
-answer 1 matches (?i)close
-answer 1 matches (?i)decode|error
-answer 1 matches (?i)off.by.one|<= ?n|n ?\+ ?1|one too many|one extra|first n
+said 1 matches (?i)close
+said 1 matches (?i)decode|error
+said 1 matches (?i)off.by.one|<= ?n|n ?\+ ?1|one too many|one extra|first n
 cmd grep -q 'Close()' store.go
 cmd ! grep -q '_ = json' store.go
 cmd go test ./...

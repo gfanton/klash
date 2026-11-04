@@ -51,6 +51,6 @@ turn 1 tool gnovm_run >= 1
 cmd go build ./...
 cmd grep -q 'func Get' client.go
 cmd grep -q 'Get(' README.md
-answer last contains staging2.acme.test
+said last contains staging2.acme.test
 vm-dump contains staging2.acme.test
 mem-count open == 0

@@ -139,6 +139,36 @@ type turnSpec struct {
 	fresh  bool
 }
 
+// TestScenarioStreamReprints checks that a turn keeps only its own calls and
+// text, when gnosh's stream prints an earlier turn's rows again.
+func TestScenarioStreamReprints(t *testing.T) {
+	t.Parallel()
+	turn1 := `{"type":"assistant","message":{"content":[{"type":"text","text":"looking"},{"type":"tool_use","id":"a1","name":"view","input":{}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a1","content":"file"}]}}
+{"type":"result","result":"done one"}
+`
+	turn2 := `{"type":"assistant","message":{"content":[{"type":"text","text":"looking"},{"type":"tool_use","id":"a1","name":"view","input":{}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a1","content":"file"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"editing"},{"type":"tool_use","id":"b2","name":"edit","input":{}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b2","content":"ok"}]}}
+{"type":"result","result":"done two"}
+`
+	var r scenarioRun
+	one := r.fresh(parseStream(strings.NewReader(turn1)))
+	two := r.fresh(parseStream(strings.NewReader(turn2)))
+	require.Len(t, one.calls, 1)
+	require.Equal(t, []string{"looking"}, one.said)
+	require.Len(t, two.calls, 1)
+	require.Equal(t, "edit", two.calls[0].name)
+	require.Equal(t, "ok", two.calls[0].result)
+	require.Equal(t, []string{"editing"}, two.said)
+	r.turns = []turnResult{one, two}
+	said := r.check("said 2 contains editing", t.TempDir(), nil)
+	require.True(t, said.ok, said.got)
+	require.False(t, r.check("said 2 contains looking", t.TempDir(), nil).ok)
+	require.False(t, r.check("answer 2 contains editing", t.TempDir(), nil).ok)
+}
+
 // TestScenarioFilesParse checks every scenario file without a model: it
 // parses, it has a prompt and checks, and each check is of a known form.
 func TestScenarioFilesParse(t *testing.T) {
@@ -149,7 +179,7 @@ func TestScenarioFilesParse(t *testing.T) {
 	}
 	forms := regexp.MustCompile(`^(turn [1-9][0-9]* )?(` +
 		`tool \S+ (>=|<=|==|>|<) \d+|` +
-		`answer (last|\d+) (contains|matches) .+|` +
+		`(answer|said) (last|\d+) (contains|matches) .+|` +
 		`(file|after \d+ file) \S+ (exists|absent|contains .+|lacks .+)|` +
 		`cmd .+|` +
 		`vm-persist (>=|<=|==|>|<) \d+|` +
@@ -310,6 +340,9 @@ type scenarioRun struct {
 	vms                    map[string]string   // persistent VM name -> dump
 	checks                 []checkResult
 	took                   time.Duration
+	// seen is the tool-call ids and texts of the turns so far, so that a
+	// turn keeps only its own (fresh).
+	seen map[string]bool
 	// peersWall is how long the peers' turn took, from the first start to
 	// the last end; 0 for a run without peers.
 	peersWall time.Duration
@@ -320,6 +353,9 @@ type turnResult struct {
 	session string
 	calls   []toolCall
 	answer  string
+	// said is the text of each of the turn's messages, in order: all the
+	// user read, where answer is only the last message.
+	said    []string
 	isError bool
 	took    time.Duration
 	// turn is the scenario's turn this is, or a peer of: a turn worked by
@@ -328,8 +364,8 @@ type turnResult struct {
 }
 
 type toolCall struct {
-	name, input, result string
-	isError             bool
+	id, name, input, result string
+	isError                 bool
 }
 
 type checkResult struct {
@@ -479,7 +515,7 @@ func (r *scenarioRun) run(t *testing.T, sc *scenario, gnosh, home, reasoning str
 		err := cmd.Run()
 		cancel()
 		outs, errs = append(outs, stdout.Bytes()), append(errs, stderr.Bytes())
-		tr := parseStream(bytes.NewReader(stdout.Bytes()))
+		tr := r.fresh(parseStream(bytes.NewReader(stdout.Bytes())))
 		tr.prompt, tr.took, tr.turn = ts.prompt, time.Since(turnStart), i
 		if err != nil && tr.answer == "" {
 			tr.answer = fmt.Sprintf("(gnosh failed: %v; %s)", err, lastLine(stderr.String()))
@@ -588,9 +624,12 @@ func parseStream(r io.Reader) turnResult {
 		switch ev.Type {
 		case "assistant":
 			for _, c := range ev.Message.Content {
-				if c.Type == "tool_use" {
+				switch {
+				case c.Type == "tool_use":
 					byID[c.ID] = len(tr.calls)
-					tr.calls = append(tr.calls, toolCall{name: c.Name, input: string(c.Input)})
+					tr.calls = append(tr.calls, toolCall{id: c.ID, name: c.Name, input: string(c.Input)})
+				case c.Type == "text" && strings.TrimSpace(c.Text) != "":
+					tr.said = append(tr.said, c.Text)
 				}
 			}
 		case "user":
@@ -607,6 +646,35 @@ func parseStream(r io.Reader) turnResult {
 			tr.answer, tr.isError = ev.Result, ev.IsError
 		}
 	}
+	return tr
+}
+
+// fresh drops from tr the calls and texts an earlier turn already had: when
+// a pop cuts rows of an earlier turn, gnosh's stream prints them again, with
+// their old tool-call ids (C4 in crushtest/IMPROVEMENTS.md), and they would
+// count as this turn's.
+func (r *scenarioRun) fresh(tr turnResult) turnResult {
+	if r.seen == nil {
+		r.seen = map[string]bool{}
+	}
+	calls, said := tr.calls[:0], tr.said[:0]
+	for _, c := range tr.calls {
+		if c.id == "" || !r.seen["call:"+c.id] {
+			calls = append(calls, c)
+		}
+	}
+	for _, text := range tr.said {
+		if !r.seen["said:"+text] {
+			said = append(said, text)
+		}
+	}
+	for _, c := range calls {
+		r.seen["call:"+c.id] = true
+	}
+	for _, text := range said {
+		r.seen["said:"+text] = true
+	}
+	tr.calls, tr.said = calls, said
 	return tr
 }
 
@@ -839,7 +907,7 @@ func (r *scenarioRun) check(line, project string, env []string) checkResult {
 			}
 		}
 		res.got, res.ok = fmt.Sprintf("%d calls", n), countOK(n, f[2], f[3])
-	case len(f) >= 4 && f[0] == "answer":
+	case len(f) >= 4 && (f[0] == "answer" || f[0] == "said"):
 		idx := len(r.turns) - 1
 		if f[1] != "last" {
 			n, err := strconv.Atoi(f[1])
@@ -854,6 +922,11 @@ func (r *scenarioRun) check(line, project string, env []string) checkResult {
 			return res
 		}
 		answer := r.turns[idx].answer
+		if f[0] == "said" {
+			// All the turn's text, as the user read it, not only its last
+			// message: after a judge's reopen the last is about the fix.
+			answer = strings.Join(append(append([]string(nil), r.turns[idx].said...), answer), "\n")
+		}
 		want := strings.Join(f[3:], " ")
 		res.got = truncate(answer, 160)
 		switch f[2] {

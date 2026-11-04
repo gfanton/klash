@@ -157,7 +157,7 @@ Two questions about the auth flow you looked into: where is the token's expiry c
 turn 1 tool gnovm_run >= 1
 turn 2 tool gnovm_run >= 1
 turn 2 tool view <= 2
-answer last matches (?i)tokens\.go|Verify
-answer last contains 401
-answer last matches (?i)WWW-Authenticate|invalid_token
+said last matches (?i)tokens\.go|Verify
+said last contains 401
+said last matches (?i)WWW-Authenticate|invalid_token
 vm-dump contains 401

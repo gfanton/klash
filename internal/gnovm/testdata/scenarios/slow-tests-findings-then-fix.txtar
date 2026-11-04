@@ -88,8 +88,8 @@ Fix the biggest cause you found, and nothing else.
 turn 1 tool edit == 0
 turn 1 tool write == 0
 turn 1 tool gnovm_run >= 1
-answer 1 matches (?i)sleep|waitReady
-answer 1 matches (?i)prime
+said 1 matches (?i)sleep|waitReady
+said 1 matches (?i)prime
 cmd go test -count=1 -run 'TestAdd' -v ./... | grep -qE 'PASS: TestAddOnce \(0\.'
 cmd go test -count=1 -run 'TestAdd' -v ./... | grep -qE 'PASS: TestAddTwice \(0\.'
 cmd grep -q 'd\*d <= i' server.go
