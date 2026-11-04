@@ -281,7 +281,7 @@ func (e *connEntry) restore(ctx context.Context) {
 		slog.Warn("Failed to read the restored database", "path", e.path, "error", err)
 	}
 
-	if err := crushlog.ReopenIfRemoved(); err != nil {
+	if err := crushlog.ReopenFile(); err != nil {
 		slog.Warn("Failed to reopen the removed log file", "error", err)
 	}
 	slog.Warn("Data directory was removed while in use; restored the database", "path", e.path)

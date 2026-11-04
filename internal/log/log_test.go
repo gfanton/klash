@@ -10,14 +10,17 @@ import (
 )
 
 // A log file removed with the data directory it lives in is opened again
-// at its path; one still there is written on, not rotated aside.
-func TestReopenIfRemoved(t *testing.T) {
+// at its path; one still there, or one another process put there since,
+// is written on, not rotated aside.
+func TestReopenFile(t *testing.T) {
 	cases := map[string]struct {
-		remove bool
-		want   string
+		remove   bool
+		replaced string
+		want     string
 	}{
 		"removed":     {remove: true, want: "after\n"},
-		"still there": {remove: false, want: "before\nafter\n"},
+		"still there": {want: "before\nafter\n"},
+		"replaced":    {remove: true, replaced: "theirs\n", want: "theirs\nafter\n"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -33,8 +36,12 @@ func TestReopenIfRemoved(t *testing.T) {
 			if tc.remove {
 				require.NoError(t, os.RemoveAll(dir))
 			}
+			if tc.replaced != "" {
+				require.NoError(t, os.Mkdir(dir, 0o755))
+				require.NoError(t, os.WriteFile(path, []byte(tc.replaced), 0o644))
+			}
 
-			require.NoError(t, ReopenIfRemoved())
+			require.NoError(t, ReopenFile())
 			_, err = l.Write([]byte("after\n"))
 			require.NoError(t, err)
 

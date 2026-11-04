@@ -1,10 +1,8 @@
 package log
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"os"
 	"runtime/debug"
@@ -70,20 +68,15 @@ func Initialized() bool {
 	return initialized.Load()
 }
 
-// ReopenIfRemoved opens a new log file at Setup's path when the one being
-// written was removed, since logging would otherwise go on into the
-// removed file. It does nothing before Setup.
-func ReopenIfRemoved() error {
+// ReopenFile has the next log line open the file at Setup's path, or a new
+// one there, since logging would otherwise go on into a removed file. It
+// does nothing before Setup.
+func ReopenFile() error {
 	l := fileLogger.Load()
 	if l == nil {
 		return nil
 	}
-	if _, err := os.Stat(l.Filename); !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	// Rotate moves aside only a file still at the path, so here it just
-	// opens a new one.
-	return l.Rotate()
+	return l.Close()
 }
 
 func RecoverPanic(name string, cleanup func()) {
