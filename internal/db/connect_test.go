@@ -316,8 +316,9 @@ func TestConnect_LocksRestoredDataDir(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, os.RemoveAll(dataDir))
 
-			// The owner info is written once the lock is held; trying the
-			// lock before then could take it from the restore.
+			// The owner info is written once the lock is held;
+			// trying the lock before then could take it from the
+			// restore.
 			lockPath := filepath.Join(dataDir, lockName)
 			require.Eventually(t, func() bool {
 				return readOwnerInfo(lockPath).PID == os.Getpid()

@@ -96,9 +96,10 @@ func WithDataDirLock(enable bool) ConnectOption {
 }
 
 // WithRestore toggles the check that writes the database back to its path
-// when its file is removed while open, as by a model deleting .gnosh/. It
-// is off by default; gnosh opts in for the data directory it works in. As
-// with the lock, the Connect that opens the database decides.
+// when its file is removed while open, as by a model deleting .gnosh/. A
+// user's removal is undone too: erasing the data directory takes
+// releasing the database first. It is off by default. As with the lock,
+// the Connect that opens the database decides.
 func WithRestore(enable bool) ConnectOption {
 	return func(o *connectOptions) { o.restore = enable }
 }
@@ -291,8 +292,8 @@ func (e *connEntry) restore(ctx context.Context) {
 // copy: a gnosh that opens the directory meanwhile finds it locked, and
 // one that locked it first keeps it.
 func (e *connEntry) restoreFile(ctx context.Context) (*dataDirLock, error) {
-	// The pool's one connection: while it is held, no write can land in the
-	// removed file after the copy.
+	// The pool's one connection: while it is held, no write can land in
+	// the removed file after the copy.
 	conn, err := e.db.Conn(ctx)
 	if err != nil {
 		return nil, err
@@ -322,12 +323,12 @@ func (e *connEntry) restoreFile(ctx context.Context) (*dataDirLock, error) {
 // copyFile copies the database open on conn to its path in dataDir, then
 // drops conn so the next query opens the copy.
 func (e *connEntry) copyFile(ctx context.Context, conn *sql.Conn, dataDir string) error {
-	// A .gitignore that cannot be written does not stop the restore.
 	if err := WriteGitIgnore(dataDir); err != nil {
 		slog.Warn("Failed to restore the data directory's .gitignore", "error", err)
 	}
-	// Copied under a new name, then linked: a link, unlike a rename, fails
-	// when the path is taken, and a copy cut short never reaches the path.
+	// Copied under a new name, then linked: a link, unlike a rename,
+	// fails when the path is taken, and a copy cut short never reaches
+	// the path.
 	tmp, err := os.CreateTemp(dataDir, filepath.Base(e.path)+".restore-*")
 	if err != nil {
 		return err
