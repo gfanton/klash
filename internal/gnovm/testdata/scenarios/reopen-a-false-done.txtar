@@ -1,0 +1,59 @@
+A todo mem says is done that is not: the plan "add input validation" has
+both its todos marked done, but the tests fail on the second. Asked whether
+the work is finished, the agent checks rather than trusting mem, reopens the
+todo with why, fixes it, and closes the plan.
+
+-- project/go.mod --
+module names
+
+go 1.22
+-- project/names.go --
+// Package names checks user names.
+package names
+
+import "errors"
+
+var (
+	ErrEmpty   = errors.New("name is empty")
+	ErrTooLong = errors.New("name is over 64 bytes")
+)
+
+// Check is nil for a valid name.
+func Check(name string) error {
+	if name == "" {
+		return ErrEmpty
+	}
+	return nil
+}
+-- project/names_test.go --
+package names
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestCheck(t *testing.T) {
+	if Check("") != ErrEmpty {
+		t.Error("empty name not refused")
+	}
+	if Check(strings.Repeat("a", 65)) != ErrTooLong {
+		t.Error("65-byte name not refused")
+	}
+	if Check(strings.Repeat("a", 64)) != nil {
+		t.Error("64-byte name refused")
+	}
+}
+-- mem --
+v := mem.Todo("add input validation to names.Check")
+e := v.Todo("refuse empty names with ErrEmpty")
+l := v.Todo("refuse names over 64 bytes with ErrTooLong")
+mem.Done(e.Id, "Check returns ErrEmpty for an empty name")
+mem.Done(l.Id, "Check returns ErrTooLong over 64 bytes")
+-- prompt --
+Is the input validation work done? Make sure, and finish it if it isn't.
+-- check --
+turn 1 tool gnovm_run >= 1
+cmd go test ./...
+mem-count open == 0
+cmd grep -q 'Reopen(' "$(dirname "$(find "$XDG_DATA_HOME" -path '*/mem/status.json' | head -1)")/journal.jsonl"

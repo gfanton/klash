@@ -1,0 +1,40 @@
+A change of mind mid-plan: mem holds the 2.0 docs plan (a migration guide, a
+Close entry in the API reference and a screencast). The user calls off the
+screencast and asks for the API reference. The screencast todo is dropped
+with why, the reference is done and closed, and the guide stays open.
+
+-- project/go.mod --
+module db
+
+go 1.22
+-- project/db.go --
+// Package db is a tiny database.
+package db
+
+// DB is an open database.
+type DB struct{ path string }
+
+// Open opens the database at path.
+func Open(path string) (*DB, error) { return &DB{path}, nil }
+
+// Close releases the database; using it after is an error.
+func (d *DB) Close() error { return nil }
+-- project/API.md --
+# API
+
+## Open(path string) (*DB, error)
+
+Opens the database at path.
+-- mem --
+d := mem.Todo("ship the 2.0 docs")
+d.Todo("write the migration guide")
+d.Todo("document Close in API.md")
+d.Todo("record a screencast of the upgrade")
+-- prompt --
+We're not doing the screencast for 2.0 after all, nobody watches them. Then go ahead with the API reference.
+-- check --
+turn 1 tool gnovm_run >= 1
+file API.md contains Close
+mem-count dropped == 1
+mem-count done >= 1
+mem-count open >= 2

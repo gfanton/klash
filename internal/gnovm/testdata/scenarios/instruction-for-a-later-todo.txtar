@@ -1,0 +1,52 @@
+An instruction for a later todo, given mid-plan: the user plans three todos
+and has the first done; then, before the second, says how the third must be
+done. The third is done in a new session, which knows only what mem kept, so
+the instruction must be kept in mem (a thought, a fact or the todo's own
+words), not left in a conversation that a pop or a new session drops.
+
+-- project/go.mod --
+module serve
+
+go 1.22
+-- project/main.go --
+// Command serve answers "ok" on every path.
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+)
+
+const addr = ":8080"
+
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "ok")
+	})
+	log.Fatal(http.ListenAndServe(addr, nil))
+}
+-- project/README.md --
+# serve
+
+serve answers "ok" on every path.
+
+    go run .
+
+It listens on port 8080.
+-- prompt --
+Plan this as todos in mem: (1) make the port a --port flag in main.go, keeping 8080 as the default; (2) document the flag in README.md; (3) add a test for the flag's default. Do only the first todo now.
+-- prompt --
+Before you go on: when you get to the test, it must be table-driven, be called TestPortDefaults, and also check that --port 0 is refused with an error. Now do the second todo only.
+-- prompt-new --
+Carry on with the plan in mem: do what's left.
+-- check --
+after 1 file main.go contains flag
+after 2 file README.md contains -port
+turn 1 tool gnovm_run >= 1
+turn 3 tool gnovm_run >= 1
+cmd grep -rq 'func TestPortDefaults' --include='*_test.go' .
+cmd go test ./...
+cmd timeout 60 go run . --port 0; s=$?; [ $s -ne 0 ] && [ $s -ne 124 ]
+vm-dump contains TestPortDefaults
+mem-count open == 0

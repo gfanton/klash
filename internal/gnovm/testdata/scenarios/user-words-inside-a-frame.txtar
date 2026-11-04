@@ -1,0 +1,57 @@
+What the user says inside a frame, needed after its pop: the agent plans
+three todos and stops inside the first, to report before changing anything.
+The user's next message, said while the agent stands in that frame, carries
+a detail for the third todo. Finishing the first todo pops its frame, which
+cuts that message from the agent's context, so the detail must be kept as a
+thought (or in the pop's result) before the pop, or the README misses it.
+
+-- project/go.mod --
+module greet
+
+go 1.22
+-- project/main.go --
+// Command greet greets whoever runs it.
+package main
+
+import (
+	"flag"
+	"fmt"
+)
+
+func greeting(who string) string {
+	return "hello, " + who
+}
+
+func main() {
+	who := flag.String("who", "world", "who to greet")
+	flag.Parse()
+	fmt.Println(greeting(*who))
+}
+-- project/main_test.go --
+package main
+
+import "testing"
+
+func TestGreeting(t *testing.T) {
+	if got := greeting("Lin"); got != "hello, Lin" {
+		t.Fatalf("greeting = %q", got)
+	}
+}
+-- project/README.md --
+# greet
+
+greet greets whoever runs it.
+
+    go run . --who Lin
+-- prompt --
+Plan this as todos in mem: (1) add a --shout flag to main.go that upper-cases the greeting, (2) test it in main_test.go, (3) document it in README.md. Step into the first todo and read the code, then tell me how you'll add the flag. Don't change any file yet.
+-- prompt --
+Sounds right. One thing for the README todo: say that --shout was added in version 1.4, and give an example run with its output. Go ahead and do all three todos now.
+-- check --
+turn 1 tool gnovm_run >= 1
+turn 2 tool gnovm_run >= 1
+cmd go test ./...
+cmd grep -q -- '--shout' README.md
+cmd grep -q '1\.4' README.md
+cmd go run . --who Lin --shout | grep -q 'HELLO, LIN'
+mem-count open == 0

@@ -1,0 +1,46 @@
+Something noticed and kept for later: the user asks for one bug fixed and
+anything else noticed to be noted, not fixed. A new session is asked what
+was noticed and to fix it now; it starts with only what mem kept.
+
+-- project/go.mod --
+module pager
+
+go 1.22
+-- project/pager.go --
+// Package pager splits n items into pages of per items each.
+package pager
+
+// Pages is how many pages n items take at per items a page.
+func Pages(n, per int) int {
+	return n / per
+}
+
+// Offset is the index of the first item on page p, counting pages from 1.
+func Offset(p, per int) int {
+	return p * per
+}
+-- project/pager_test.go --
+package pager
+
+import "testing"
+
+func TestPages(t *testing.T) {
+	for _, c := range []struct{ n, per, want int }{{0, 10, 0}, {10, 10, 1}, {11, 10, 2}, {25, 10, 3}} {
+		if got := Pages(c.n, c.per); got != c.want {
+			t.Errorf("Pages(%d, %d) = %d, want %d", c.n, c.per, got, c.want)
+		}
+	}
+}
+-- prompt --
+TestPages fails: fix Pages in pager.go. If you notice anything else wrong in pager.go, don't fix it now; keep a note of it for later.
+-- prompt-new --
+When you fixed Pages last time, did you notice anything else wrong in pager.go? If so, fix it now, with a test.
+-- check --
+after 1 file pager.go contains return p * per
+turn 1 tool gnovm_run >= 1
+turn 2 tool gnovm_run >= 1
+answer last matches (?i)offset
+cmd ! grep -q 'return p \* per' pager.go
+cmd go test ./...
+cmd grep -q 'Offset(' pager_test.go
+vm-dump contains offset
