@@ -1,0 +1,44 @@
+A convention said once, applied later: while asking for a flag, the user
+says how errors are reported in this repo from now on. A new session, given
+new code that must report an error (a file it can't create), must follow the
+convention without being reminded: it comes back only through mem (a rule, as the user's
+standing instruction).
+
+-- project/go.mod --
+module tally
+
+go 1.22
+-- project/main.go --
+// Command tally counts the lines of a file.
+package main
+
+import (
+	"bufio"
+	"flag"
+	"fmt"
+	"os"
+)
+
+func main() {
+	flag.Parse()
+	f, _ := os.Open(flag.Arg(0))
+	n := 0
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		n++
+	}
+	fmt.Println(n)
+}
+-- prompt --
+Add a --verbose flag to main.go: with it, print "lines: N" instead of just the number. And from now on, in this repo, errors are reported with the log package (log.Fatalf or log.Printf), never with fmt to stderr.
+-- prompt-new --
+Add an --out FILE flag: write the count to FILE instead of stdout, and if FILE can't be created, report that and exit non-zero.
+-- check --
+turn 1 tool gnovm_run >= 1
+mem-count rules >= 1
+cmd go build ./...
+cmd grep -qE 'log\.(Fatal|Fatalf|Printf|Println|Print)\(' main.go
+cmd ! grep -qE 'fmt\.Fprint(f|ln)?\(os\.Stderr' main.go
+cmd grep -A4 -E 'os\.(Create|OpenFile|WriteFile)' main.go | grep -qE 'log\.(Fatal|Fatalf|Printf|Println|Print)\('
+cmd go run . --out /no/such/dir/x.txt main.go; [ $? -ne 0 ]
+cmd go run . --out out.txt main.go && grep -qE '^[0-9]+' out.txt
