@@ -534,7 +534,7 @@ func TestHostRunsMem(t *testing.T) {
 	// The real-model pass's slips: a call chained off one that returns
 	// nothing, a Frame where a name goes, mem.List, and mem imported.
 	res = call(`mem.Fact("staging-db", "db-stg-7").Fact("release-manager", "Priya")`)
-	require.EqualError(t, res.Err, "only mem.Todo(…) and mem.Frame(…) chain (.Todo, .Wait, .Ask, .Push): mem's other calls return nothing, so put each on its own line")
+	require.EqualError(t, res.Err, "only mem.Todo(…) and mem.Frame(…) chain (.Todo, .Push, .Ask, .Wait, .Done, …): mem's other calls return nothing, or text, so put each on its own line")
 	res = call("g := mem.Todo(\"count the funcs\")\nmem.Note(g, \"b.go has 5\")")
 	require.Contains(t, res.Notes, "mem.Todo(…) gives a Frame, not a name: pass its Id, or the name mem printed in backticks")
 	res = call(`mem.List("ship")`)
@@ -549,14 +549,14 @@ func TestHostRunsMem(t *testing.T) {
 	res = call("mem.Done(\"add-median-stats/implement-median\", \"done\"),\nmem.Done(\"add-median-stats/add-tests\", \"done\")")
 	require.ErrorContains(t, res.Err, "(mem's calls go one per line, with no comma after them)")
 	res = call(`mem.Fact("release/qa-signoff")`)
-	require.EqualError(t, res.Err, "`release/qa-signoff` is a name, not a fact: mem.Fact(name, text) sets a fact, and mem.Show(name) shows one")
+	require.EqualError(t, res.Err, "no fact `release/qa-signoff`; mem.Fact(\"release/qa-signoff\", \"…\") keeps one, and mem.Find(\"words\") searches them")
 	// From the release-waits-for-signoff scenario on a local Qwen: a todo
 	// marked done on the plan, a question given a name, a name made from a
 	// task by hand. What a call takes, and what a Frame has, are read from
 	// gnomem's source (memAPI).
-	res = call(`mem.Todo("release 1.3.0").Todo("tag it").Done("x")`)
-	require.ErrorContains(t, res.Err, "missing field Done in *klash/gnomem/v2.Frame")
-	require.Contains(t, res.Notes, "a Frame, which mem.Todo(…) and mem.Frame(id) give, has Todo, Wait, Ask, Push and Parallel; Done is mem's: mem.Done(name, result...)")
+	res = call(`mem.Todo("release 1.3.0").Todo("tag it").Fact("x")`)
+	require.ErrorContains(t, res.Err, "missing field Fact in *klash/gnomem/v2.Frame")
+	require.Contains(t, res.Notes, "a Frame, which mem.Todo(…) and mem.Frame(id) give, has Todo, Wait, Ask, Push, Done, Drop, Reopen, Note, Think and Parallel; Fact is mem's: mem.Fact(args...)")
 	res = call(`mem.Todo("release 1.3.0").Ask("release-1-3-0/1", "who signs?")`)
 	require.EqualError(t, res.Err, "a Frame's Ask takes 1 argument, not 2: mem.Todo(…).Ask(question), or mem.Ask(name, question) for an item by its name")
 	res = call("mem.Todo(\"release 1.3.0\").Todo(\"tag it\")\nmem.Done(\"release-1.3.0/tag\", \"tagged\")")
@@ -564,7 +564,7 @@ func TestHostRunsMem(t *testing.T) {
 	res = call(`mem.Drop("ship")`)
 	require.EqualError(t, res.Err, "mem.Drop takes 2 arguments, not 1: mem.Drop(name, why)")
 	res = call(`mem.Frobnicate("x")`)
-	require.Contains(t, res.Notes, "mem's calls are Frame, Todo, Next, Pop, Think, Thought, Recall, Ask, Start, Done, Drop, Reopen, Note, Wait, Fact, Rule, Forget, Redact, JSON, Show and Find")
+	require.Contains(t, res.Notes, "mem's calls are Frame, Todo, Later, Next, Leave, Pop, Think, Thought, Recall, Ask, Start, Done, Drop, Reopen, Note, Wait, Fact, Help, Rule, Forget, Redact, JSON, Show and Find")
 	res = call("import \"mem\"\nmem.Fact(\"cmd/test\", \"go test ./...\")")
 	require.NoError(t, res.Err)
 	require.Equal(t, "fact `cmd/test` is new\n", res.Output)
@@ -594,10 +594,10 @@ func TestHostRunsMem(t *testing.T) {
 	require.Empty(t, MemBlock(dir, "/elsewhere"))
 
 	// QA's reminder probe reached for a note on the plan, chained as the
-	// rest is: a Frame has no Note, and the hint says whose it is.
+	// rest is: a Frame takes it, as it takes mem's other verbs on a todo.
 	res = call(`mem.Todo("rotate the staging key").Note("it expires Friday")`)
-	require.ErrorContains(t, res.Err, "missing field Note in *klash/gnomem/v2.Frame")
-	require.Contains(t, res.Notes, "a Frame, which mem.Todo(…) and mem.Frame(id) give, has Todo, Wait, Ask, Push and Parallel; Note is mem's: mem.Note(name, text)")
+	require.NoError(t, res.Err)
+	require.Contains(t, res.Output, "noted on `rotate-staging-key` \"rotate the staging key\" as thought `expires-friday`")
 }
 
 // A failed input's refusal names what its receipts said it added and set.

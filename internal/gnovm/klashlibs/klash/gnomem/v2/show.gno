@@ -88,7 +88,7 @@ func (m *Mem) Show(names ...string) string {
 		shown := map[string]bool{}
 		m.recent.ReverseIterate("", "", func(_ string, v any) bool {
 			n := v.(string)
-			sb.WriteString("  `" + n + "` = " + line(m.getFact(n).Text, maxLine) + "\n")
+			sb.WriteString("  `" + n + "` = " + factLine(n, m.getFact(n).Text) + "\n")
 			shown[n] = true
 			return len(shown) == maxShowFacts
 		})
@@ -308,7 +308,7 @@ func (m *Mem) showName(sb *strings.Builder, name string) {
 			more++
 			return false
 		}
-		under = append(under, "  `"+n+"` = "+line(v.(*fact).Text, maxLine))
+		under = append(under, "  `"+n+"` = "+factLine(n, v.(*fact).Text))
 		return false
 	})
 	m.rules.Iterate(name+"/", name+"/\xff", func(n string, v any) bool {
@@ -426,7 +426,7 @@ func (m *Mem) Find(words string) string {
 		switch kinds[i] {
 		case "fact":
 			if f := m.getFact(n); f != nil {
-				sb.WriteString("fact `" + n + "` = " + line(f.Text, maxLine) + "\n")
+				sb.WriteString("fact `" + n + "` = " + factLine(n, f.Text) + "\n")
 			}
 		case "rule":
 			if r := m.getRule(n); r != nil {
@@ -559,6 +559,16 @@ func mark(it *Todo) string {
 // line keeps text on one line, cut to n bytes.
 func line(s string, n int) string {
 	return clip(strings.ReplaceAll(strings.ReplaceAll(s, "\r", ""), "\n", " ⏎ "), n)
+}
+
+// factLine is fact name's text as a line shows it, and, when that cuts it
+// short, how to read it whole: a session that found a long fact cut did
+// the research again rather than read it (QA, 2026-11-04).
+func factLine(name, text string) string {
+	if l := line(text, maxLine); l != line(text, len(text)*3) {
+		return l + " (mem.Fact(" + quote(name) + ") reads it whole)"
+	}
+	return line(text, maxLine)
 }
 
 // cut ends a long outline at a line, saying so.

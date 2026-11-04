@@ -21,6 +21,7 @@ import (
 	"go/parser"
 	"go/token"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -263,10 +264,12 @@ func NewRunTool(vms *gnovm.Lazy, project string, opts ...RunOption) fantasy.Agen
 }
 
 // unnamedTexts is the texts code keeps in mem without naming them: the one
-// string literal of each mem.Think(…) and mem.Fact(…) called with a single
-// argument, and of each Todo(…), on mem or on a Frame, in order, each once.
-// Code that does not parse as statements has none: mem names the texts
-// from their words then.
+// string literal of each Think(…), on mem or on a Frame, and of each
+// mem.Fact(…) called with a single argument that is not a fact's name, and
+// every string literal of each Todo(…), on mem or on a Frame, and
+// mem.Later(…), a plan's task and its todos; in order, each once. Code that
+// does not parse as statements has none: mem names the texts from their
+// words then.
 func unnamedTexts(code string) []string {
 	f, err := parser.ParseFile(token.NewFileSet(), "", "package p\nfunc _() {\n"+code+"\n}\n", parser.SkipObjectResolution)
 	if err != nil {
@@ -274,30 +277,55 @@ func unnamedTexts(code string) []string {
 	}
 	var texts []string
 	seen := map[string]bool{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || len(call.Args) != 1 {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Think" && sel.Sel.Name != "Fact" && sel.Sel.Name != "Todo" {
-			return true
-		}
-		if id, ok := sel.X.(*ast.Ident); sel.Sel.Name != "Todo" && (!ok || id.Name != "mem") {
-			return true
-		}
-		lit, ok := call.Args[0].(*ast.BasicLit)
+	add := func(arg ast.Expr) {
+		lit, ok := arg.(*ast.BasicLit)
 		if !ok || lit.Kind != token.STRING {
-			return true
+			return
 		}
 		if text, err := strconv.Unquote(lit.Value); err == nil && text != "" && !seen[text] {
 			seen[text] = true
 			texts = append(texts, text)
 		}
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		id, _ := sel.X.(*ast.Ident)
+		onMem := id != nil && id.Name == "mem"
+		switch {
+		case sel.Sel.Name == "Todo" || sel.Sel.Name == "Later" && onMem:
+			for _, a := range call.Args {
+				add(a)
+			}
+		case len(call.Args) != 1:
+		case sel.Sel.Name == "Think":
+			add(call.Args[0])
+		case sel.Sel.Name == "Fact" && onMem && !memNameLike(call.Args[0]):
+			add(call.Args[0])
+		}
 		return true
 	})
 	return texts
 }
+
+// memNameLike reports whether arg is a string literal that reads as a
+// name, `cmd/test`: mem.Fact of one reads a fact rather than keeping one.
+func memNameLike(arg ast.Expr) bool {
+	lit, ok := arg.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return false
+	}
+	text, err := strconv.Unquote(lit.Value)
+	return err == nil && memNameRe.MatchString(text)
+}
+
+var memNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)*$`)
 
 // gasParam turns a JSON number (a model writes 1e9) into a gas limit.
 func gasParam(g float64) (int64, error) {

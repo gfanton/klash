@@ -55,6 +55,15 @@ func (m *Mem) Check() string {
 			bad("`" + name + "` counts " + strconv.Itoa(it.OpenSteps) + " open and " + strconv.Itoa(it.DoneSteps) + " done steps, but has " + strconv.Itoa(stepsOpen) + " and " + strconv.Itoa(stepsDone))
 		}
 		top := parentOf(name) == ""
+		switch {
+		case top && (it.Order < 1 || it.Order > m.made):
+			bad("todo `" + name + "` has order " + strconv.Itoa(it.Order) + ", but " + strconv.Itoa(m.made) + " were made")
+		case !top && it.Order != 0:
+			bad("`" + name + "`, under another, has an order of its own")
+		}
+		if it.Status != "" && it.Via != "" {
+			bad("closed `" + name + "` was entered on the way by " + it.Via)
+		}
 		switch it.Status {
 		case "":
 			c.Open++
@@ -65,6 +74,9 @@ func (m *Mem) Check() string {
 				}
 				if m.titles.Get(sameTitle(it.Title)+"|"+name) == nil {
 					bad("open `" + name + "` is not in the titles")
+				}
+				if v := m.order.Get(orderKey(it.Order)); v == nil || v.(string) != name {
+					bad("open `" + name + "` is not in the order made")
 				}
 			}
 			if it.For != "" {
@@ -130,6 +142,7 @@ func (m *Mem) Check() string {
 		{"days", m.days.Size(), days},
 		{"words", m.words.Size(), words},
 		{"titles", m.titles.Size(), open},
+		{"order", m.order.Size(), open},
 		{"fact groups", m.groups.Size(), len(groups)},
 		{"facts by time", m.recent.Size(), m.facts.Size()},
 	} {

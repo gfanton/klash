@@ -64,6 +64,7 @@ func TestMemLayoutPinned(t *testing.T) {
 		3: "d3f1464566978a19",
 		4: "536614fa09762190",
 		5: "9adf99a149924b93",
+		6: "b89e3f21a1d108cf",
 	}
 	want, ok := pins[memLayout]
 	if !ok {

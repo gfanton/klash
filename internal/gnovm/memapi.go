@@ -14,13 +14,14 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"strconv"
 	"strings"
 )
 
 // memMethod is one of mem's calls, or of a Frame's, as the model writes it:
-// its name and its parameters, "(name, result...)".
+// its name, its parameters, "(name, result...)", and its doc comment.
 type memMethod struct {
-	name, params string
+	name, params, doc string
 }
 
 // memCalls is what the model may call on mem and on a Frame, in the order
@@ -49,7 +50,7 @@ func readMemAPI() memCalls {
 		if err != nil {
 			panic(err)
 		}
-		f, err := parser.ParseFile(fset, path, src, 0)
+		f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
 		if err != nil {
 			panic(err)
 		}
@@ -58,7 +59,7 @@ func readMemAPI() memCalls {
 			if !ok || fn.Recv == nil || !fn.Name.IsExported() || memNotCalls[fn.Name.Name] {
 				continue
 			}
-			call := memMethod{fn.Name.Name, memParams(fn.Type.Params)}
+			call := memMethod{fn.Name.Name, memParams(fn.Type.Params), strings.Join(strings.Fields(fn.Doc.Text()), " ")}
 			if t, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
 				switch id, _ := t.X.(*ast.Ident); id.Name {
 				case "Mem":
@@ -148,6 +149,52 @@ func memArgCount(on, name, want, got string) string {
 	}
 	return msg
 }
+
+// memHelp is what mem.Help(call) says: given "", the calls to know, with an
+// example each, and the names of all; given a call's name, "Todo",
+// "Frame.Push" or "Push", what it does and takes, from its doc comment in
+// gnomem.
+func memHelp(call string) string {
+	if call == "" {
+		return memHelpText + "mem.Help(\"Todo\") says what one call does and takes. mem's calls are " + memAPI.names(false) + "; a Frame's, on what mem.Todo(…) and mem.Frame(name) give, are " + memAPI.names(true) + ".\n"
+	}
+	name, onFrame := call, false
+	if rest, ok := strings.CutPrefix(name, "Frame."); ok {
+		name, onFrame = rest, true
+	}
+	name = strings.TrimSuffix(strings.TrimPrefix(name, "mem."), "()")
+	var b strings.Builder
+	if c, ok := memAPI.find(false, name); ok && !onFrame {
+		b.WriteString("mem." + c.name + c.params + ": " + c.doc + "\n")
+	}
+	if c, ok := memAPI.find(true, name); ok {
+		b.WriteString("a Frame's " + c.name + c.params + ", as in mem.Todo(…)." + c.name + c.params + ": " + c.doc + "\n")
+	}
+	if b.Len() == 0 {
+		return "mem has no call " + strconv.Quote(call) + ": mem's calls are " + memAPI.names(false) + "; a Frame's are " + memAPI.names(true) + "\n"
+	}
+	return b.String()
+}
+
+// memHelpText is mem.Help()'s list of the calls to know.
+const memHelpText = `mem is your memory, kept by gnosh for this project. The calls to know:
+  mem.Todo("make the port configurable", "add a --port flag", "document it").Push()  plan a task with its todos, in order, and step into it
+  mem.Next()  step into the next todo; from the top, the first open one, in the order made
+  mem.Pop("what came of it")  close the todo you are in, done, with its result
+  mem.Leave("why")  step out of the todo you are in and leave it open
+  mem.Frame("name").Push()  step into a todo by its name
+  mem.Done("name", "what came of it")  close a todo by its name
+  mem.Drop("name", "why")  give a todo up
+  mem.Later("fix the flaky test")  a todo for later, at the top, from anywhere
+  mem.Think("what you found")  keep a thought on the todo you are in; mem.Frame("name").Think("…") on another
+  mem.Thought("name")  read a thought; mem.Recall("words") finds thoughts, todos and facts by meaning
+  mem.Ask("name", "TOML or JSON?")  ask the user, under a todo
+  mem.Todo("renew the TLS cert").Wait("2026-12-01")  a todo that waits for a day
+  mem.Fact("cmd/test", "go test ./...")  keep a fact; mem.Fact("cmd/test") reads it
+  mem.Rule("name", "…")  keep a standing instruction the user gave
+  mem.Show(), mem.Show("name")  the outline, or one todo, fact or rule in full
+  mem.Find("words")  search everything
+`
 
 // memMissing is what to tell the model of gno's "missing field <name> in
 // <Mem or Frame>": a call mem's older versions had, where a Frame's call is

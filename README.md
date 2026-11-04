@@ -285,7 +285,9 @@ another session, that session takes up the free todos under it one frame at a
 time, but only the first session, resumed by its id, can pop or close the one
 it entered: in real runs on 31 October, a task carried to a new session ended
 with every todo under it done and the top one still open, held by the session
-that began it. A todo the ended session had stepped into stays held the same
+that began it. That was a todo pushed by its name; the todos above one that
+`mem.Next()` steps into from the root are entered on the way and held only
+while their session works, so a later session can close them. A todo the ended session had stepped into stays held the same
 way, and its work waits for that session: in one run of the four-session
 plan, the last session could not take the step the one before it had
 entered.

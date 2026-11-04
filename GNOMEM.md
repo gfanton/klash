@@ -11,17 +11,13 @@ Each project has one mem, shared by its worktrees and its sessions
 ([klash/gnomem/v2](internal/gnovm/klashlibs/klash/gnomem/v2/gnomem.gno)):
 
 ```go mem
-r := mem.Todo("release v2")
-r.Todo("bump the version")
-r.Todo("tag the release")
-r.Todo("CI is green")
+mem.Todo("release v2", "bump the version", "tag the release", "CI is green").Push()
 // added `release-v2` "release v2"
 // added `release-v2/bump-version` "bump the version"
 // added `release-v2/tag-release` "tag the release"
 // added `release-v2/ci-green` "CI is green"
-mem.Frame("release-v2").Push()
-mem.Next()
 // in `release-v2` "release v2": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+mem.Next()
 // in `release-v2/bump-version` "bump the version": when it is done, pop it with what came of it and what the next todo needs. …
 mem.Pop("now 2.0.0")
 mem.Next()
@@ -175,6 +171,10 @@ mem.Pop("go.mod and main.go say gnosh") // stack: rename-project · rename-code 
 mem.Next()                              // stack: rename-project › rename-tests
 ```
 
+A plan is also one call, the task and then its todos, in order:
+`mem.Todo("rename the project", "rename it in the code", "rename it in the
+tests").Push()`.
+
 ```go mem
 mem.Todo("fix the flaky test").Push()
 mem.Todo("find why TestFlaky fails")
@@ -216,15 +216,34 @@ finds thoughts, frames and facts by meaning, and
 work into a todo of the same name and enters it: under its frame, or at the
 top once that frame is closed. A pop's receipt lists the frame's thoughts
 word for word, and entering a todo lists the thoughts already on it, such
-as a note another frame left for it with `mem.Note(name, text)`. You see every pop in the chat as the tool's result (the removed
+as a note another frame left for it with `mem.Frame(name).Think(text)`.
+
+From the root, `mem.Next()` takes the top-level todos in the order they
+were made, passing over one that waits or is asked of you, and steps into
+the first todo it can do now under one, together with the todos above it:
+popping that todo leaves the agent in its parent, as in a plan it pushed
+itself, and a second pop closes the parent. The todos above are entered on
+the way, not held: they are the session's while it works, and anyone's
+once it stops, so a plan carried into a new session can still be closed.
+Under a todo marked `.Parallel()`, whose todos are any session's, it steps
+into the todo alone. A todo the agent should not have entered, or one you
+want left for later, it leaves open with `mem.Leave("why")`: the context is
+cut as a pop cuts it, the todo is held by nobody, and the reason stays on it
+as a thought; a pop records the todo done, and a drop records it given up.
+Work found on the way that is not this todo's goes to the top, from
+anywhere, with `mem.Later("…")`.
+
+You see every pop in the chat as the tool's result (the removed
 rows stay there and in `/export`; only the model's view loses them), the
 frame the agent is in where the sidebar shows its work, `/mem log` lists
 each push and pop, and `gnosh run` prints what a pop took out of the
 context. A frame a session holds is its own: no other session, and not
 `/mem`, closes, drops or takes it; the session pops it, resumed by id if it
-has ended. So a todo entered in one session stays open, even with every todo
+has ended. So a todo pushed in one session stays open, even with every todo
 under it done in later sessions, until that session is resumed: in real runs
 on 31 October, the README's task and long-goal-sessions both ended that way.
+A todo `mem.Next()` entered on the way from the root is not held, so it does
+not end that way.
 
 ### Many sessions, one plan
 
@@ -251,7 +270,11 @@ working now, so one session working alone sees the `mem.Next()` above. The
 one addition it can see: entering a todo, or being told to pop it, lists
 what each of its todos that another session did came to (five at most).
 While others work, the hint after a pop says `mem.Next()` rather than a
-todo's name, since another session may take it first.
+todo's name, since another session may take it first. A todo a session
+entered on the way from the root is its own while it works: the others take
+the free todos under it, but neither it nor its close. Under a parallel todo
+nobody enters the todos above on the way, so the parallel todo's own work
+goes to whichever session comes when its todos are done.
 
 Only a bare `mem.Next()` ending the call waits, when it is the call's only
 `mem.Next()`, and a sub-agent's never does; a sub-agent is a session of its
@@ -676,12 +699,14 @@ Gnosh's system prompt carries a short recipe, so the model needs no setup:
 - **When a task starts**: `mem.Show()`, and carry on from `← next`. When mem
   does not hold what it was asked, say so, and never build an answer out of
   the facts beside it.
-- **A task of two or more steps**: `mem.Todo("…").Push()` adds a todo and
-  enters it, `mem.Todo("…")` for each part adds the work under it, named for
-  the agent, and then those todos as frames: `mem.Next()` enters the first,
-  and `mem.Pop("what came of it")` with the next push on the next line
-  moves on; a pop removes the todo's work from the model's context and keeps
-  the result. A todo cannot be done while one under it is open, so a success
+- **A task of two or more steps**: `mem.Todo("task", "part", "part").Push()`
+  adds a todo with each part as a todo under it, in order, named for the
+  agent, and enters it; then those todos as frames: `mem.Next()` enters the
+  first, and `mem.Pop("what came of it")` with the next push on the next
+  line moves on; a pop removes the todo's work from the model's context and
+  keeps the result. Asked for one todo of a plan, it enters that one by its
+  name, `mem.Frame("…").Push()`, and one it should not be in it leaves open
+  with `mem.Leave("why")`. A todo cannot be done while one under it is open, so a success
   condition is a todo ("go test ./... passes"), popped only after its check
   has run, and a task it closes is judged before it counts as done. A todo
   is never popped in the round right after the one that entered it, with
@@ -692,8 +717,8 @@ Gnosh's system prompt carries a short recipe, so the model needs no setup:
   (`mem.Recall`), or in the frame's outline, and dived into with
   `mem.Thought(name).Push()`. **A question for you**: `mem.Ask(name, "…")`,
   or `mem.Todo("…").Ask("…")`, answered with Done.
-- **Later, or when something happens**: `mem.Todo("…").Wait("2026-12-01")`,
-  or `.Wait("PR #6399 merged")`.
+- **Later, or when something happens**: `mem.Later("…")` for work found on
+  the way, `mem.Todo("…").Wait("2026-12-01")`, or `.Wait("PR #6399 merged")`.
 - **Facts and rules**: `mem.Fact("cmd/test", "go test -race ./...")` for a
   command, how something works, a decision and why, or where something is,
   but not for what it worked out to answer a one-off question; a standing
@@ -726,6 +751,8 @@ type Todo struct {
 	Wait    string   // a day ("2026-12-01") or words ("PR #6399 merged"); "" none
 	For     string   // "user": a question or request for you
 	Doing   string   // the session that holds it
+	Via     string   // the session that entered it on the way to a todo under it, which holds it while it works
+	Order   int      // a top-level todo's place in the order made
 	Steps   []string // the names of the todos under it, in order
 	Notes   []note   // its thoughts, oldest first: name, text, the todo made from it
 	// ...
@@ -735,32 +762,36 @@ type Frame struct { Id, Purpose, Result, State, Doing string; Todos []*Frame; Th
 type Thought struct { Text string; Frame *Frame } // Name() its name, given or made from the text; Frame the todo made from it, if any
 type Namable interface { Name() string; Kind() string; Says() string } // *Frame, Thought and Fact
 
-func (m *Mem) Todo(task string) *Frame      // a todo under the frame the agent is in, or a top-level one at the root, named for it
-func (f *Frame) Todo(task string) *Frame    // a todo under f, without entering f: r := mem.Todo("…"); r.Todo("…")
-func (f *Frame) Wait(until string) *Frame   // mem.Todo("renew the TLS cert").Wait("2026-12-01")
-func (f *Frame) Ask(question string) *Frame // a question for you, as a todo under f
-func (f *Frame) Push()                      // enter it: from here the context will be cut
-func (f *Frame) NextTodo() *Frame           // the first todo under it to do; nil for none
-func (m *Mem) Frame(id ...string) *Frame    // the present frame, or one by id
-func (m *Mem) Next()                        // step into the next open todo under the present frame; at the root, of the newest open task
-func (m *Mem) Pop(result string)            // leave it done: everything since the push is removed
-func (m *Mem) Think(args ...string) Thought // Think(text): a thought on the present frame, named for the agent; or Think(name, text)
-func (m *Mem) Thought(name string) Thought  // a thought by name, from anywhere
-func (t Thought) Push(why ...string)        // a todo named as the thought, made if it has none (at the top once its frame is closed), entered
+func (m *Mem) Todo(task string, todos ...string) *Frame   // a todo under the frame the agent is in, or a top-level one at the root, named for it; todos after the task go under it, in order
+func (f *Frame) Todo(task string, todos ...string) *Frame // a todo under f, without entering f: r := mem.Todo("…"); r.Todo("…")
+func (m *Mem) Later(task string, todos ...string) *Frame  // a top-level todo, from anywhere, leaving the frame alone
+func (f *Frame) Wait(until string) *Frame                 // mem.Todo("renew the TLS cert").Wait("2026-12-01")
+func (f *Frame) Ask(question string) *Frame               // a question for you, as a todo under f
+func (f *Frame) Push() *Frame                             // enter it: from here the context will be cut
+func (f *Frame) Done(result ...string)                    // mem.Done of it; and Drop(why), Reopen(why...), Think(args...)
+func (f *Frame) NextTodo() *Frame                         // the first todo under it to do; nil for none
+func (m *Mem) Frame(id ...string) *Frame                  // the present frame, or one by id
+func (m *Mem) Next()                                      // step into the next open todo under the present frame; at the root, the first, in the order made, with the todos above it
+func (m *Mem) Pop(result ...string)                       // leave it done: everything since the push is removed; Pop(its name, result) too
+func (m *Mem) Leave(why ...string)                        // leave it open: everything since the push is removed, and nobody holds it
+func (m *Mem) Think(args ...string) Thought               // Think(text): a thought on the present frame, named for the agent; or Think(name, text)
+func (m *Mem) Thought(args ...string) Thought             // a thought by name, from anywhere; given words, Think
+func (t Thought) Push(why ...string)                      // a todo named as the thought, made if it has none (at the top once its frame is closed), entered
 func (m *Mem) Recall(words string) []Namable
 func (m *Mem) Ask(name, question string)
 func (m *Mem) Start(name string)
-func (m *Mem) Done(name string, result ...string)
+func (m *Mem) Done(name string, result ...string)         // Done(result) alone closes the present todo
 func (m *Mem) Drop(name, why string)
 func (m *Mem) Reopen(name string, why ...string)
 func (m *Mem) Note(name, note string)
 func (m *Mem) Wait(name, until string)
-func (m *Mem) Fact(args ...string)          // Fact(name, text); or Fact(text), named for the agent
+func (m *Mem) Fact(args ...string) string                 // Fact(name, text); Fact(text), named for the agent; Fact(name) reads one
 func (m *Mem) Rule(name, rule string)
 func (m *Mem) Forget(name string)
 func (m *Mem) Redact(secret string)
 func (m *Mem) Find(words string) string
 func (m *Mem) Show(names ...string) string
+func (m *Mem) Help(call ...string) string                 // the calls to know, or what one does
 ```
 
 - **Names, not numbers.** Everything has a lowercase name, printed in

@@ -175,7 +175,8 @@ asked `rotate-staging-key/which-day-suits-you` "which day suits you?" (for the u
 added `ping-team` "ping the team"
 error: "ping the team" is a task, not a name: the todo with that task is `ping-team`; nothing was kept, so `ping-team`, added above, is not in mem
 > s1: mem.Todo("make go test ./... pass", "until-green")
-error: mem.Todo takes 1 argument, not 2: mem.Todo(task)
+added `make-go-test-pass` "make go test ./... pass"
+error: `until-green` is a name, not a task: mem.Frame("until-green") is the todo of that name, and .Todo("what to get done") on it adds under it; a task is words; nothing was kept, so `make-go-test-pass`, added above, is not in mem
 > s1: mem.Todo("which Go file declares the most functions?"); mem.Note("which-go-file-declares-the-most-functions", "b.go has 5")
 added `which-go-file-declares` "which Go file declares the most functions?"
 error: `which-go-file-declares-the-most-functions` is not a name: a todo's name keeps at most 4 words of its task, and this one's is `which-go-file-declares`; nothing was kept, so `which-go-file-declares`, added above, is not in mem

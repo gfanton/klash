@@ -118,12 +118,15 @@ func (m *Mem) applyAdd(op Op) {
 		copy(steps, parent.Steps)
 		parent.Steps = append(steps, op.Name[len(p)+1:])
 		parent.OpenSteps++
+		m.items.Set(op.Name, &Todo{Title: op.New, By: op.By})
 	} else {
+		m.made++
 		m.taken.Set(op.Name, true)
 		m.open.Set(stampKey(0, op.Name), op.Name)
 		m.titles.Set(sameTitle(op.New)+"|"+op.Name, op.Name)
+		m.order.Set(orderKey(m.made), op.Name)
+		m.items.Set(op.Name, &Todo{Title: op.New, By: op.By, Order: m.made})
 	}
-	m.items.Set(op.Name, &Todo{Title: op.New, By: op.By})
 	m.counts.Open++
 }
 
@@ -136,6 +139,10 @@ func (m *Mem) applyUnadd(op Op) {
 	if p := parentOf(op.Name); p == "" {
 		m.open.Remove(stampKey(it.Changed, op.Name))
 		m.titles.Remove(sameTitle(it.Title) + "|" + op.Name)
+		m.order.Remove(orderKey(it.Order))
+		if it.Order == m.made {
+			m.made--
+		}
 	} else {
 		parent := m.get(p)
 		name := op.Name[len(p)+1:]
@@ -197,6 +204,8 @@ func (m *Mem) applySet(op Op, at int64) {
 		cur = it.For
 	case "doing":
 		cur = it.Doing
+	case "via":
+		cur = it.Via
 	case "parallel":
 		if it.Parallel {
 			cur = "yes"
@@ -231,6 +240,8 @@ func (m *Mem) applySet(op Op, at int64) {
 			it.Did = op.Old
 		}
 		it.Doing = op.New
+	case "via":
+		it.Via = op.New
 	case "parallel":
 		it.Parallel = op.New == "yes"
 	}
@@ -258,11 +269,13 @@ func (m *Mem) setStatus(name string, it *Todo, status string, at int64) {
 	}
 	top := parent == nil
 	if it.Status == "" {
-		// Leaving open.
+		// Leaving open: whoever entered it on the way is out of it.
 		m.counts.Open--
+		it.Via = ""
 		if top {
 			m.open.Remove(stampKey(it.Changed, name))
 			m.titles.Remove(sameTitle(it.Title) + "|" + name)
+			m.order.Remove(orderKey(it.Order))
 		}
 		if it.For != "" {
 			m.asks.Remove(name)
@@ -284,6 +297,7 @@ func (m *Mem) setStatus(name string, it *Todo, status string, at int64) {
 		if top {
 			m.open.Set(stampKey(it.Changed, name), name)
 			m.titles.Set(sameTitle(it.Title)+"|"+name, name)
+			m.order.Set(orderKey(it.Order), name)
 		}
 		if it.For != "" {
 			m.asks.Set(name, true)
@@ -536,6 +550,15 @@ func stampKey(at int64, name string) string {
 		s = "0" + s
 	}
 	return s + "|" + name
+}
+
+// orderKey orders goals as they were made: 12 digits of a goal's Order.
+func orderKey(order int) string {
+	s := strconv.Itoa(order)
+	for len(s) < 12 {
+		s = "0" + s
+	}
+	return s
 }
 
 // mustItem is item name, which an Op must find.

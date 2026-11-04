@@ -58,8 +58,10 @@ const memLibPath = "klash/gnomem/v2"
 // new number, and a store of an older one is rebuilt from its journal.
 // 3 indexes open goals by title, items waiting for words, and fact groups;
 // 4 names steps and thoughts (FRAMES.md); 5 keeps who held a todo last and
-// whether its todos may be done at once (PARALLEL.md).
-const memLayout = 5
+// whether its todos may be done at once (PARALLEL.md); 6 keeps the order
+// top-level todos were made in, and who entered a todo on the way to one
+// under it (Via).
+const memLayout = 6
 
 // memLayoutFiles are the library sources memLayout covers.
 var memLayoutFiles = []string{
@@ -400,11 +402,14 @@ func memPanicText(p any, bodyLine int, oneLine bool) string {
 		}
 		msg = place + strings.TrimSuffix(msg[len(m[0]):], ":")
 	}
-	// gno's words for a call chained off one that returns nothing, as
-	// mem.Fact(…).Fact(…), and Go's rule that models forget: a call over
-	// several lines ends each line with a comma, the last one too.
-	msg = strings.Replace(msg, "unexpected selector expression type *gnolang.tupleType",
-		"only mem.Todo(…) and mem.Frame(…) chain (.Todo, .Wait, .Ask, .Push): mem's other calls return nothing, so put each on its own line", 1)
+	// gno's words for a call chained off one that returns nothing, or
+	// text, as mem.Fact(…).Fact(…), and Go's rule that models forget: a
+	// call over several lines ends each line with a comma, the last one
+	// too.
+	for _, t := range []string{"*gnolang.tupleType", "gnolang.PrimitiveType"} {
+		msg = strings.Replace(msg, "unexpected selector expression type "+t,
+			"only mem.Todo(…) and mem.Frame(…) chain (.Todo, .Push, .Ask, .Wait, .Done, …): mem's other calls return nothing, or text, so put each on its own line", 1)
+	}
 	if strings.Contains(msg, "missing ',' before newline in argument list") {
 		msg += " (a call over several lines needs a comma after its last argument too, as in Go)"
 	}

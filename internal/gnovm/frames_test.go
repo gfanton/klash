@@ -71,12 +71,13 @@ func (s *framesStory) run(who, bound, code string) {
 func TestFramesStory(t *testing.T) {
 	s := newFramesStory(t)
 	// The empty root, a plan, and what Next does at the root: it steps into
-	// the newest open task's next free todo, or the task itself when it has
-	// none; a thought at the root is refused.
+	// the first open task made, its next free todo with the todos above it,
+	// or the task itself when it has none; a thought at the root is
+	// refused.
 	s.run("s1", "", `mem.Next()`)
 	s.run("s1", "", `mem.Think("port", "the shared port is 8080")`)
-	s.run("s1", "", `f := mem.Todo("fix the flaky test"); f.Todo("reproduce it"); f.Todo("find why TestFlaky fails"); f.Todo("rerun the suite 20 times")`)
 	s.run("s1", "", `mem.Todo("side quest")`)
+	s.run("s1", "", `f := mem.Todo("fix the flaky test"); f.Todo("reproduce it"); f.Todo("find why TestFlaky fails"); f.Todo("rerun the suite 20 times")`)
 	s.run("s1", "", `mem.Frame()`)
 	s.run("s1", "", `mem.Next()`)
 	s.run("s1", "", `mem.Frame().Push()`)
@@ -204,6 +205,18 @@ func TestFramesStory(t *testing.T) {
 	s.run("s3", "", `mem.Todo("five words")`)
 	s.run("s3", "", `mem.Pop("sent")`)
 	s.run("s3", "", `mem.Todo("five words")`)
+	// From the root, Next takes the first open task with work for it, in
+	// the order made, and enters its todo with the todo above it, so a
+	// second pop closes the task; Leave steps out of a todo, open. (A task
+	// made earlier, with a free todo, would come first, held or not.)
+	s.run("s3", "", `mem.Drop("email-john-hunter-about", "sent by hand")`)
+	s.run("user", "", `mem.Todo("ship the docs", "write the guide", "check the links")`)
+	s.run("s5", "", `mem.Next()`)
+	s.run("s5", "", `mem.Leave("the user wants the guide after the links")`)
+	s.run("s5", "", `mem.Frame("ship-docs/check-links").Push()`)
+	s.run("s5", "", `mem.Pop("both links work")`)
+	s.run("s5", "", `mem.Next()`)
+	s.run("s5", "", "mem.Pop(\"guide written\")\nmem.Pop(\"the docs are out\")")
 	s.run("s1", "", `println(mem.Show())`)
 
 	golden := filepath.Join("testdata", "gnomem", "v2", "frames.golden")

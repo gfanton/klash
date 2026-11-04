@@ -85,6 +85,11 @@ func waitOn(id, session string)
 // works for its parent and never waits.
 func subAgent() bool
 
+// help is how to use mem: given "", the calls to know, with an example
+// each; given a call's name, "Todo" or "Frame.Push", what it does and
+// takes, from gnomem's own source. It answers anywhere.
+func help(call string) string
+
 // Two that only format, in Go, since a character at a time is slow in Gno;
 // they answer anywhere.
 

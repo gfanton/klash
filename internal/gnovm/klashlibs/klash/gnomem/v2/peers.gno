@@ -50,8 +50,8 @@ func (m *Mem) pick(id, session string, enter bool, done func(string) bool, help 
 		if s.For != "" || enter && m.waitsAbove(step) || !enter && m.waiting(s) {
 			return false
 		}
-		if s.Doing != "" && s.Doing != session {
-			if !working(s.Doing, step) {
+		if h := m.holder(step, s, session); h != "" {
+			if !working(h, step) {
 				return false
 			}
 			if help {
@@ -110,7 +110,7 @@ func (m *Mem) worked(id, session string, done func(string) bool) bool {
 	if it == nil || it.Status != "" || done != nil && done(id) {
 		return false
 	}
-	if it.Doing != "" && it.Doing != session && working(it.Doing, id) {
+	if h := m.holder(id, it, session); h != "" && working(h, id) {
 		return true
 	}
 	found := false
@@ -149,7 +149,7 @@ func (m *Mem) finished(id, session string) []string {
 			}
 			return false
 		})
-		if all && it.Doing != "" && it.Doing != session && working(it.Doing, n) {
+		if h := m.holder(n, it, session); all && h != "" && working(h, n) {
 			fin = append(fin, n)
 			return true
 		}
@@ -166,10 +166,10 @@ func (m *Mem) finished(id, session string) []string {
 
 // waitsFor is what Next waits for where session stands, when it has nothing
 // for the session now: anchor is the frame it stands in (enter), or at the
-// root the newest open task. It waits when, once the other working sessions
-// finish their work (finished), the session would have a todo, or could pop
-// the frame, or at the root take the task itself; it returns the todos it
-// waits for then, and nothing otherwise.
+// root an open task, each in the order made. It waits when, once the other
+// working sessions finish their work (finished), the session would have a
+// todo, or could pop the frame, or at the root take the task itself; it
+// returns the todos it waits for then, and nothing otherwise.
 func (m *Mem) waitsFor(anchor, session string, enter bool) []string {
 	fin := m.finished(anchor, session)
 	if len(fin) == 0 {
@@ -183,23 +183,12 @@ func (m *Mem) waitsFor(anchor, session string, enter bool) []string {
 	would := m.pickFor(anchor, session, enter, done) != ""
 	if !would && m.openUnder(anchor, done) == 0 {
 		a := m.get(anchor)
-		would = enter || a.Status == "" && m.free(a, session)
+		would = enter || a.Status == "" && m.free(anchor, a, session)
 	}
 	if !would {
 		return nil
 	}
 	return fin
-}
-
-// newestOpen is the newest open top-level todo, the root's task; "" for
-// none.
-func (m *Mem) newestOpen() string {
-	newest := ""
-	m.open.ReverseIterate("", "", func(_ string, v any) bool {
-		newest = v.(string)
-		return true
-	})
-	return newest
 }
 
 // workers names the working sessions other than session that hold todo id's
@@ -208,9 +197,12 @@ func (m *Mem) workers(id, session string) string {
 	var names []string
 	seen := map[string]bool{}
 	m.eachBelow(id, false, func(n string, it *Todo) {
-		if it.Status == "" && it.Doing != "" && it.Doing != session && !seen[it.Doing] && working(it.Doing, n) {
-			seen[it.Doing] = true
-			names = append(names, who(it.Doing))
+		if it.Status != "" {
+			return
+		}
+		if h := m.holder(n, it, session); h != "" && !seen[h] && working(h, n) {
+			seen[h] = true
+			names = append(names, who(h))
 		}
 	})
 	return joinList(names)

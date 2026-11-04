@@ -164,10 +164,10 @@ func TestPeersHostWaitAndWake(t *testing.T) {
 	defer p1()
 	defer takeTurn(t, data, "p2")()
 	res = call("p1", nil, `mem.Next()`, "", false)
-	require.Equal(t, []string{"release/bump-version"}, stackAfter(nil, res.Frames))
+	require.Equal(t, []string{"release", "release/bump-version"}, stackAfter(nil, res.Frames))
 	rec, ok := h.readPeer("p1")
 	require.True(t, ok)
-	require.Equal(t, []string{"release/bump-version"}, rec.Stack, "the call's record holds the stack it left")
+	require.Equal(t, []string{"release", "release/bump-version"}, rec.Stack, "the call's record holds the stack it left")
 
 	pipe := makeWakePipe(t, h.dir, "01")
 	res = call("p2", nil, `mem.Next()`, "01", false)
@@ -176,9 +176,10 @@ func TestPeersHostWaitAndWake(t *testing.T) {
 	require.NoError(t, err, "the waiting call activated its pipe")
 	require.Equal(t, 0, pipe.rung(), "it does not ring itself")
 
-	res = call("p1", []string{"release/bump-version"}, `mem.Pop("now 2.0.0")`, "", false)
+	res = call("p1", []string{"release", "release/bump-version"}, `mem.Pop("now 2.0.0")`, "", false)
 	require.Equal(t, 1, pipe.rung(), "the pop rings the waiting Next")
 
+	// p1 is in the release still, working: p2 takes the tag alone.
 	res = call("p2", nil, `mem.Next()`, "", false)
 	require.Equal(t, []string{"release/tag"}, stackAfter(nil, res.Frames), res.Output)
 
@@ -187,7 +188,7 @@ func TestPeersHostWaitAndWake(t *testing.T) {
 	res, err = h.call(ctx, memRequest{Code: "s := mem.Todo(\"ship\")\ns.Todo(\"build\")\ns.Todo(\"upload\")", User: true})
 	require.NoError(t, err, res.Output)
 	res = call("p1", nil, `mem.Next()`, "", false)
-	require.Equal(t, []string{"ship/build"}, stackAfter(nil, res.Frames))
+	require.Equal(t, []string{"ship", "ship/build"}, stackAfter(nil, res.Frames))
 	makeWakePipe(t, h.dir, "02")
 	res = call("p3", nil, `mem.Next()`, "02", true)
 	require.Empty(t, res.Waits, "a sub-agent never waits")
@@ -202,11 +203,15 @@ func TestPeersHostWaitAndWake(t *testing.T) {
 	makeWakePipe(t, h.dir, "05")
 	res = call("p4", nil, `mem.Next()`, "05", false)
 	require.Empty(t, res.Waits, "a holder without the todo on its stack is not waited for: %s", res.Output)
-	require.Equal(t, []string{"ship/upload"}, stackAfter(nil, res.Frames), res.Output)
+	require.Equal(t, []string{"ship", "ship/upload"}, stackAfter(nil, res.Frames), "nor is the ship p1 entered on the way: %s", res.Output)
 	makeWakePipe(t, h.dir, "04")
 	p1()
 	res = call("p3", nil, `mem.Next()`, "04", false)
-	require.Empty(t, res.Waits, "a holder not working is not waited for: %s", res.Output)
+	// It may wait for p2's tag in the release, made first, whose own close
+	// would be p3's then; never for p1's build.
+	for _, w := range res.Waits {
+		require.NotEqual(t, "p1", w.Session, "a holder not working is not waited for: %s", res.Output)
+	}
 }
 
 // A wait that would close a loop is refused, and Next answers as one that
@@ -267,7 +272,7 @@ func TestPeersGoalReadsKeepTheRecord(t *testing.T) {
 	require.NoError(t, err, res.Output)
 	rec, ok := h.readPeer("p1")
 	require.True(t, ok)
-	require.Equal(t, []string{"release/bump-version"}, rec.Stack)
+	require.Equal(t, []string{"release", "release/bump-version"}, rec.Stack)
 	require.Equal(t, 0, pipe.rung(), "a read with no stack rings nothing")
 }
 

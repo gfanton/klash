@@ -283,6 +283,30 @@ func TestTurnRows(t *testing.T) {
 	require.Equal(t, 1, spared)
 }
 
+// memWork matches the mem calls that change mem, the new verbs on a todo
+// and Later among them, and not a read of a fact or a thought by its name,
+// Leave, Show or Help.
+func TestMemWorkMatchesChanges(t *testing.T) {
+	t.Parallel()
+	for code, want := range map[string]bool{
+		`mem.Fact("cmd/test", "go test ./...")`:   true,
+		`mem.Fact("the staging db is db-stg-7")`:  true,
+		`mem.Fact("cmd/test")`:                    false,
+		`println(mem.Fact("auth/how-it-works"))`:  false,
+		`mem.Thought("port")`:                     false,
+		`mem.Thought("port", "the port is 8080")`: true,
+		`mem.Thought("the port is 8080")`:         true,
+		`mem.Later("fix the flaky test")`:         true,
+		`mem.Frame("x").Done("built")`:            true,
+		`mem.Frame("x").Note("it fails 3 of 20")`: true,
+		`mem.Leave("the user wants it later")`:    false,
+		`println(mem.Show())`:                     false,
+		`mem.Help("Todo")`:                        false,
+	} {
+		require.Equal(t, want, memWork.MatchString(code), code)
+	}
+}
+
 // A frame is fresh, and mem refuses its pop, until work came between: a
 // call to another tool, or a change to mem. Reads of mem, a Next, and a
 // pop mem refused are no work.

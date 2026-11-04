@@ -528,7 +528,7 @@ func TestPeersQuietHolder(t *testing.T) {
 	waitingNow(t, dir, "/q")
 	time.Sleep(3 * time.Second)
 	require.Zero(t, reruns.Load(), "nothing changed: no re-run")
-	res, err = other.Run(ctx, RunRequest{Project: "/q", Session: "h", Name: MemVM, Code: `mem.Pop("bumped")`, Frames: []string{"release/bump"}})
+	res, err = other.Run(ctx, RunRequest{Project: "/q", Session: "h", Name: MemVM, Code: `mem.Pop("bumped")`, Frames: []string{"release", "release/bump"}})
 	require.NoError(t, err)
 	require.NoError(t, res.Err, res.Output)
 	select {
@@ -585,5 +585,5 @@ func TestPeersKilledHolder(t *testing.T) {
 	}
 	require.Less(t, time.Since(killed), 2*time.Second)
 	require.Contains(t, res.Output, "waited ")
-	require.Equal(t, []string{"release/tag"}, stackAfter(nil, res.Frames), "its todo is passed over, as one held by a session not working: %s", res.Output)
+	require.Equal(t, []string{"release", "release/tag"}, stackAfter(nil, res.Frames), "its todo is passed over, as one held by a session not working, and the release it entered on the way is free: %s", res.Output)
 }

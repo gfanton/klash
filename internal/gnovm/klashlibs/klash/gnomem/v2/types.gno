@@ -32,6 +32,8 @@ type Mem struct {
 	titles bptree.BPTree // sameTitle(title) + "|" + name → name: each open goal, by its title
 	words  bptree.BPTree // name → true: each open item waiting for words
 	groups bptree.BPTree // factGroup(name) → how many facts the group has
+	order  bptree.BPTree // orderKey(Order) → name: each open goal, in the order made
+	made   int           // goals made so far: the last one's Order
 	counts Counts
 }
 
@@ -51,6 +53,15 @@ type Todo struct {
 	For     string   // "" the agent's; "user": a question or request for the user
 	Doing   string   // the session that holds it (Push, Start); "" none
 	Did     string   // the session that held it last, kept by apply when a hold ends: who did a done todo
+	// Via is the session that entered it on the way to a todo under it
+	// (Next from the root), which holds it only while that session works:
+	// another session takes up the plan once it stops. "" none; cleared
+	// when it closes.
+	Via string
+	// Order is a goal's place among the goals, in the order they were
+	// made, from 1; 0 for a todo under another, whose place is its
+	// parent's Steps.
+	Order int
 	// Parallel says its todos may be done at once, in any order, by any
 	// session (Frame.Parallel); otherwise they are in order.
 	Parallel bool
@@ -90,7 +101,7 @@ type Rule struct {
 type Op struct {
 	Kind  string // see below
 	Name  string // the item, fact or rule; an add carries the full id; a note, unnote, or a set of "frame", a thought's address
-	Field string // set: "status", "result", "wait", "for", "doing", or "frame" (a thought's step); redact: "item", "fact", "rule" or "statements"; forget: "" (an item), "fact" or "rule"
+	Field string // set: "status", "result", "wait", "for", "doing", "via", "parallel", or "frame" (a thought's step); redact: "item", "fact", "rule" or "statements"; forget: "" (an item), "fact" or "rule"
 	Old   string // set, fact, rule: before; unadd: the title; unnote, redact: the text taken out
 	New   string // add: the title; set, fact, rule: after; note: the text
 	By    string // add, unadd: who made the item; rule: who set it
@@ -99,7 +110,8 @@ type Op struct {
 // The kinds of Op, and the inverse undo applies:
 //
 //	add     a new open item Name, titled New, made by By, after
-//	        its parent's other steps                            ↔ unadd
+//	        its parent's other steps, or a goal after the goals
+//	        made before it                                      ↔ unadd
 //	unadd   item Name, untouched since added, is removed (undo
 //	        only)                                               ↔ add
 //	set     item Name's Field goes from Old to New; with Field
@@ -113,6 +125,9 @@ type Op struct {
 //	        with Field "fact" or "rule", that is removed        final
 //	redact  Old becomes "(redacted)" in the item, thought, fact
 //	        or rule Name (Field says which)                     final
+//
+// A set of "status" that closes an item also clears its Via: whoever
+// entered it on the way is out of it once it is closed.
 //
 // An Op stamps what it names, and the items above it, as changed at its
 // call's time, whether or not a value changed, so a rebuild gives the same

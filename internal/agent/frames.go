@@ -308,8 +308,12 @@ func refusedFreshText(frame string) string {
 }
 
 // memWork is a statement of a call to mem that changes it, a thought and a
-// todo planned on a frame among them.
-var memWork = regexp.MustCompile(`\bmem\.(Think|Note|Fact|Rule|Todo|Wait|Ask|Done|Drop|Reopen|Forget|Redact|Start)\(|\.(Todo|Wait|Ask|Parallel)\(`)
+// todo planned on a frame among them: not mem.Fact(name) or
+// mem.Thought(name), which read one, a name having no space and the call
+// no second argument.
+var memWork = regexp.MustCompile(`\bmem\.(Think|Note|Rule|Todo|Later|Wait|Ask|Done|Drop|Reopen|Forget|Redact|Start)\(` +
+	`|\bmem\.(Fact|Thought)\(([^)]*,|\s*"[^"\s]*\s)` +
+	`|\.(Todo|Wait|Ask|Parallel|Done|Drop|Reopen|Note|Think)\(`)
 
 // memWorked reports whether a call to mem in rows, one mem did not refuse,
 // changed it.

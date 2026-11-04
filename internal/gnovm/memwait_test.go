@@ -100,7 +100,9 @@ func TestClientNextWaitsAndWakes(t *testing.T) {
 	default:
 	}
 	popped := time.Now()
-	run("p1", []string{"release/bump-version"}, `mem.Pop("now 2.0.0")`)
+	// Next from the root entered the release on the way: p1 is in it still,
+	// working, so p2 takes the tag alone.
+	run("p1", []string{"release", "release/bump-version"}, `mem.Pop("now 2.0.0")`)
 	var a answer
 	select {
 	case a = <-got:
@@ -138,8 +140,9 @@ func TestClientNextWaitsAndWakes(t *testing.T) {
 	require.NoError(t, a.err)
 	require.Less(t, a.at.Sub(ended), 3*time.Second)
 	require.Contains(t, a.res.Output, "for `ship/build` (session p1)", a.res.Output)
-	require.Equal(t, []string{"ship/upload"}, stackAfter(nil, a.res.Frames), a.res.Output)
-	run2("p2", []string{"ship/upload"}, `mem.Pop("uploaded")`)
+	// p1 is not working: the ship it entered on the way is p2's to enter.
+	require.Equal(t, []string{"ship", "ship/upload"}, stackAfter(nil, a.res.Frames), a.res.Output)
+	run2("p2", []string{"ship", "ship/upload"}, `mem.Pop("uploaded")`)
 
 	// Esc during a wait: it stops at once; a pop before the Next is kept,
 	// its frame in the result.

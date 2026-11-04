@@ -155,7 +155,11 @@ func memBlock(st memStatus, now time.Time) string {
 				cut = true
 				break
 			}
-			facts = append(facts, "`"+f.Name+"` = "+memEscape(memLine(f.Text, 160)))
+			text := memEscape(memLine(f.Text, 160))
+			if memLine(f.Text, 160) != memLine(f.Text, len(f.Text)*3) {
+				text += " (mem.Fact(" + strconv.Quote(f.Name) + ") reads it whole)"
+			}
+			facts = append(facts, "`"+f.Name+"` = "+text)
 		}
 		b.WriteString("facts, newest first: " + strings.Join(facts, " · ") + "\n")
 	}

@@ -23,4 +23,9 @@ func TestUnnamedTexts(t *testing.T) {
 	require.Equal(t, []string{"the shared port is 8080", "the staging db is db-stg-7"}, unnamedTexts(code))
 	require.Nil(t, unnamedTexts("package main\nfunc main() { mem.Think(\"a program\") }"), "a whole program is not statements")
 	require.Nil(t, unnamedTexts("mem.Think(someVar)"))
+
+	// A plan in one call names the task and each todo; Later's task, a
+	// thought on a Frame, and a fact read by its name.
+	code = "mem.Todo(\"make the port configurable\", \"add a --port flag\", \"document it\").Push()\nmem.Later(\"fix the flaky test\")\nmem.Frame(\"x\").Think(\"note for x\")\nmem.Fact(\"auth/how-it-works\")"
+	require.Equal(t, []string{"make the port configurable", "add a --port flag", "document it", "fix the flaky test", "note for x"}, unnamedTexts(code))
 }

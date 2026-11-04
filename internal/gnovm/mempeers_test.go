@@ -168,6 +168,38 @@ r.Todo("tag it")`, false)
 	require.Equal(t, "release/tag", p2.top(), "a hold of a session not working is passed over, as today: %s", res.Output)
 }
 
+// A todo Next entered on the way is its session's while that session
+// works: another takes the free todos under it, but neither it nor its
+// close; once the session stops, it is anyone's. Under a parallel todo
+// nothing is entered on the way (TestPeersRootWaitAndJoin).
+func TestPeersTodoEnteredOnTheWay(t *testing.T) {
+	t.Parallel()
+	p := newPeersMem(t)
+	p.peer("user").run(`r := mem.Todo("release")
+r.Todo("bump the version")
+r.Todo("tag it")`, false)
+	p1, p2 := p.peer("p1"), p.peer("p2")
+	p.working("p1", "p2")
+	p1.run(`mem.Next()`, true)
+	require.Equal(t, []string{"release", "release/bump-version"}, p1.stack)
+	p1.run(`mem.Pop("now 2.0.0")`, false)
+	require.Equal(t, []string{"release"}, p1.stack)
+	res := p2.run(`mem.Next()`, true)
+	require.Equal(t, []string{"release/tag"}, p2.stack, "the release is p1's while it works: %s", res.Output)
+	p2.run(`mem.Pop("tagged")`, false)
+
+	res = p2.run(`mem.Next()`, false)
+	require.Contains(t, res.Output, "no next todo: `release` \"release\" has no open todo and is held by session p1, which pops it with its result")
+	_, err := p.h.call(context.Background(), memRequest{Code: `mem.Done("release", "released")`, Session: "p2", Run: true})
+	require.ErrorContains(t, err, "`release` is held by session p1")
+
+	p.working("p2")
+	res = p2.run(`mem.Done("release", "released 2.0.0")`, false)
+	require.Contains(t, res.Output, "done `release`")
+	res = p1.run(`mem.Pop("released")`, false)
+	require.Contains(t, res.Output, "`release` was already done → released 2.0.0")
+}
+
 // A planner that pushed the task works inside it with the peers: it prefers
 // a free shape beside it to helping inside one a peer holds, waits for its
 // own frame's pop, and peers do not wait for what only its pop is left of.

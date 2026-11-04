@@ -1,22 +1,22 @@
 > s1: mem.Next()
 no next todo: nothing is open: make a todo, mem.Todo("…").Push().
 > s1: mem.Think("port", "the shared port is 8080")
-error: you are at the root, in no frame, so a thought has no frame to go on: mem.Note("todo-name", "…") keeps it on a todo, and mem.Fact("name", "…") keeps project knowledge
+error: you are at the root, in no frame, so a thought has no frame to go on: mem.Frame("todo-name").Think("…") keeps it on a todo, and mem.Fact("name", "…") keeps project knowledge
+> s1: mem.Todo("side quest")
+added `side-quest` "side quest"
 > s1: f := mem.Todo("fix the flaky test"); f.Todo("reproduce it"); f.Todo("find why TestFlaky fails"); f.Todo("rerun the suite 20 times")
 added `fix-flaky-test` "fix the flaky test"
 added `fix-flaky-test/reproduce` "reproduce it"
 added `fix-flaky-test/find-why-testflaky-fails` "find why TestFlaky fails"
 added `fix-flaky-test/rerun-suite-20-times` "rerun the suite 20 times"
-> s1: mem.Todo("side quest")
-added `side-quest` "side quest"
 > s1: mem.Frame()
 mem: 2 todos open
 todos:
-  [ ] `side-quest` "side quest" (this session · 1m ago)
-  [ ] `fix-flaky-test` "fix the flaky test" (0/3 done · this session · 2m ago)
+  [ ] `fix-flaky-test` "fix the flaky test" (0/3 done · this session · 1m ago)
     [ ] `fix-flaky-test/reproduce` "reproduce it"  ← next
     [ ] `fix-flaky-test/find-why-testflaky-fails` "find why TestFlaky fails"
     [ ] `fix-flaky-test/rerun-suite-20-times` "rerun the suite 20 times"
+  [ ] `side-quest` "side quest" (this session · 2m ago)
 > s1: mem.Next()
 in `side-quest` "side quest": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
   [push `side-quest`]
@@ -69,7 +69,7 @@ fact `staging-database-db-stg` is new
 > s1: mem.Fact("the staging database is db-stg-7")
 fact `staging-database-db-stg-2` is new
 > s1: mem.Fact("cmd/test")
-error: `cmd/test` is a name, not a fact: mem.Fact(name, text) sets a fact, and mem.Show(name) shows one
+error: no fact `cmd/test`; mem.Fact("cmd/test", "…") keeps one, and mem.Find("words") searches them
 > s1: mem.Thought("nope")
 error: no thought named `nope` in mem: mem.Recall("…") finds one by meaning
 > s1: mem.Frame()
@@ -321,19 +321,53 @@ added `email-john-hunter-about/five-words` "five words"
 error: `email-john-hunter-about` "email John Hunter about the invoice" has open todos `email-john-hunter-about/five-words` "five words": push and pop them, or drop them, first
 > s3: mem.Todo("five words")
 error: `email-john-hunter-about` "email John Hunter about the invoice" already has an open todo "five words"
+> s3: mem.Drop("email-john-hunter-about", "sent by hand")
+dropped `email-john-hunter-about` "email John Hunter about the invoice", with its open todos `email-john-hunter-about/five-words`
+  [pop `email-john-hunter-about` → dropped: sent by hand]
+> user: mem.Todo("ship the docs", "write the guide", "check the links")
+added `ship-docs` "ship the docs"
+added `ship-docs/write-guide` "write the guide"
+added `ship-docs/check-links` "check the links"
+> s5: mem.Next()
+in `ship-docs` "ship the docs", the todo above the next one
+in `ship-docs/write-guide` "write the guide": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+  [push `ship-docs`]
+  [push `ship-docs/write-guide`]
+> s5: mem.Leave("the user wants the guide after the links")
+left `ship-docs/write-guide` "write the guide" open: it stays a todo, held by nobody, and is off your stack; to take another todo of `ship-docs`: mem.Frame("name").Push(), mem.Show("ship-docs") lists them
+  [pop `ship-docs/write-guide` → left open: the user wants the guide after the links]
+> s5: mem.Frame("ship-docs/check-links").Push()
+in `ship-docs/check-links` "check the links": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+  [push `ship-docs/check-links`]
+> s5: mem.Pop("both links work")
+done `ship-docs/check-links` "check the links" → both links work
+next: `ship-docs/write-guide` "write the guide": mem.Next()
+  [pop `ship-docs/check-links` → both links work]
+> s5: mem.Next()
+in `ship-docs/write-guide` "write the guide": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+thoughts on it: `user-wants-guide-after`: left open: the user wants the guide after the links
+  [push `ship-docs/write-guide`]
+> s5: mem.Pop("guide written")
+mem.Pop("the docs are out")
+done `ship-docs/write-guide` "write the guide" → guide written
+its thoughts, kept: `user-wants-guide-after`: left open: the user wants the guide after the links
+done `ship-docs` "ship the docs" → the docs are out
+That closes `ship-docs`, the whole plan: its work is done and stays done, though it is out of your context now. Tell the user what came of it from the results above.
+  [pop `ship-docs/write-guide` → guide written]
+  [pop `ship-docs` → the docs are out]
 > s1: println(mem.Show())
-mem: 2 todos open, 1 question for the user · 3 closed · 2 facts
+mem: 1 todo open, 1 question for the user · 5 closed · 2 facts
 questions for the user:
   [?] `ship/a/which-key` "which key?"
 todos:
-  [ ] `email-john-hunter-about` "email John Hunter about the invoice" (0/1 done · session s3 · 3m ago · held by session s3, 3m ago)
-    [ ] `email-john-hunter-about/five-words` "five words"  ← next
-  [ ] `ship` "ship it" (0/3 done · this session · 12m ago · held by this session, 12m ago)
-    [ ] `ship/a` "a" (waits on the user · held by this session, 12m ago)
+  [ ] `ship` "ship it" (0/3 done · this session · 20m ago · held by this session, 20m ago)
+    [ ] `ship/a` "a" (waits on the user · held by this session, 20m ago)
       [?] `ship/a/which-key` "which key?"
     [ ] `ship/b` "b" (waits until 2026-12-01)
-    [ ] `ship/c` "c" (held by session s2, 15m ago)
+    [ ] `ship/c` "c" (held by session s2, 23m ago)
 closed lately:
+  [x] `ship-docs` "ship the docs" → the docs are out (2026-10-29)
+  [-] `email-john-hunter-about` "email John Hunter about the invoice" → sent by hand (2026-10-29)
   [x] `deploy-site` "deploy the site" → built and deployed (2026-10-29)
   [x] `side-quest` "side quest" → nothing to see (2026-10-29)
   [x] `fix-flaky-test` "fix the flaky test" → the suite passes 20 of 20 with the free port (2026-10-29)

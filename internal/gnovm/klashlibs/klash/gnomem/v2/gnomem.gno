@@ -152,7 +152,7 @@ func (m *Mem) Start(name string) {
 		println(ref(name, it.Title) + " is started already, by this session")
 		return
 	}
-	if it.Doing != "" {
+	if m.holder(name, it, me) != "" {
 		panic(m.heldText(name, it))
 	}
 	m.do(Op{Kind: "set", Name: name, Field: "doing", Old: "", New: me})
@@ -167,7 +167,21 @@ func (m *Mem) Start(name string) {
 // gnosh cuts the context; Done of a frame below the top, or of one with a
 // frame of the stack under it, is refused; and nobody closes a frame
 // another session holds.
+//
+// Done with what came of it alone, words where the name goes, closes the
+// todo you are in, as Pop does: models write it (QA, 2026-11-04).
 func (m *Mem) Done(name string, result ...string) {
+	if len(result) == 0 && strings.ContainsRune(strings.TrimSpace(name), ' ') && m.get(name) == nil {
+		switch {
+		case len(frames()) > 0:
+			m.Pop(name)
+			return
+		case bound() != "":
+			m.Done(bound(), name)
+			return
+		}
+		panic("you are at the root, in no todo: mem.Done(\"name\", \"what came of it\") closes a todo by its name")
+	}
 	name = m.resolve(name)
 	it := m.item(name)
 	stack := frames()
@@ -184,6 +198,7 @@ func (m *Mem) Done(name string, result ...string) {
 	}
 	m.refuseInside(stack, name)
 	if name == top(stack) {
+		m.refuseTaken(name, it)
 		m.refuseFresh(name, it)
 		m.pop(name, it, strings.Join(result, " "), false)
 		return
@@ -409,8 +424,10 @@ func (m *Mem) Wait(name, until string) {
 // it. Fact(text) alone names it for you, from the text (gnosh's small
 // model, or its words), under a name no fact has yet. Its receipt says
 // whether it is new or changed (and from what), and lists the other facts
-// beside it.
-func (m *Mem) Fact(args ...string) {
+// beside it. Fact(name) alone, a fact's name, returns the fact whole, as
+// every session that wanted to read one wrote it (QA, 2026-11-04); a fact
+// kept returns "".
+func (m *Mem) Fact(args ...string) string {
 	var name, fact string
 	switch len(args) {
 	case 1:
@@ -419,7 +436,13 @@ func (m *Mem) Fact(args ...string) {
 			panic("a fact needs words: mem.Fact(\"what to remember\")")
 		}
 		if validName(fact) {
-			panic("`" + fact + "` is a name, not a fact: mem.Fact(name, text) sets a fact, and mem.Show(name) shows one")
+			if f := m.getFact(fact); f != nil {
+				return f.Text
+			}
+			if m.get(fact) != nil {
+				panic("`" + fact + "` is a todo, not a fact: mem.Show(\"" + fact + "\") shows it")
+			}
+			panic("no fact `" + fact + "`" + m.factsBeside(fact, false) + "; mem.Fact(\"" + fact + "\", \"…\") keeps one, and mem.Find(\"words\") searches them")
 		}
 		name = m.freeName(m.madeName(fact, "fact"), func(n string) bool { return m.getFact(n) == nil })
 	case 2:
@@ -438,7 +461,7 @@ func (m *Mem) Fact(args ...string) {
 		panic("no fact `" + name + "`" + m.factsBeside(name, false))
 	case fact == old:
 		println("fact `" + name + "` is unchanged")
-		return
+		return ""
 	}
 	m.do(Op{Kind: "fact", Name: name, Old: old, New: fact})
 	switch {
@@ -449,6 +472,20 @@ func (m *Mem) Fact(args ...string) {
 	default:
 		println("fact `" + name + "` changed (was " + strconv.Quote(old) + ")")
 	}
+	return ""
+}
+
+// Help says how to use mem: given nothing, the calls to know, with an
+// example each; given a call's name, "Todo" or "Frame.Push", what it does
+// and takes. Lost models called mem.Help() first (QA, 2026-11-04).
+func (m *Mem) Help(call ...string) string {
+	switch len(call) {
+	case 0:
+		return help("")
+	case 1:
+		return help(strings.TrimSpace(call[0]))
+	}
+	panic("Help takes a call's name, or none: mem.Help(\"Todo\")")
 }
 
 // Rule keeps a standing instruction from the user under name; "" removes

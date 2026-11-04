@@ -34,10 +34,39 @@ func (m *Mem) next(name string, session string) string {
 	return m.pickFor(name, session, false, nil)
 }
 
-// free reports whether open item it can be done now by session: it does
-// not wait, it is not for the user, and no other session started it.
-func (m *Mem) free(it *Todo, session string) bool {
-	return it.Status == "" && !m.waiting(it) && it.For == "" && (it.Doing == "" || it.Doing == session)
+// free reports whether open item id, it, can be done now by session: it
+// does not wait, it is not for the user, and no other session holds it.
+func (m *Mem) free(id string, it *Todo, session string) bool {
+	return it.Status == "" && !m.waiting(it) && it.For == "" && m.holder(id, it, session) == ""
+}
+
+// holder is the session other than session whose todo id is now: the one
+// holding it, or a working session that entered it on the way to a todo
+// under it (Via), which holds it only while it works; "" when it is free
+// for session, or session's own.
+func (m *Mem) holder(id string, it *Todo, session string) string {
+	switch {
+	case it.Doing != "":
+		if it.Doing != session {
+			return it.Doing
+		}
+	case it.Via != "" && it.Via != session && working(it.Via, id):
+		return it.Via
+	}
+	return ""
+}
+
+// doer is who is doing todo id, as its State and Show say: the session
+// holding it, or the one that entered it on the way, while that one works
+// or is this input's; "" for none.
+func (m *Mem) doer(id string, it *Todo) string {
+	switch {
+	case it.Doing != "":
+		return it.Doing
+	case it.Via != "" && (it.Via == caller() || working(it.Via, id)):
+		return it.Via
+	}
+	return ""
 }
 
 // waiting reports whether open item it still waits: for a day not yet come,
@@ -70,7 +99,7 @@ func (m *Mem) held(name string, g *Todo, session string) (names, why []string) {
 			reason = "day"
 		case m.waiting(it):
 			reason = "words"
-		case it.Doing != "" && it.Doing != session:
+		case m.holder(n, it, session) != "":
 			reason = "session"
 		}
 		if it.OpenSteps == 0 {
@@ -134,7 +163,7 @@ func (m *Mem) holds(names, why []string) string {
 		case "user":
 			parts = append(parts, "`"+n+"` is for the user")
 		case "session":
-			parts = append(parts, "`"+n+"` was started by "+who(it.Doing)+", "+ago(it.Changed))
+			parts = append(parts, "`"+n+"` was started by "+who(m.doer(n, it))+", "+ago(it.Changed))
 		default:
 			parts = append(parts, "`"+n+"`"+waitText(m.waitOn(n)))
 		}
