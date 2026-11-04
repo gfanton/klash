@@ -150,7 +150,7 @@ func TestScenarioFilesParse(t *testing.T) {
 	forms := regexp.MustCompile(`^(turn [1-9][0-9]* )?(` +
 		`tool \S+ (>=|<=|==|>|<) \d+|` +
 		`answer (last|\d+) (contains|matches) .+|` +
-		`(file|after \d+ file) \S+ (exists|absent|contains .+)|` +
+		`(file|after \d+ file) \S+ (exists|absent|contains .+|lacks .+)|` +
 		`cmd .+|` +
 		`vm-persist (>=|<=|==|>|<) \d+|` +
 		`vm-dump contains .+|` +
@@ -881,6 +881,11 @@ func (r *scenarioRun) check(line, project string, env []string) checkResult {
 			res.ok, res.got = !exists, fmt.Sprint(exists)
 		case "contains":
 			res.ok = exists && strings.Contains(content, strings.Join(f[3:], " "))
+			res.got = truncate(content, 120)
+		case "lacks":
+			// A file that does not hold the words, or is not there at all:
+			// what a turn must not have done yet.
+			res.ok = !strings.Contains(content, strings.Join(f[3:], " "))
 			res.got = truncate(content, 120)
 		}
 	case len(f) >= 2 && f[0] == "cmd":

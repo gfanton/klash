@@ -48,6 +48,7 @@ Plan this as todos in mem: (1) add a --shout flag to main.go that upper-cases th
 -- prompt --
 Sounds right. One thing for the README todo: say that --shout was added in version 1.4, and give an example run with its output. Go ahead and do all three todos now.
 -- check --
+after 1 file main.go lacks shout
 turn 1 tool gnovm_run >= 1
 turn 2 tool gnovm_run >= 1
 cmd go test ./...
