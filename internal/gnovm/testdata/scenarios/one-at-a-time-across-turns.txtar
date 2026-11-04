@@ -1,0 +1,33 @@
+One todo per turn, in the same conversation: the user plans three functions
+and has them done one at a time, saying only "go on" between them. The
+plan in mem, and where the agent stands in it, must carry each turn to the
+right next todo: no todo done early, none done twice, and the plan closed
+at the end. If the agent ends a turn still inside a todo, the next prompt
+arrives inside that frame, which is where a pop can cut it (A18).
+
+-- project/go.mod --
+module stats
+
+go 1.22
+-- project/stats.go --
+// Package stats has small statistics over int slices.
+package stats
+-- prompt --
+Plan these as todos in mem and do them one at a time: (1) Min(xs []int) int in stats.go with a test, (2) Max(xs []int) int with a test, (3) Median(xs []int) float64 with a test (the mean of the middle two for an even count). Do the first one now, then stop; I'll tell you when to go on.
+-- prompt --
+Go on with the next one.
+-- prompt --
+And the last one.
+-- check --
+after 1 file stats.go contains func Min
+after 1 file stats.go lacks func Max
+after 2 file stats.go contains func Max
+after 2 file stats.go lacks func Median
+turn 1 tool gnovm_run >= 1
+turn 2 tool gnovm_run >= 1
+turn 3 tool gnovm_run >= 1
+cmd go test ./...
+cmd grep -q 'func Median' stats.go
+cmd for f in Min Max Median; do grep -rq "func Test$f" --include='*_test.go' . || exit 1; done
+mem-count open == 0
+mem-count done >= 4
