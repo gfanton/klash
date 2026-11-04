@@ -272,9 +272,11 @@ func (e *connEntry) restore(ctx context.Context) {
 	}
 	e.warned = false
 	// A connection holds the restored file, as one held the removed file,
-	// so a second removal leaves it open to restore again.
-	if err := e.db.PingContext(ctx); err != nil {
-		slog.Warn("Failed to open the restored database", "path", e.path, "error", err)
+	// so a second removal leaves it open to restore again. A read, not a
+	// ping: a connection whose first read comes after its files are
+	// unlinked cannot read them.
+	if err := e.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema").Scan(new(int)); err != nil {
+		slog.Warn("Failed to read the restored database", "path", e.path, "error", err)
 	}
 
 	if err := crushlog.ReopenIfRemoved(); err != nil {
@@ -323,9 +325,21 @@ func (e *connEntry) copyFile(ctx context.Context, conn *sql.Conn, dataDir string
 	if err := WriteGitIgnore(dataDir); err != nil {
 		slog.Warn("Failed to restore the data directory's .gitignore", "error", err)
 	}
-	// Not ctx: a Release meanwhile waits for the copy to finish instead of
-	// leaving part of it at the path.
-	if _, err := conn.ExecContext(context.WithoutCancel(ctx), "VACUUM INTO ?", e.path); err != nil {
+	// Copied under a new name, then linked: a link, unlike a rename, fails
+	// when the path is taken, and a copy cut short never reaches the path.
+	tmp, err := os.CreateTemp(dataDir, filepath.Base(e.path)+".restore-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// Not ctx: a Release meanwhile waits for the copy to finish.
+	if _, err := conn.ExecContext(context.WithoutCancel(ctx), "VACUUM INTO ?", tmp.Name()); err != nil {
+		return err
+	}
+	if err := os.Link(tmp.Name(), e.path); err != nil {
 		return err
 	}
 	info, err := os.Stat(e.path)

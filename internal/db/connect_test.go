@@ -361,6 +361,33 @@ func TestConnect_LeavesAnotherFileAtTheDatabasePath(t *testing.T) {
 	}, 300*time.Millisecond, 10*time.Millisecond, "the other file at the database path was changed")
 }
 
+// A file put at the database path after the check found it missing is
+// left as it is, and the restore leaves nothing else behind.
+func TestConnect_RestoreLeavesAFileThatAppearsAtThePath(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Cleanup(ResetPool)
+	_, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dataDir))
+	require.NoError(t, os.Mkdir(dataDir, 0o700))
+	dbPath := filepath.Join(dataDir, "gnosh.db")
+	require.NoError(t, os.WriteFile(dbPath, nil, 0o600))
+
+	// As a check that found the path free just before the file came.
+	pool[poolKey(dataDir)].restore(t.Context())
+
+	info, err := os.Stat(dbPath)
+	require.NoError(t, err)
+	require.Zero(t, info.Size(), "the file at the database path was written over")
+	entries, err := os.ReadDir(dataDir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	require.ElementsMatch(t, []string{".gitignore", "gnosh.db"}, names)
+}
+
 // Dropping an entry stops the check of its file with it.
 func TestConnect_StopsCheckingWhenDropped(t *testing.T) {
 	for name, drop := range map[string]func(t *testing.T, dataDir string){
