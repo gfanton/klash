@@ -321,10 +321,36 @@ func TestConnect_ChecksNoFileWithoutRestore(t *testing.T) {
 	goleak.VerifyNone(t, ignore, goleak.IgnoreTopFunction("database/sql.(*DB).connectionOpener"))
 }
 
+// A pool is found by its data directory, also once the directory was
+// removed with a database from before the renames in it, which FileName
+// can then no longer name: Connect joins the pool instead of opening a new
+// gnosh.db, and Release stops the pool's check.
+func TestConnect_FindsARemovedDataDirByItsPath(t *testing.T) {
+	ignore := goleak.IgnoreCurrent()
+	dataDir := t.TempDir()
+	t.Cleanup(ResetPool)
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "crush.db"), nil, 0o600))
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dataDir))
+
+	again, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	require.Same(t, conn, again, "a second pool on the removed directory")
+	require.NoFileExists(t, filepath.Join(dataDir, "gnosh.db"))
+
+	require.NoError(t, Release(dataDir))
+	require.NoError(t, Release(dataDir))
+	goleak.VerifyNone(t, ignore)
+}
+
 // checkOften has a restoring pool check its file every few milliseconds.
 // A test that uses it creates its data directory before it registers
 // ResetPool, so the check stops before t.TempDir's folder is removed.
 var checkOften = withFileCheckInterval(10 * time.Millisecond)
+
+// checkRarely keeps a restoring pool's check from running during a test.
+var checkRarely = withFileCheckInterval(time.Hour)
 
 // sessionIDsIn reads the database file at dbPath on a connection of its
 // own, not the pool's.

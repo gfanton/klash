@@ -122,19 +122,12 @@ func Connect(ctx context.Context, dataDir string, opts ...ConnectOption) (*sql.D
 		opt(&cfg)
 	}
 
-	dbPath := FileName(dataDir)
-
-	// Resolve to an absolute path so that different relative paths to
-	// the same file share a single connection.
-	absPath, err := filepath.Abs(dbPath)
-	if err != nil {
-		absPath = dbPath
-	}
+	key := poolKey(dataDir)
 
 	poolMu.Lock()
 	defer poolMu.Unlock()
 
-	if entry, ok := pool[absPath]; ok {
+	if entry, ok := pool[key]; ok {
 		entry.refCount++
 		return entry.db, nil
 	}
@@ -152,12 +145,14 @@ func Connect(ctx context.Context, dataDir string, opts ...ConnectOption) (*sql.D
 	}
 	var lock *dataDirLock
 	if cfg.lockDataDir && !skipDataDirLock() {
+		var err error
 		lock, err = acquireDataDirLock(dataDir)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	dbPath := FileName(dataDir)
 	conn, err := openDB(dbPath)
 	if err != nil {
 		if lock != nil {
@@ -216,8 +211,19 @@ func Connect(ctx context.Context, dataDir string, opts ...ConnectOption) (*sql.D
 			<-done
 		}
 	}
-	pool[absPath] = entry
+	pool[key] = entry
 	return conn, nil
+}
+
+// poolKey is the pool's key for dataDir: its absolute path, so different
+// relative paths share a connection, and a directory whose database
+// FileName can no longer name, once removed, is still found.
+func poolKey(dataDir string) string {
+	abs, err := filepath.Abs(dataDir)
+	if err != nil {
+		return dataDir
+	}
+	return abs
 }
 
 // watchFile checks the database file every interval until ctx ends.
@@ -318,16 +324,12 @@ func (e *connEntry) warnOnce(msg string, args ...any) {
 // data directory. When the count reaches zero the underlying connection
 // is closed and removed from the pool.
 func Release(dataDir string) error {
-	dbPath := FileName(dataDir)
-	absPath, err := filepath.Abs(dbPath)
-	if err != nil {
-		absPath = dbPath
-	}
+	key := poolKey(dataDir)
 
 	poolMu.Lock()
 	defer poolMu.Unlock()
 
-	entry, ok := pool[absPath]
+	entry, ok := pool[key]
 	if !ok {
 		return nil
 	}
@@ -337,7 +339,7 @@ func Release(dataDir string) error {
 		return nil
 	}
 
-	delete(pool, absPath)
+	delete(pool, key)
 	if entry.stopWatch != nil {
 		entry.stopWatch()
 	}
