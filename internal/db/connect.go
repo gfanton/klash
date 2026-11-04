@@ -47,10 +47,10 @@ func init() {
 
 // connEntry holds a shared database connection, its reference count,
 // and the data-directory lock that gates access to this entry. The
-// lock is acquired exactly once when the entry is created and released
-// when the last reference is dropped, which lets the same process open
-// the same data directory concurrently while still blocking a second
-// crush process from racing the storage.
+// lock is acquired when the entry is created, again in a restored data
+// directory, and released when the last reference is dropped, which lets
+// the same process open the same data directory concurrently while still
+// blocking a second crush process from racing the storage.
 type connEntry struct {
 	db       *sql.DB
 	refCount int
@@ -261,9 +261,14 @@ func (e *connEntry) checkFile(ctx context.Context) {
 // restore writes the open database back to its path, then moves the pool,
 // the data-directory lock and the log file onto the restored directory.
 func (e *connEntry) restore(ctx context.Context) {
-	if err := e.restoreFile(ctx); err != nil {
+	lock, err := e.restoreFile(ctx)
+	if err != nil {
 		e.warnOnce("Failed to restore the removed database", "path", e.path, "error", err)
 		return
+	}
+	if lock != nil {
+		e.lock.release()
+		e.lock = lock
 	}
 	e.warned = false
 	// A connection holds the restored file, as one held the removed file,
@@ -275,31 +280,45 @@ func (e *connEntry) restore(ctx context.Context) {
 	if err := crushlog.ReopenIfRemoved(); err != nil {
 		slog.Warn("Failed to reopen the removed log file", "error", err)
 	}
-	if e.lock != nil {
-		lock, err := acquireDataDirLock(filepath.Dir(e.path))
-		if err != nil {
-			slog.Warn("Failed to lock the restored data directory", "path", e.path, "error", err)
-		} else {
-			e.lock.release()
-			e.lock = lock
-		}
-	}
 	slog.Warn("Data directory was removed while in use; restored the database", "path", e.path)
 }
 
-func (e *connEntry) restoreFile(ctx context.Context) error {
+// restoreFile writes the open database back to its path. When the pool
+// holds a lock, it returns the restored directory's, taken before the
+// copy: a gnosh that opens the directory meanwhile finds it locked, and
+// one that locked it first keeps it.
+func (e *connEntry) restoreFile(ctx context.Context) (*dataDirLock, error) {
 	// The pool's one connection: while it is held, no write can land in the
 	// removed file after the copy.
 	conn, err := e.db.Conn(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer conn.Close()
 
 	dataDir := filepath.Dir(e.path)
 	if err := os.Mkdir(dataDir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
-		return err
+		return nil, err
 	}
+	var lock *dataDirLock
+	if e.lock != nil {
+		lock, err = acquireDataDirLockAt(dataDir, lockFileOf(e.path))
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := e.copyFile(ctx, conn, dataDir); err != nil {
+		if lock != nil {
+			lock.release()
+		}
+		return nil, err
+	}
+	return lock, nil
+}
+
+// copyFile copies the database open on conn to its path in dataDir, then
+// drops conn so the next query opens the copy.
+func (e *connEntry) copyFile(ctx context.Context, conn *sql.Conn, dataDir string) error {
 	// A .gitignore that cannot be written does not stop the restore.
 	if err := WriteGitIgnore(dataDir); err != nil {
 		slog.Warn("Failed to restore the data directory's .gitignore", "error", err)

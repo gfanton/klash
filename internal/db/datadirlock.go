@@ -26,7 +26,12 @@ var ErrDataDirLocked = errors.New("data directory already in use by another gnos
 // rename locks the lock named for its database, so a newer one sharing that
 // database must lock the same file, or both would open it at once.
 func dataDirLockFile(dataDir string) string {
-	return strings.TrimSuffix(FileName(dataDir), ".db") + ".lock"
+	return lockFileOf(FileName(dataDir))
+}
+
+// lockFileOf is the lock file named for the database at dbPath.
+func lockFileOf(dbPath string) string {
+	return strings.TrimSuffix(dbPath, ".db") + ".lock"
 }
 
 // dataDirOwnerInfo is the JSON payload written into the lock file by
@@ -56,11 +61,15 @@ type dataDirLock struct {
 // as an escape hatch for hostile filesystems that do not implement
 // advisory locking; it should not be used in normal operation.
 func acquireDataDirLock(dataDir string) (*dataDirLock, error) {
+	return acquireDataDirLockAt(dataDir, dataDirLockFile(dataDir))
+}
+
+// acquireDataDirLockAt is acquireDataDirLock on the lock file at path.
+func acquireDataDirLockAt(dataDir, path string) (*dataDirLock, error) {
 	if skipDataDirLock() {
 		return &dataDirLock{release: func() {}}, nil
 	}
 
-	path := dataDirLockFile(dataDir)
 	release, err := lock.TryFile(path)
 	if err != nil {
 		if errors.Is(err, lock.ErrContended) {

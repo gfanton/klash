@@ -288,22 +288,54 @@ func TestRelease_RestoresARemovalSinceTheLastCheck(t *testing.T) {
 	require.Equal(t, []string{"kept"}, ids)
 }
 
-// A restored data directory is locked again when it was locked before.
+// A restored data directory is locked again when it was locked before, at
+// the lock named for its database.
 func TestConnect_LocksRestoredDataDir(t *testing.T) {
+	for name, db := range map[string]string{
+		"gnosh.db":                "",
+		"from before the renames": "crush.db",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dataDir := filepath.Join(t.TempDir(), ".gnosh")
+			t.Cleanup(ResetPool)
+			lockName := "gnosh.lock"
+			if db != "" {
+				require.NoError(t, os.Mkdir(dataDir, 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(dataDir, db), nil, 0o600))
+				lockName = "crush.lock"
+			}
+			_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkOften)
+			require.NoError(t, err)
+			require.NoError(t, os.RemoveAll(dataDir))
+
+			// The owner info is written once the lock is held; trying the
+			// lock before then could take it from the restore.
+			lockPath := filepath.Join(dataDir, lockName)
+			require.Eventually(t, func() bool {
+				return readOwnerInfo(lockPath).PID == os.Getpid()
+			}, 5*time.Second, 10*time.Millisecond, "the restored data directory is not locked")
+			_, err = lock.TryFile(lockPath)
+			require.ErrorIs(t, err, lock.ErrContended)
+		})
+	}
+}
+
+// A removed data directory that another gnosh made again and locked is
+// left to it: the open database is not copied into it.
+func TestConnect_LeavesARemovedDataDirAnotherLocked(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), ".gnosh")
 	t.Cleanup(ResetPool)
-	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkOften)
+	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkRarely)
 	require.NoError(t, err)
 	require.NoError(t, os.RemoveAll(dataDir))
 
-	// The owner info is written once the lock is held; trying the lock
-	// before then could take it from the restore.
-	lockPath := filepath.Join(dataDir, "gnosh.lock")
-	require.Eventually(t, func() bool {
-		return readOwnerInfo(lockPath).PID == os.Getpid()
-	}, 5*time.Second, 10*time.Millisecond, "the restored data directory is not locked")
-	_, err = lock.TryFile(lockPath)
-	require.ErrorIs(t, err, lock.ErrContended)
+	require.NoError(t, os.Mkdir(dataDir, 0o700))
+	release, err := lock.TryFile(filepath.Join(dataDir, "gnosh.lock"))
+	require.NoError(t, err)
+	defer release()
+
+	require.NoError(t, Release(dataDir))
+	require.NoFileExists(t, filepath.Join(dataDir, "gnosh.db"))
 }
 
 // Another file put at the database path while gnosh runs is never written
