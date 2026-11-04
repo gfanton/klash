@@ -16,18 +16,19 @@ jobs:
   CLAAssistant:
     # Upstream gates this on its own repository so it stays dead in forks.
     # This fork asks for its own agreement instead (CONTRIBUTING.md), which
-    # grants the rights to the maintainer AND to Charmbracelet, so work done
-    # here can go upstream. Turn it on by setting the repository variable
-    # CLA_ENABLED to "true" and adding a PERSONAL_ACCESS_TOKEN secret; the
-    # gate is a variable rather than a repository name so a rename does not
-    # silently switch contributor terms off.
+    # grants the rights to the maintainer AND to Charmbracelet, so
+    # contributors' work can go upstream. Turn it on by setting the
+    # repository variable CLA_ENABLED to "true" and adding a
+    # PERSONAL_ACCESS_TOKEN secret; the gate is a variable rather than a
+    # repository name so a rename does not silently switch contributor terms
+    # off.
     if: vars.CLA_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: "CLA Assistant"
         if: |
           github.event.comment.body == 'recheck' ||
-          github.event.comment.body == 'I have read the Contributor License Agreement (CLA) and hereby sign the CLA.' ||
+          github.event.comment.body == 'I have read the Contributor Licence Agreement (CLA) and hereby sign the CLA.' ||
           github.event_name == 'pull_request_target'
         uses: contributor-assistant/github-action@58daaf842ac3e26d08c2bdf26770d6e9c5b965a9
         env:
@@ -41,6 +42,6 @@ jobs:
           branch: "main"
           allowlist: dependabot[bot],Copilot
           custom-pr-sign-comment: "I have read the Contributor Licence Agreement (CLA) and hereby sign the CLA."
-          custom-notsigned-prcomment: "Thank you for your submission! Before we can accept it, we ask that you agree to the [Contributor Licence Agreement](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md#contributor-licence-agreement). It licenses your contribution to this project's maintainer and to Charmbracelet, the authors of upstream Crush, so that work done here can go upstream without coming back to you for permission; the parts under internal/gnovm/ are licensed to the maintainer only. You keep every right to your own work. Sign by posting a pull request comment in the format below."
+          custom-notsigned-prcomment: "Thank you for your submission! Before we can accept it, we ask that you agree to the [Contributor Licence Agreement](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md#contributor-licence-agreement). It licenses your contribution to this project's maintainer and to Charmbracelet, the authors of upstream Crush, so that work you do here can go upstream without coming back to you for permission; the parts under internal/gnovm/ are licensed to the maintainer only. You keep every right to your own work. Sign by posting a pull request comment in the format below."
           lock-pullrequest-aftermerge: false
           signed-commit-message: "chore(legal): @$contributorName has signed the CLA"
