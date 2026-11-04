@@ -1,0 +1,45 @@
+A prompt that arrives inside a todo: the user plans three todos and has
+only the first done. The prompt teaches "pop it and step into the next in
+one call", so the turn usually ends inside (2), and the next prompt
+arrives inside that frame. It asks for (2) and (3), with a detail only
+(3) needs: the changelog line ends with (#42). Closing (2) must not cut
+the prompt it is answering: an agent that loses it sees only turn 1's
+"do only (1) now", and (3) is skipped or written without #42.
+
+-- project/go.mod --
+module slug
+
+go 1.22
+-- project/slug.go --
+// Package slug makes URL slugs.
+package slug
+
+import "strings"
+
+// Slug turns spaces into hyphens.
+func Slug(s string) string {
+	return strings.ReplaceAll(s, " ", "-")
+}
+-- project/CHANGELOG.md --
+# Changelog
+
+## Unreleased
+
+## 1.0.0
+
+- First release.
+-- prompt --
+Plan these as todos in mem: (1) add slug_test.go with table tests for what Slug does now, (2) make Slug lower-case its output, (3) add a line about it under "## Unreleased" in CHANGELOG.md. Do only (1) now.
+-- prompt --
+Now do (2) and (3). For (2), make it turn underscores into hyphens as well. The changelog line for (3) must end with (#42), the issue it closes.
+-- check --
+turn 1 tool gnovm_run >= 1
+after 1 file slug_test.go exists
+after 1 file slug.go lacks ToLower
+after 1 file CHANGELOG.md lacks lower
+cmd go test ./...
+cmd printf 'package slug\n\nimport "testing"\n\nfunc TestQAChecks(t *testing.T) {\n\tif g := Slug("Hello_World Now"); g != "hello-world-now" {\n\t\tt.Fatalf("got %%q", g)\n\t}\n}\n' > qa_checks_test.go && go test -run TestQAChecks ./...
+cmd awk '/^## Unreleased/{u=1;next} /^## /{u=0} u' CHANGELOG.md | grep -qiE 'lower|underscore'
+cmd awk '/^## Unreleased/{u=1;next} /^## /{u=0} u' CHANGELOG.md | grep -qE '\(#42\)\.?$'
+mem-count open == 0
+mem-count done >= 3
