@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -248,6 +249,26 @@ func TestConnect_RestoresRemovedDataDir(t *testing.T) {
 	gitIgnore, err := os.ReadFile(filepath.Join(dataDir, ".gitignore"))
 	require.NoError(t, err)
 	require.Equal(t, "*\n", string(gitIgnore))
+}
+
+// A data directory removed again after a restore, with no query in
+// between, is restored again.
+func TestConnect_RestoresADataDirRemovedTwice(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	t.Cleanup(ResetPool)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkOften)
+	require.NoError(t, err)
+	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "kept", Title: "kept"})
+	require.NoError(t, err)
+
+	dbPath := filepath.Join(dataDir, "gnosh.db")
+	for i := range 2 {
+		require.NoError(t, os.RemoveAll(dataDir))
+		require.Eventually(t, func() bool {
+			ids, err := sessionIDsIn(t.Context(), dbPath)
+			return err == nil && slices.Equal(ids, []string{"kept"})
+		}, 5*time.Second, 10*time.Millisecond, "removal %d is not restored", i+1)
+	}
 }
 
 // A restored data directory is locked again when it was locked before.

@@ -263,6 +263,11 @@ func (e *connEntry) restore(ctx context.Context) {
 		return
 	}
 	e.warned = false
+	// A connection holds the restored file, as one held the removed file,
+	// so a second removal leaves it open to restore again.
+	if err := e.db.PingContext(ctx); err != nil {
+		slog.Warn("Failed to open the restored database", "path", e.path, "error", err)
+	}
 
 	if err := crushlog.ReopenIfRemoved(); err != nil {
 		slog.Warn("Failed to reopen the removed log file", "error", err)
