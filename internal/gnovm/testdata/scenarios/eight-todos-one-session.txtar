@@ -1,0 +1,20 @@
+A long plan in one session: eight small functions, each with a test, planned
+as todos and done one after another. Each todo is entered with mem.Next()
+and popped with its result, so the session's context stays near its size at
+the start instead of growing with every function, and the plan ends closed.
+
+-- project/go.mod --
+module strutil
+
+go 1.22
+-- project/strutil.go --
+// Package strutil has small string helpers.
+package strutil
+-- prompt --
+Add these eight functions to strutil.go, each with its own test in strutil_test.go: Reverse(s string) string (by runes), IsPalindrome(s string) bool (ignoring case), CountVowels(s string) int, TitleCase(s string) string, Truncate(s string, n int) string (n runes at most), PadLeft(s string, n int) string (spaces), PadRight(s string, n int) string (spaces), and Words(s string) []string (split on whitespace). Plan them as todos in mem and work through all of them, running the tests as you go.
+-- check --
+turn 1 tool gnovm_run >= 9
+cmd go test ./...
+cmd for f in Reverse IsPalindrome CountVowels TitleCase Truncate PadLeft PadRight Words; do grep -q "func $f(" strutil.go || exit 1; grep -q "func Test$f" strutil_test.go || exit 1; done
+mem-count done >= 9
+mem-count open == 0

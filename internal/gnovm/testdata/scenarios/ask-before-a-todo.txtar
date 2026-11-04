@@ -1,0 +1,41 @@
+A question for the user inside a plan: the user wants settings read from a
+file and to choose the format before any code is written. The agent plans
+the work, asks the question (an Ask in mem), and ends its turn without
+writing the loader. The answer comes in the same conversation; the agent
+records it, writes the loader in that format and closes the plan.
+
+-- project/go.mod --
+module app
+
+go 1.22
+-- project/main.go --
+// Command app prints its settings.
+package main
+
+import "fmt"
+
+// Settings are the app's settings.
+type Settings struct {
+	Name string
+	Port int
+}
+
+func main() {
+	s := Settings{Name: "app", Port: 8080}
+	fmt.Printf("%s on %d\n", s.Name, s.Port)
+}
+-- prompt --
+I want the settings in main.go read from a file instead of hard-coded, with a test for the loader. Plan it as todos in mem, but before you write any code, ask me which file format to use: I haven't decided between TOML and JSON.
+-- prompt --
+JSON, with the standard library only. Go ahead.
+-- check --
+turn 1 tool gnovm_run >= 1
+turn 1 tool edit == 0
+turn 1 tool write == 0
+answer 1 matches (?i)json
+answer 1 matches (?i)toml
+cmd go test ./...
+cmd grep -rq 'encoding/json' --include='*.go' .
+cmd ! grep -rqi toml --include='*.go' .
+vm-dump contains json
+mem-count open == 0

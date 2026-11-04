@@ -1,0 +1,98 @@
+Findings first, then the fix the user picks: the tests are slow for two
+reasons, a 2-second sleep each of two tests calls, and a prime sieve by
+trial division. The user asks for the causes to be found and kept in mem
+with nothing changed, then for the biggest one alone to be fixed. The
+agent must measure rather than guess (the sleeps cost about 4 s, the
+primes about half a second), keep each finding, and fix only the sleep.
+
+-- project/go.mod --
+module slow
+
+go 1.22
+-- project/server.go --
+// Package slow serves a counter.
+package slow
+
+import "sync"
+
+// Counter counts, safely from many goroutines.
+type Counter struct {
+	mu sync.Mutex
+	n  int
+}
+
+// Add adds one and returns the new count.
+func (c *Counter) Add() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.n++
+	return c.n
+}
+
+// Primes is the primes below n, by trial division.
+func Primes(n int) []int {
+	var out []int
+	for i := 2; i < n; i++ {
+		prime := true
+		for d := 2; d*d <= i; d++ {
+			if i%d == 0 {
+				prime = false
+				break
+			}
+		}
+		if prime {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+-- project/helper_test.go --
+package slow
+
+import "time"
+
+// waitReady gives the counter time to settle before a test uses it.
+func waitReady() { time.Sleep(2 * time.Second) }
+-- project/server_test.go --
+package slow
+
+import "testing"
+
+func TestAddOnce(t *testing.T) {
+	waitReady()
+	var c Counter
+	if c.Add() != 1 {
+		t.Fatal("first Add is not 1")
+	}
+}
+
+func TestAddTwice(t *testing.T) {
+	waitReady()
+	var c Counter
+	c.Add()
+	if c.Add() != 2 {
+		t.Fatal("second Add is not 2")
+	}
+}
+
+func TestPrimes(t *testing.T) {
+	if got := len(Primes(3_000_000)); got != 216816 {
+		t.Fatalf("%d primes below 3,000,000, want 216816", got)
+	}
+}
+-- prompt --
+go test ./... takes too long here. Find out what makes it slow and keep what you find in mem, but don't change any file yet; tell me what you found.
+-- prompt --
+Fix the biggest cause you found, and nothing else.
+-- check --
+turn 1 tool edit == 0
+turn 1 tool write == 0
+turn 1 tool gnovm_run >= 1
+answer 1 matches (?i)sleep|waitReady
+answer 1 matches (?i)prime
+cmd go test -count=1 -run 'TestAdd' -v ./... | grep -qE 'PASS: TestAddOnce \(0\.'
+cmd go test -count=1 -run 'TestAdd' -v ./... | grep -qE 'PASS: TestAddTwice \(0\.'
+cmd grep -q 'd\*d <= i' server.go
+cmd grep -q '3_000_000' server_test.go
+cmd go test -count=1 ./...
+vm-dump contains sleep

@@ -1,0 +1,56 @@
+A project fact said in passing inside a plan: while the agent works through
+three todos, the user mentions that staging moved. Closing the plan pops its
+frame, which removes everything said since it was entered from the agent's
+context, that line included. Asked about staging right after, the agent
+must answer from mem, so it has to have kept the move as a fact.
+
+-- project/go.mod --
+module app
+
+go 1.22
+-- project/client.go --
+// Package main is a tiny client for the app's API.
+package main
+
+import "net/http"
+
+// Fetch asks the API for path.
+func Fetch(base, path string) (*http.Response, error) {
+	return http.Get(base + path)
+}
+-- project/main.go --
+package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	resp, err := Fetch("https://staging.acme.test", "/health")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println(resp.Status)
+}
+-- project/README.md --
+# app
+
+`Fetch(base, path)` asks the API for a path:
+
+    go run .
+-- prompt --
+Plan this as todos in mem: (1) rename Fetch to Get in client.go, (2) update its caller in main.go, (3) update the README. Do only the first todo now.
+-- prompt --
+By the way, our staging server moved to staging2.acme.test last week; the old one is gone. Now do the second todo.
+-- prompt --
+Do the last todo. Then tell me: which host is our staging server now?
+-- check --
+turn 1 tool gnovm_run >= 1
+cmd go build ./...
+cmd grep -q 'func Get' client.go
+cmd grep -q 'Get(' README.md
+answer last contains staging2.acme.test
+vm-dump contains staging2.acme.test
+mem-count open == 0

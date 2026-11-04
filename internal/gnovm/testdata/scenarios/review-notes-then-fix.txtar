@@ -1,0 +1,81 @@
+A review kept as notes, fixed in a later session: the user asks for a review
+of store.go with each problem kept in mem and nothing changed yet. A new
+session, which has only what mem kept, is asked to fix them all, one todo
+each. The three planted bugs are a file never closed, a decode error thrown
+away, and a loop that sums one item too many.
+
+-- project/go.mod --
+module store
+
+go 1.22
+-- project/store.go --
+// Package store loads and sums price lists.
+package store
+
+import (
+	"encoding/json"
+	"os"
+)
+
+// Item is one priced item.
+type Item struct {
+	Name  string  `json:"name"`
+	Price float64 `json:"price"`
+}
+
+// Load reads a JSON list of items from path.
+func Load(path string) ([]Item, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	var items []Item
+	_ = json.NewDecoder(f).Decode(&items)
+	return items, nil
+}
+
+// Total is the sum of the prices of the first n items.
+func Total(items []Item, n int) float64 {
+	sum := 0.0
+	for i := 0; i <= n && i < len(items); i++ {
+		sum += items[i].Price
+	}
+	return sum
+}
+-- project/store_test.go --
+package store
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoad(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "items.json")
+	if err := os.WriteFile(p, []byte(`[{"name":"tea","price":2.5}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items, err := Load(p)
+	if err != nil || len(items) != 1 || items[0].Name != "tea" {
+		t.Fatalf("Load = %v, %v", items, err)
+	}
+}
+-- prompt --
+Review store.go for bugs. Keep each problem you find in mem as you go, and don't change any file yet; just give me one line per problem.
+-- prompt-new --
+Fix the problems from your review of store.go, each as its own todo, and add a test that would have caught each one.
+-- check --
+turn 1 tool edit == 0
+turn 1 tool write == 0
+turn 1 tool gnovm_run >= 1
+turn 2 tool gnovm_run >= 1
+answer 1 matches (?i)close
+answer 1 matches (?i)decode|error
+answer 1 matches (?i)off.by.one|<= ?n|n ?\+ ?1|one too many|one extra|first n
+cmd grep -q 'Close()' store.go
+cmd ! grep -q '_ = json' store.go
+cmd go test ./...
+cmd printf 'package store\nimport "testing"\nfunc TestZZTotal(t *testing.T) { if g := Total([]Item{{"a", 1}, {"b", 2}, {"c", 4}}, 2); g != 3 { t.Fatal(g) } }\n' > zz_test.go && go test -run TestZZTotal ./...; s=$?; rm -f zz_test.go; exit $s
+mem-count done >= 3
+vm-dump contains close

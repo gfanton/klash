@@ -1,0 +1,163 @@
+Findings kept for follow-up questions: the user asks how a request gets
+authenticated and says follow-ups will come in another session. A new
+session answers two follow-ups from what mem kept (thoughts, facts), and
+needs at most a confirming read of the code, not the whole walk again.
+
+-- project/go.mod --
+module server
+
+go 1.22
+-- project/main.go --
+// Command server serves the account API behind token auth.
+package main
+
+import (
+	"log"
+	"net/http"
+
+	"server/auth"
+	"server/store"
+)
+
+func main() {
+	s := store.Open("sessions.db")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/account", account)
+	log.Fatal(http.ListenAndServe(":8080", auth.Middleware(s, mux)))
+}
+
+func account(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("account of " + auth.User(r) + "\n"))
+}
+-- project/auth/middleware.go --
+// Package auth authenticates requests by bearer token.
+package auth
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+
+	"server/store"
+)
+
+type userKey struct{}
+
+// Middleware lets a request through to next only with a valid bearer token
+// whose session is still live.
+func Middleware(s *store.Sessions, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok {
+			http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			return
+		}
+		tok, err := Verify(raw)
+		if errors.Is(err, ErrExpired) {
+			expired(w)
+			return
+		}
+		if err != nil {
+			http.Error(w, "bad token", http.StatusUnauthorized)
+			return
+		}
+		user, live := s.Lookup(tok.Session)
+		if !live {
+			http.Error(w, "session revoked", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user)))
+	})
+}
+
+// User is the user a request was authenticated as.
+func User(r *http.Request) string {
+	u, _ := r.Context().Value(userKey{}).(string)
+	return u
+}
+-- project/auth/tokens.go --
+package auth
+
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
+	"strconv"
+	"strings"
+	"time"
+)
+
+var (
+	ErrExpired = errors.New("token expired")
+	ErrBad     = errors.New("token malformed or forged")
+)
+
+var key = []byte("dev-only-signing-key")
+
+// Token is what a verified token says: its session and when it expires.
+type Token struct {
+	Session string
+	Expires time.Time
+}
+
+// Verify checks a token "session.expiry.mac": the MAC first, then the expiry.
+func Verify(raw string) (Token, error) {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return Token{}, ErrBad
+	}
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(parts[0] + "." + parts[1]))
+	if !hmac.Equal([]byte(base64.RawURLEncoding.EncodeToString(m.Sum(nil))), []byte(parts[2])) {
+		return Token{}, ErrBad
+	}
+	unix, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return Token{}, ErrBad
+	}
+	t := Token{Session: parts[0], Expires: time.Unix(unix, 0)}
+	if time.Now().After(t.Expires) {
+		return t, ErrExpired
+	}
+	return t, nil
+}
+-- project/auth/expired.go --
+package auth
+
+import "net/http"
+
+// expired answers a request whose token has expired: 401 with a
+// WWW-Authenticate header, so the client knows to refresh, not log in again.
+func expired(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="expired"`)
+	http.Error(w, "token expired", http.StatusUnauthorized)
+}
+-- project/store/sessions.go --
+// Package store keeps the server's sessions.
+package store
+
+// Sessions maps session ids to users; a revoked session is gone.
+type Sessions struct{ users map[string]string }
+
+// Open opens the session store at path (kept in memory here).
+func Open(path string) *Sessions { return &Sessions{users: map[string]string{"s1": "lin"}} }
+
+// Lookup is the user of session id, and whether the session is live.
+func (s *Sessions) Lookup(id string) (string, bool) {
+	u, ok := s.users[id]
+	return u, ok
+}
+-- prompt --
+Find out how a request to this server gets authenticated, step by step, and give me a short summary. Keep what you find in mem: I'll have follow-up questions in another session.
+-- prompt-new --
+Two questions about the auth flow you looked into: where is the token's expiry checked, and what does the client get back when its token has expired?
+-- check --
+turn 1 tool gnovm_run >= 1
+turn 2 tool gnovm_run >= 1
+turn 2 tool view <= 2
+answer last matches (?i)tokens\.go|Verify
+answer last contains 401
+answer last matches (?i)WWW-Authenticate|invalid_token
+vm-dump contains 401

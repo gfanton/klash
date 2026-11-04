@@ -1,0 +1,40 @@
+A todo in a plan that must wait for a day: the user plans a release whose
+tag cannot happen before the code freeze ends on November 20. The agent
+does what can be done now, keeps the tag waiting for the day (a wait in
+mem, not a promise in prose), and a later session, asked what is left,
+names the tag and the day.
+
+-- project/go.mod --
+module app
+
+go 1.22
+-- project/version.go --
+package main
+
+// Version is the app's version.
+const Version = "1.9.3"
+-- project/main.go --
+package main
+
+import "fmt"
+
+func main() { fmt.Println("app", Version) }
+-- project/CHANGELOG.md --
+# Changelog
+
+## 1.9.3
+
+- Fix the retry loop.
+-- prompt --
+Plan the 2.0.0 release as todos in mem: bump Version in version.go to 2.0.0, add a 2.0.0 section to CHANGELOG.md, and tag v2.0.0. The tag can't happen before November 20, when the code freeze ends. Do what can be done now.
+-- prompt-new --
+What's left on the 2.0.0 release, and when can it happen?
+-- check --
+turn 1 tool gnovm_run >= 1
+file version.go contains 2.0.0
+file CHANGELOG.md contains 2.0.0
+cmd go build ./...
+mem-count open >= 1
+vm-dump contains 2026-11-20
+answer last matches (?i)tag
+answer last matches (?i)nov(ember)?\.? ?20|11-20|20 nov
