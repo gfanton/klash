@@ -1,0 +1,49 @@
+A thought that becomes a todo: while doing one todo, the agent notices
+an error-handling problem and, as asked, keeps it as a thought on that
+todo instead of fixing it. Closing the todo removes the noticing from
+its context. Next turn the user asks for that thought to become its own
+todo and be fixed: the agent must find the thought in mem (or find the
+problem again) and fix it then, not before.
+
+-- project/go.mod --
+module wc
+
+go 1.22
+-- project/main.go --
+// Command wc counts the words of a file.
+package main
+
+import (
+	"bufio"
+	"flag"
+	"fmt"
+	"os"
+)
+
+func main() {
+	flag.Parse()
+	f, _ := os.Open(flag.Arg(0))
+	defer f.Close()
+	n := 0
+	s := bufio.NewScanner(f)
+	s.Split(bufio.ScanWords)
+	for s.Scan() {
+		n++
+	}
+	fmt.Println(n)
+}
+-- prompt --
+Add a --json flag to main.go: with it, print {"words": N} instead of just N. Plan it as a todo in mem. If you notice anything odd about how errors are handled while you're in there, keep it as a thought on that todo, but don't fix it now.
+-- prompt --
+Now turn what you noticed about errors into its own todo and fix it.
+-- check --
+turn 1 tool gnovm_run >= 1
+after 1 file main.go contains json
+after 1 file main.go contains f, _ := os.Open
+vm-dump contains op note
+cmd go build ./...
+cmd go run . --json main.go | grep -qE '"words": ?[0-9]+'
+cmd ! grep -q 'f, _ := os.Open' main.go
+cmd go run . /no/such/file; [ $? -ne 0 ]
+mem-count open == 0
+mem-count done >= 2
