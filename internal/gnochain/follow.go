@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,6 +27,7 @@ type Outcome struct {
 	Values  []string // each call's first result, in order
 	Events  []Event  // what realms emitted (chain.Emit), in order
 	GasUsed int64
+	Storage int64 // bytes of realm storage it took (deposits), less what it freed
 }
 
 // Event is one event a realm emitted.
@@ -127,9 +129,29 @@ func (c *Client) BlockAt(ctx context.Context, height int64) (Block, error) {
 		}
 		o.GasUsed, _ = strconv.ParseInt(outs[i].GasUsed, 10, 64)
 		o.Events = realmEvents(r.Events)
+		o.Storage = storageBytes(r.Events)
 		b.Txs = append(b.Txs, o)
 	}
 	return b, nil
+}
+
+// storageBytes sums the bytes of realm storage a transaction's results
+// say it took (storage deposit events) and freed (unlock events, whose
+// delta is negative).
+func storageBytes(raw []json.RawMessage) int64 {
+	var n int64
+	for _, ev := range raw {
+		var e struct {
+			Type  string          `json:"@type"`
+			Delta json.RawMessage `json:"bytes_delta"`
+		}
+		if json.Unmarshal(ev, &e) != nil || !(strings.HasSuffix(e.Type, "StorageDepositEvent") || strings.HasSuffix(e.Type, "StorageUnlockEvent")) {
+			continue
+		}
+		d, _ := strconv.ParseInt(strings.Trim(string(e.Delta), `"`), 10, 64)
+		n += d
+	}
+	return n
 }
 
 // realmEvents reads the events realms emitted (chain.Emit) from a

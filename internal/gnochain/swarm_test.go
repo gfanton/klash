@@ -150,6 +150,7 @@ func TestBlockAtAndFollow(t *testing.T) {
 	require.Equal(t, "held", ok.Events[0].Get("kind"))
 	require.Equal(t, "gno.land/r/x/mem", ok.Events[0].PkgPath)
 	require.Equal(t, int64(1234), ok.GasUsed)
+	require.Equal(t, int64(12), ok.Storage, "the deposit's bytes")
 	require.False(t, b.Txs[1].OK)
 	require.Equal(t, "not a member", b.Txs[1].Log)
 

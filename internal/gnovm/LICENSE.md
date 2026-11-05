@@ -6,9 +6,10 @@ The following copyright notice covers all of the files in this directory
   LLC), its license and its own Additional Terms (Strong Attribution), in
   `stdlibs/LICENSE.md`. Files in it that came from Go keep Go's BSD license, in
   `stdlibs/LICENSE-GO`.
-- `klashlibs/fmt` is gno's `ufmt` package (examples/gno.land/p/nt/ufmt/v0),
-  modified by gnosh on 29 October 2026: its package is renamed to fmt, and
-  ufmt.gno to fmt.gno. It keeps the same notices as `stdlibs/`.
+- `klashlibs/klash/bptree/v0` is gno's `p/nt/bptree/v0` package
+  (examples/gno.land/p/nt/bptree/v0 in github.com/gnolang/gno),
+  copied unchanged. It keeps that project's copyright (NewTendermint, LLC),
+  its license and its own Additional Terms, in its own `LICENSE.md`.
 
 The rest of gnosh is licensed separately; see "Known license interactions"
 below.
@@ -140,29 +141,38 @@ for this subsystem; the details and conflicts will be worked out later.
   client used only tm2 (Apache-2.0) and gno.land's small `ugnot` package. No
   gnosh binary has been released since; none should be until this is settled.
   The ways out are:
-  (a) keep one binary, with a linking exception from NewTendermint, LLC for the
-  GnoVM and an additional permission from the Licensor for this subsystem; or
-  wait until each Crush version's FSL becomes MIT, two years after Charm
-  released it, since MIT code can be conveyed under this License;
+  (a) keep one binary, with a linking exception from NewTendermint, LLC for
+  the GnoVM and for the gno code this subsystem embeds (`stdlibs/` and
+  `klashlibs/klash/bptree/v0`), and an additional permission for the rest of
+  this subsystem from the Licensor and, for code others contributed,
+  NewTendermint, LLC or that code's copyright holder; or wait until each Crush
+  version's FSL becomes MIT, two years after Charm released it, since MIT code
+  can be conveyed under this License;
   (b) build the worker as a separate program (`gnosh-gnovm-worker`) that holds
   everything that links gno, keep gnosh's own binary free of it, and have the
   two speak the worker protocol; the Licensor can grant a section 7 additional
   permission for any glue of his in the FSL binary. This needs nobody's
-  consent but the Licensor's.
+  consent but the Licensor's and, for glue others contributed, NewTendermint,
+  LLC's or that glue's copyright holder's.
   Changing the license of Charm's code is not the Licensor's to do.
 - **Contributions.** CONTRIBUTING.md makes `internal/gnovm/` an exception:
   contributions to it are under this License, and its separate grants to
-  Charmbracelet, Inc. do not extend to them; the grants to the Maintainer do.
+  Charmbracelet, Inc. do not extend to them; the grants to the Maintainer,
+  NewTendermint, LLC, do. So an additional permission for this subsystem, as
+  in (a) or (b) above, reaches code others contributed only if NewTendermint,
+  LLC, which holds their licenses, or that code's copyright holder grants it
+  too. The "Reservation of rights" above speaks for each copyright holder in
+  its own code; the contributor licenses it mentions are NewTendermint, LLC's.
 - **Remote users.** Section 13 of the License asks that whoever modifies the
   Program, and lets people use the modified version remotely (for instance
   through gnosh's server mode or its channels), offer them its Corresponding
   Source. That binds gnosh's own remote interfaces too, since gnosh already
   includes the GnoVM: they should link to gnosh's source.
-- **The GnoVM's own terms.** The GnoVM and the standard library this subsystem
-  embeds are under the GNO Network GPL v6 with NewTendermint, LLC's Additional
-  Terms (Strong Attribution). Those terms apply independently of this file:
-  since gnosh now includes the GnoVM, its interface must carry NewTendermint's
-  attribution notice too.
+- **The GnoVM's own terms.** The GnoVM and the gno code this subsystem embeds
+  (`stdlibs/` and `klashlibs/klash/bptree/v0`) are under the GNO Network GPL
+  v6 with NewTendermint, LLC's Additional Terms (Strong Attribution). Those
+  terms apply independently of this file: since gnosh now includes the GnoVM,
+  its interface must carry NewTendermint's attribution notice too.
 - **Other licenses in the dependency tree.** The tm2 packages used here are
   Apache-2.0 (github.com/gnolang/gno/tm2/LICENSE). Files in `stdlibs/` that came
   from Go are under Go's BSD license (`stdlibs/LICENSE-GO`).

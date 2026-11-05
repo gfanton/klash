@@ -24,13 +24,14 @@ func user(a address) runtime.Realm { return testing.NewUserRealm(a) }
 
 func holderFor(a address, label string) string { return a.String() + "|-|" + label }
 
-// fresh makes a plan, open to anyone, with a 60-second lease, after
+// fresh makes a plan, open to anyone, with a 12-block lease (a minute at
+// the tests' 5 s a block), after
 // clearing every plan a test before made (realm state outlives a test).
 func fresh(cur realm, t *testing.T, id string) {
 	t.Helper()
 	resetPlans()
 	testing.SetRealm(user(owner))
-	NewPlan(cross(cur), id, "the task", true, 60)
+	NewPlan(cross(cur), id, "the task", true, 12)
 }
 
 func add(cur realm, who address, plan, parent, names, titles string) string {
@@ -136,7 +137,7 @@ func TestLeaseLapses(cur realm, t *testing.T) {
 	fresh(cur, t, "lease")
 	add(cur, owner, "lease", "t", "a", "a")
 	_, tok := held(t, next(cur, w1, "lease", ""))
-	testing.SkipHeights(13) // 65 s of block time in tests
+	testing.SkipHeights(13) // 13 blocks: past the 12-block lease
 	id, tok2 := held(t, next(cur, w2, "lease", ""))
 	uassert.Equal(t, "t/a", id)
 	uassert.NotEqual(t, tok, tok2)
@@ -144,6 +145,32 @@ func TestLeaseLapses(cur realm, t *testing.T) {
 		pop(cur, w1, "lease", "t/a", tok, "late")
 	})
 	pop(cur, w2, "lease", "t/a", tok2, "done")
+}
+
+// Purge frees a closed plan a page of todos at a time, then the plan.
+func TestPurge(cur realm, t *testing.T) {
+	fresh(cur, t, "pg")
+	for c := 0; c < 4; c++ {
+		var names, titles []string
+		for i := 0; i < 64 && c*64+i < 250; i++ {
+			names = append(names, "a"+strconv.Itoa(c*64+i))
+			titles = append(titles, "todo "+strconv.Itoa(c*64+i))
+		}
+		add(cur, owner, "pg", "t", strings.Join(names, "\n"), strings.Join(titles, "\n"))
+	}
+	held(t, next(cur, w1, "pg", "")) // an agent with a hold, and so a todo it points at
+	// The caller is the realm set before AbortsContains, not inside it.
+	testing.SetRealm(user(owner))
+	uassert.AbortsContains(t, cur, "plan pg is open: Close it first", func() { Purge(cross(cur), "pg") })
+	testing.SetRealm(user(owner))
+	Close(cross(cur), "pg")
+	testing.SetRealm(user(w1))
+	uassert.AbortsContains(t, cur, "only the plan's owner may do this", func() { Purge(cross(cur), "pg") })
+	testing.SetRealm(user(owner))
+	uassert.Equal(t, 51, Purge(cross(cur), "pg"), "251 todos, 200 a call")
+	uassert.True(t, hasPlan("pg"), "the plan stays until its last todo goes")
+	uassert.Equal(t, 0, Purge(cross(cur), "pg"))
+	uassert.False(t, hasPlan("pg"), "the plan is gone")
 }
 
 // Renew keeps a hold past its first lease.
@@ -330,7 +357,7 @@ func TestLapseAcrossGroups(cur realm, t *testing.T) {
 		held(t, nextAs(cur, w1, "h"+strconv.Itoa(i), "lap", ""))
 	}
 	uassert.True(t, strings.Contains(PlanJSON("lap"), `"held":6`))
-	testing.SkipHeights(13) // 65 s: every lease has run out
+	testing.SkipHeights(13) // 13 blocks: every lease has run out
 	got, _ := held(t, nextAs(cur, w2, "new", "lap", ""))
 	uassert.Equal(t, "t/g1/a", got, "the first lapsed todo is free again")
 	j := PlanJSON("lap")
@@ -366,7 +393,7 @@ func TestWaiterLapses(cur realm, t *testing.T) {
 	add(cur, owner, "wl", "t", "a", "a")
 	_, tok := held(t, nextAs(cur, w1, "x", "wl", ""))
 	uassert.Equal(t, "waiting\t", nextAs(cur, w2, "early", "wl", ""))
-	testing.SkipHeights(8) // 40 s
+	testing.SkipHeights(8) // 8 blocks
 	testing.SetRealm(user(w1))
 	Renew(cross(cur), "wl", "x", "t/a", "", false)
 	uassert.Equal(t, "waiting\t", nextAs(cur, w3, "late", "wl", ""))

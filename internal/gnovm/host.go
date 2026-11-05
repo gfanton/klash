@@ -710,6 +710,13 @@ type RunRequest struct {
 	// SubAgent marks a sub-agent's session, which never waits (PARALLEL.md).
 	WaitPipe string `json:",omitempty"`
 	SubAgent bool   `json:",omitempty"`
+	// CheckCloses has mem keep nothing of an input that closes a todo with
+	// nothing under it as done, and hand the close to the agent in
+	// RunResult.Closes, unless Checked names it (MemClose.Checked): the
+	// agent checks it against what was done in the todo, then runs the
+	// input again with it in Checked, or refuses it (CLOSE-CHECK.md).
+	CheckCloses bool     `json:",omitempty"`
+	Checked     []string `json:",omitempty"`
 }
 
 // RunResult is what a call did.
@@ -746,6 +753,9 @@ type RunResult struct {
 	// pipe until mem changes or a holder's turn ends, then runs mem.Next()
 	// again (memwait.go).
 	Waits []MemWait `json:",omitempty"`
+	// Closes are the closes the agent is to check before the input is kept
+	// (RunRequest.CheckCloses); with them, Err is set and nothing was kept.
+	Closes []MemClose `json:",omitempty"`
 	// Err is the run's failure; nothing from the call was kept. (The wire
 	// carries it apart, keeping its kind; see wireRun.)
 	Err error `json:"-"`

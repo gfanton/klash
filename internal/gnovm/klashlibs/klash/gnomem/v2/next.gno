@@ -41,16 +41,17 @@ func (m *Mem) free(id string, it *Todo, session string) bool {
 }
 
 // holder is the session other than session whose todo id is now: the one
-// holding it, or a working session that entered it on the way to a todo
-// under it (Via), which holds it only while it works; "" when it is free
-// for session, or session's own.
+// holding it (doing), or a working session that entered it on the way to a
+// todo under it (Via), which holds it only while it works; "" when it is
+// free for session, or session's own.
 func (m *Mem) holder(id string, it *Todo, session string) string {
-	switch {
-	case it.Doing != "":
-		if it.Doing != session {
-			return it.Doing
+	if d := m.doing(id, it, session); d != "" {
+		if d != session {
+			return d
 		}
-	case it.Via != "" && it.Via != session && working(it.Via, id):
+		return ""
+	}
+	if it.Via != "" && it.Via != session && working(it.Via, id) {
 		return it.Via
 	}
 	return ""
@@ -60,11 +61,30 @@ func (m *Mem) holder(id string, it *Todo, session string) string {
 // holding it, or the one that entered it on the way, while that one works
 // or is this input's; "" for none.
 func (m *Mem) doer(id string, it *Todo) string {
-	switch {
-	case it.Doing != "":
-		return it.Doing
-	case it.Via != "" && (it.Via == caller() || working(it.Via, id)):
+	if d := m.doing(id, it, caller()); d != "" {
+		return d
+	}
+	if it.Via != "" && (it.Via == caller() || working(it.Via, id)) {
 		return it.Via
+	}
+	return ""
+}
+
+// doing is the session that holds todo id (it.Doing) while its hold
+// stands, for session's view; "" when none does. A todo with nothing under
+// it is held until its session lets it go. A todo with todos under it is
+// coordinated, not done: its hold stands only while its session works, or
+// for that session itself, as a todo entered on the way is held (A11, Jae
+// 2026-11-05). So a plan a session pushed and ended in is closed by the
+// next session once its todos are done, not left open for good. Its
+// session works when it is in a busy stretch at all: a hold set by Start,
+// with the todo on no stack, is as much its hold, and every pop, leave
+// and drop lets the hold go. Where gnosh cannot tell who works
+// (workKnown), every hold stands.
+func (m *Mem) doing(id string, it *Todo, session string) string {
+	d := it.Doing
+	if d == "" || d == session || len(it.Steps) == 0 || !workKnown() || working(d, "") {
+		return d
 	}
 	return ""
 }

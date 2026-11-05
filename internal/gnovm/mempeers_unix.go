@@ -19,6 +19,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// turnLocksKnown is true: turnHeld reads the turn locks, so gnosh can tell
+// which sessions work.
+const turnLocksKnown = true
+
 // turnHeld reports whether session's turn lock is held now, in dir: the
 // session is in a busy stretch. The file is opened read-only and never
 // made, and probed in shared mode, so probes never queue behind each other;

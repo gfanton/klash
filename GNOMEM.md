@@ -16,13 +16,13 @@ mem.Todo("release v2", "bump the version", "tag the release", "CI is green").Pus
 // added `release-v2/bump-version` "bump the version"
 // added `release-v2/tag-release` "tag the release"
 // added `release-v2/ci-green` "CI is green"
-// in `release-v2` "release v2": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+// in `release-v2` "release v2": its todos are its work, mem.Next() steps into `release-v2/bump-version` "bump the version"; once they are closed, pop it with what came of them and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
 mem.Next()
-// in `release-v2/bump-version` "bump the version": when it is done, pop it with what came of it and what the next todo needs. …
+// in `release-v2/bump-version` "bump the version": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 mem.Pop("now 2.0.0")
 mem.Next()
 // done `release-v2/bump-version` "bump the version" → now 2.0.0
-// in `release-v2/tag-release` "tag the release": when it is done, pop it with what came of it and what the next todo needs. …
+// in `release-v2/tag-release` "tag the release": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 mem.Show()
 // mem: 1 todo open
 // todos:
@@ -86,8 +86,8 @@ r.Todo("make test runs the tests")
 // added `build-greet/make-test-runs-tests` "make test runs the tests"
 mem.Frame("build-greet").Push()
 mem.Next()
-// in `build-greet` "build greet": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
-// in `build-greet/go-mod` "go.mod": when it is done, pop it with what came of it and what the next todo needs. …
+// in `build-greet` "build greet": its todos are its work, mem.Next() steps into `build-greet/go-mod` "go.mod"; once they are closed, pop it with what came of them and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+// in `build-greet/go-mod` "go.mod": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 mem.Pop("module greet, go 1.22")
 // done `build-greet/go-mod` "go.mod" → module greet, go 1.22
 // next: `build-greet/hello-greet-go` "Hello in greet.go": mem.Next()
@@ -112,9 +112,24 @@ Tomorrow's session is told, with your first message, what mem has open and
 what is next, so it knows where the task stands without being told; a
 session that stopped inside a frame stands in it again when it resumes.
 
-A todo the agent closes is not taken at its word. As the turn ends, a
-separate judge checks it against what mem shows of it and the end of the
-conversation. Met, you are told, in the TUI's status bar and on stderr from
+A todo the agent closes is not taken at its word. Each todo the work is
+done in (one with no done todo under it; an answer you gave is not one) is
+checked as it is closed, before mem keeps the call: a result that says a
+file changed when nothing in the todo changed or showed that file is
+refused, and so is a todo entered and closed in one call with nothing done
+in it. Then the small model reads what happened in the todo,
+told which files its edits changed and which commands ran, and refuses the
+close when nothing there shows the result: ``not popped: the check of
+`stats/median` found: no edit of stats.go adds Median …``. Nothing of the
+refused call is kept, and the agent does what is missing, or shows that it
+is done, and closes it again. That review is one model call per todo
+closed; `"options": {"mem_review_closes": false}` turns it off, and the free
+checks stay. With no thinking, a model wrote a todo's result before its
+work, and one look at a file was enough to let the same claim through (QA,
+4 November); replayed through the review, those closes were refused, and so
+were closes that recorded another todo's result. As the turn ends, a
+separate judge checks each task closed against what mem shows of it and the
+end of the conversation. Met, you are told, in the TUI's status bar and on stderr from
 `gnosh run`, as in a real run in the TUI: `Goal met: create release notes
 file (The agent wrote …/notes.md with content 'release notes' and verified
 …)`. Not met, the todo is reopened with the judge's reason as a note, you are
@@ -181,17 +196,17 @@ mem.Todo("find why TestFlaky fails")
 mem.Todo("rerun the suite 20 times")
 mem.Next()
 // added `fix-flaky-test` "fix the flaky test"
-// in `fix-flaky-test` "fix the flaky test": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+// in `fix-flaky-test` "fix the flaky test": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
 // added `fix-flaky-test/find-why-testflaky-fails` "find why TestFlaky fails"
 // added `fix-flaky-test/rerun-suite-20-times` "rerun the suite 20 times"
-// in `fix-flaky-test/find-why-testflaky-fails` "find why TestFlaky fails": when it is done, pop it with what came of it and what the next todo needs. …
+// in `fix-flaky-test/find-why-testflaky-fails` "find why TestFlaky fails": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 mem.Think("the shared port is 8080")
 // thought `shared-port-8080` kept on `fix-flaky-test/find-why-testflaky-fails`
 mem.Pop("TestFlaky races on the shared port; fixed by picking a free port in setup (internal/net/listen_test.go:41)")
 mem.Next()
 // done `fix-flaky-test/find-why-testflaky-fails` "find why TestFlaky fails" → TestFlaky races on the shared port; fixed by picking a free port in setup (internal/net/listen_test.go:41)
 // its thoughts, kept: `shared-port-8080`: the shared port is 8080
-// in `fix-flaky-test/rerun-suite-20-times` "rerun the suite 20 times": when it is done, pop it with what came of it and what the next todo needs. …
+// in `fix-flaky-test/rerun-suite-20-times` "rerun the suite 20 times": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 mem.Thought("shared-port-8080")
 // thought `shared-port-8080` on `fix-flaky-test/find-why-testflaky-fails`: the shared port is 8080
 ```
@@ -239,11 +254,14 @@ frame the agent is in where the sidebar shows its work, `/mem log` lists
 each push and pop, and `gnosh run` prints what a pop took out of the
 context. A frame a session holds is its own: no other session, and not
 `/mem`, closes, drops or takes it; the session pops it, resumed by id if it
-has ended. So a todo pushed in one session stays open, even with every todo
-under it done in later sessions, until that session is resumed: in real runs
-on 31 October, the README's task and long-goal-sessions both ended that way.
-A todo `mem.Next()` entered on the way from the root is not held, so it does
-not end that way.
+has ended. A todo with todos under it is the exception: it is coordinated,
+not done, so its hold stands only while its session works on it, as a todo
+entered on the way does, and the session that finishes its todos closes it.
+Held for good, a todo pushed in one session stayed open with every todo
+under it done in later sessions: in real runs on 31 October, the README's
+task and long-goal-sessions both ended that way, and so did a plan on 4
+November. Where gnosh cannot tell which sessions work (no data directory,
+or Windows), every hold stands.
 
 ### Many sessions, one plan
 
@@ -710,8 +728,10 @@ Gnosh's system prompt carries a short recipe, so the model needs no setup:
   condition is a todo ("go test ./... passes"), popped only after its check
   has run, and a task it closes is judged before it counts as done. A todo
   is never popped in the round right after the one that entered it, with
-  nothing in between: mem refuses, for it was not done (a todo that needs
-  nothing is entered and popped in one call).
+  nothing in between, nor in the call that entered it: mem refuses, for it
+  was not done; a todo that needs nothing is closed by its name,
+  `mem.Done("…", "nothing to do: …")`, after the check that shows it. Each
+  close is checked against what happened in the todo (above).
 - **What should outlive a pop is a thought**: `mem.Think("…")` on the frame
   it stands in, found again by name (`mem.Thought`), by meaning
   (`mem.Recall`), or in the frame's outline, and dived into with
@@ -750,7 +770,7 @@ type Todo struct {
 	Result  string   // what came of it: the outcome, your answer, or why it was dropped
 	Wait    string   // a day ("2026-12-01") or words ("PR #6399 merged"); "" none
 	For     string   // "user": a question or request for you
-	Doing   string   // the session that holds it
+	Doing   string   // the session that holds it; with todos under it, only while that session works
 	Via     string   // the session that entered it on the way to a todo under it, which holds it while it works
 	Order   int      // a top-level todo's place in the order made
 	Steps   []string // the names of the todos under it, in order

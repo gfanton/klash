@@ -15,14 +15,14 @@ import (
 // taking the first offered child at each level, to a todo with nothing open
 // under it: no call walks finished or held todos.
 
-// call is one call's working state: its plan, the block time, the
+// call is one call's working state: its plan, the block height, the
 // caller's agent, the todos it made offered (whose frames' waiters it may
 // serve at its end), and how many waiters it served and queue entries it
 // passed over.
 type call struct {
 	p       *Plan
 	now     int64
-	nowKey  string // now, as Due and Held write a time
+	nowKey  string // now, as Due and Held write a height
 	me      *Agent // the caller's agent, kept through the call
 	touched []*Todo
 	served  int
@@ -431,6 +431,7 @@ func (c *call) wait(a *Agent, frame string) {
 	until := c.now + p.Lease
 	if a.Wait != 0 && a.Frame == frame {
 		a.Until = until
+		p.emit("waitrenewed", frame, "holder", a.Holder, "until", strconv.FormatInt(until, 10))
 		return
 	}
 	c.unwait(a)

@@ -201,6 +201,8 @@ var optionSpecs = map[string]optionSpec{
 	"debug-lsp": {jsonKey: "debug_lsp", kind: optBool},
 	"auto-lsp":  {jsonKey: "auto_lsp", kind: optBool},
 	"progress":  {jsonKey: "progress", kind: optBool},
+	// The small model's check of each todo's close (mem_review_closes).
+	"mem-review-closes": {jsonKey: "mem_review_closes", kind: optBool},
 
 	// Boolean fields exposed positively but stored as their negation.
 	"metrics":              {jsonKey: "disable_metrics", kind: optBool, inverted: true},

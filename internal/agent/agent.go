@@ -399,6 +399,10 @@ type sessionAgent struct {
 	// judged once, though a turn queued behind the one that made it began
 	// before it (see closedGoalContinuation).
 	judgedGoals *csync.Map[string, map[string]int64]
+	// reviewedGoals is the todos whose close the review of closes approved
+	// (checkClose), by session and name (reviewedKey): one of them that is
+	// a goal is not judged again at the turn's end.
+	reviewedGoals *csync.Map[string, string]
 	// dispatchMuCreate guards lazy creation of per-session entries in
 	// dispatchMu so two goroutines can't race to lock different mutex
 	// instances for the same session.
@@ -526,6 +530,7 @@ func NewSessionAgent(
 		justSummarized:        csync.NewMap[string, bool](),
 		compactLevels:         csync.NewMap[string, int](),
 		judgedGoals:           csync.NewMap[string, map[string]int64](),
+		reviewedGoals:         csync.NewMap[string, string](),
 		sessionStarts:         sessionStarts,
 		instructionsLoaded:    instructionsLoaded,
 		goals:                 opts.Goals,
@@ -3452,10 +3457,17 @@ func memName(answer string) string {
 }
 
 func (a *sessionAgent) askForName(ctx context.Context, sessionID, what string, systemPrompt []byte, prompt string, maxTokens int64) (*fantasy.AgentResult, Model, error) {
+	return a.askJudge(ctx, sessionID, what, systemPrompt, prompt, maxTokens, nil)
+}
+
+// askJudge is askForName at temperature, nil for the model's own: a check
+// asked again of the same thing gives the same verdict at 0.
+func (a *sessionAgent) askJudge(ctx context.Context, sessionID, what string, systemPrompt []byte, prompt string, maxTokens int64, temperature *float64) (*fantasy.AgentResult, Model, error) {
 	systemPromptPrefix := a.systemPromptPrefix.Get()
 	call := fantasy.AgentStreamCall{
-		Prompt:  prompt,
-		Headers: sessionHeaders(sessionID),
+		Prompt:      prompt,
+		Temperature: temperature,
+		Headers:     sessionHeaders(sessionID),
 		PrepareStep: func(callCtx context.Context, opts fantasy.PrepareStepFunctionOptions) (_ context.Context, prepared fantasy.PrepareStepResult, err error) {
 			prepared.Messages = opts.Messages
 			if systemPromptPrefix != "" {

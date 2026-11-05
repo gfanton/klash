@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -68,6 +69,14 @@ type memContext struct {
 	// subAgent is set for a sub-agent's session: it is not told of peers
 	// or sent on to other todos, since it works for its parent.
 	subAgent bool
+	// checkCloses has closing() hand gnosh each close it has not approved
+	// (checked holds MemClose.Checked of those it has), in closes; pushedAt
+	// is how many Ops the call had made when it entered each todo it
+	// entered.
+	checkCloses bool
+	checked     []string
+	closes      *[]MemClose
+	pushedAt    map[string]int
 }
 
 // memOp is one change to a mem, as gnomem's do hands it to gnosh and the
@@ -85,7 +94,7 @@ type memOp struct {
 var memNativeGas = gno.NativeGasInfo{Base: 1000, SlopeIdx: -1, SlopeKind: gno.SizeFlat}
 
 func init() {
-	for _, name := range []gno.Name{"caller", "today", "bound", "frames", "fresh", "pushed", "popped", "nameMade", "record", "pending", "find", "holding", "working", "mayWait", "waitOn", "subAgent", "help", "quote", "jsonString"} {
+	for _, name := range []gno.Name{"caller", "today", "bound", "frames", "fresh", "pushed", "popped", "nameMade", "record", "pending", "find", "holding", "working", "workKnown", "closing", "mayWait", "waitOn", "subAgent", "help", "quote", "jsonString"} {
 		info := memNativeGas
 		gno.RegisterNativeGas(memLibPath, name, &info)
 	}
@@ -122,6 +131,9 @@ func memNative(name gno.Name) func(*gno.Machine) {
 				return
 			}
 			*ctx.frames = append(*ctx.frames, MemFrame{Kind: "push", Id: memArg(m, 0), Purpose: memArg(m, 1), Session: ctx.caller})
+			if ctx.pushedAt != nil {
+				ctx.pushedAt[memArg(m, 0)] = len(*ctx.ops)
+			}
 		}
 	case "popped":
 		return func(m *gno.Machine) {
@@ -172,6 +184,33 @@ func memNative(name gno.Name) func(*gno.Machine) {
 		return func(m *gno.Machine) {
 			ctx := memCallContext(m, "working")
 			memPush(m, ctx.working != nil && ctx.working(memArg(m, 0), memArg(m, 1)))
+		}
+	case "workKnown":
+		return func(m *gno.Machine) {
+			memPush(m, memCallContext(m, "workKnown").working != nil)
+		}
+	case "closing":
+		return func(m *gno.Machine) {
+			ctx := memCallContext(m, "closing")
+			c := MemClose{Id: memArg(m, 0), Title: memArg(m, 1), Result: memArg(m, 2), Thoughts: memArg(m, 3)}
+			if !ctx.checkCloses || ctx.closes == nil || slices.Contains(ctx.checked, c.Checked()) || slices.Contains(ctx.checked, c.Id+"\x00*") {
+				return
+			}
+			if at, ok := ctx.pushedAt[c.Id]; ok && !slices.Contains(ctx.stack, c.Id) {
+				c.Entered = true
+				// What the input did in mem after entering it, other than
+				// entering and closing it, is work done in it.
+				for _, op := range (*ctx.ops)[min(at, len(*ctx.ops)):] {
+					// A thought kept on the todo itself (its name is the
+					// todo's, "#", the thought's) is no work done in it: the
+					// push's receipt asks for one before the pop.
+					if op.Name != c.Id && !strings.HasPrefix(op.Name, c.Id+"#") {
+						c.Worked = true
+						break
+					}
+				}
+			}
+			*ctx.closes = append(*ctx.closes, c)
 		}
 	case "mayWait":
 		return func(m *gno.Machine) {

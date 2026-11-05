@@ -144,10 +144,9 @@ func (f fakeSigner) Sign(tx std.Tx, chainID string, accNum, seq uint64) (*std.Tx
 // session account under master when one is set), and calls that use
 // 12345 gas. It keeps the transaction broadcast.
 type fakeNode struct {
-	mu          sync.Mutex
-	broadcast   []std.Tx
-	queries     []string
-	failDeliver string // when set, broadcast_tx_commit delivers this as a failed log
+	mu        sync.Mutex
+	broadcast []std.Tx
+	queries   []string
 }
 
 func (n *fakeNode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -222,9 +221,6 @@ func (n *fakeNode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ok := map[string]any{"Error": nil, "Data": nil, "Log": ""}
 		deliver := map[string]any{"ResponseBase": map[string]any{"Error": nil, "Data": b64([]byte(data)), "Events": evs, "Log": ""}, "GasUsed": "12345"}
-		if n.failDeliver != "" {
-			deliver = map[string]any{"ResponseBase": map[string]any{"Error": map[string]any{"@type": "/vm.VMError"}, "Data": nil, "Log": n.failDeliver}, "GasUsed": "12345"}
-		}
 		result = map[string]any{
 			"check_tx":   map[string]any{"ResponseBase": ok, "GasUsed": "0"},
 			"deliver_tx": deliver,

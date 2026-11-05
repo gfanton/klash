@@ -12,8 +12,8 @@ import (
 // chain runs in order, all or nothing.
 
 // NewPlan makes plan id with its root todo "t" titled title, worked by its
-// owner and members, or by anyone if open; a hold lasts lease seconds
-// unless renewed.
+// owner and members, or by anyone if open; a hold lasts lease blocks unless
+// renewed (gno.land makes a block every ~3 s, so 20 is about a minute).
 func NewPlan(cur realm, id, title string, open bool, lease int) string {
 	prev := cur.Previous()
 	if !prev.IsUser() {
@@ -26,7 +26,7 @@ func NewPlan(cur realm, id, title string, open bool, lease int) string {
 		panic("plan " + id + " exists")
 	}
 	if lease < minLease || lease > maxLease {
-		panic("a lease is " + strconv.Itoa(minLease) + " to " + strconv.Itoa(maxLease) + " seconds")
+		panic("a lease is " + strconv.Itoa(minLease) + " to " + strconv.Itoa(maxLease) + " blocks")
 	}
 	p := &Plan{ID: id, Owner: prev.Address(), Open: open, Lease: int64(lease)}
 	p.Self = p
@@ -274,7 +274,9 @@ func Reopen(cur realm, plan, label, id, why string) {
 
 // Renew extends the caller's holds on ids (space-separated) for another
 // lease, and, when waiting, its place in frame's queue: gnosh's renewer,
-// for each session whose turn goes on, names the todos on its stack.
+// for each session whose turn goes on, names the todos on its stack. Each
+// renewed hold goes out as a "renewed" event with its new lease end (a
+// place as "waitrenewed"), so a watcher knows when it runs out.
 func Renew(cur realm, plan, label, ids, frame string, waiting bool) {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
@@ -286,6 +288,7 @@ func Renew(cur realm, plan, label, ids, frame string, waiting bool) {
 			panic("you do not hold " + id)
 		}
 		c.extend(t)
+		p.emit("renewed", id, "holder", holder, "until", strconv.FormatInt(t.Until, 10))
 	}
 	if waiting {
 		if frame != "" {
@@ -331,12 +334,82 @@ func Reclaim(cur realm, plan, label string) {
 	c.end()
 }
 
-// Close ends plan: nothing more may change in it. Only its owner.
+// Close ends plan: nothing more may change in it, and Purge may free it.
+// Only its owner.
 func Close(cur realm, plan string) {
 	p := getPlan(plan)
 	p.mustOwn(cur)
 	p.Closed = true
 	p.emit("closed", "")
+}
+
+// Purge frees a closed plan, up to purgePage of its todos a call, so the
+// storage it took is freed and the deposit that paid for it comes back (on
+// gno.land a byte locks 100 ugnot, and a todo takes about 2.3 KB); the call
+// that frees the last todos deletes the plan itself. It answers how many
+// todos are left: 0 when the plan is gone. Only its owner, once closed.
+func Purge(cur realm, plan string) int {
+	p := getPlan(plan)
+	p.mustOwn(cur)
+	if !p.Closed {
+		panic("plan " + plan + " is open: Close it first")
+	}
+	freed := 0
+	for b := 0; b < todoBuckets && freed < purgePage; b++ {
+		m := p.Todos[b]
+		if m == nil {
+			continue
+		}
+		var ids []string
+		for id := range m {
+			if freed+len(ids) >= purgePage {
+				break
+			}
+			ids = append(ids, id)
+		}
+		for _, id := range ids {
+			t := m[id]
+			// A todo and its parent point at each other (Up, Kids), and
+			// counted references never free a cycle: cut both ends.
+			t.Up, t.Kids = nil, nil
+			delete(m, id)
+		}
+		freed += len(ids)
+		if len(m) == 0 {
+			p.Todos[b] = nil
+		}
+	}
+	p.Count -= freed
+	if p.Count > 0 {
+		p.emit("purging", "", "left", strconv.Itoa(p.Count))
+		return p.Count
+	}
+	// The last todos are gone: the rest of the plan goes with them, its
+	// self pointers cut first (an object that points at itself is a cycle).
+	p.Root = nil
+	for b := range p.Agents {
+		for _, a := range p.Agents[b] {
+			a.Holds = nil
+		}
+		p.Agents[b] = nil
+	}
+	var frames []string
+	for frame := range p.Queues {
+		frames = append(frames, frame)
+	}
+	for _, frame := range frames {
+		q := p.Queues[frame]
+		for _, pg := range q.Pages {
+			pg.Self = nil
+		}
+		q.Pages, q.Self = nil, nil
+		delete(p.Queues, frame)
+	}
+	p.Queues, p.Members = nil, nil
+	p.emit("purged", "")
+	p.Self = nil
+	delete(plans[hash(p.ID, planBuckets)], p.ID)
+	return 0
 }
 
 func sha256Hex(s string) string {

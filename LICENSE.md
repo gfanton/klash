@@ -15,9 +15,10 @@ not papered over.
 Two parts of the tree carry their own notices:
 
 - `internal/gnovm/` has its own `LICENSE.md`: the same License and the same
-  kind of Additional Terms, and within it `stdlibs/` keeps gno's copyright
-  (NewTendermint, LLC), its licence and its Additional Terms, and the files in
-  it that came from Go keep Go's BSD licence.
+  kind of Additional Terms, and within it `stdlibs/` and
+  `klashlibs/klash/bptree/v0` keep gno's copyright (NewTendermint, LLC), its
+  licence and its Additional Terms, and the files in `stdlibs/` that came
+  from Go keep Go's BSD licence.
 - The tm2 packages used by the x402 client are Apache-2.0
   (github.com/gnolang/gno/tm2/LICENSE).
 
@@ -800,35 +801,43 @@ conflicts will be worked out later.
   with no further restrictions (section 10), which the Competing Use clause is.
   Since `internal/gnovm/` links the GnoVM into the gnosh binary and embeds the
   Gno standard library in it, that conflict is live today, not hypothetical. No
-  gnosh binary should be released until it is settled. The ways out are the
-  ones recorded in `internal/gnovm/LICENSE.md`: a linking exception from
-  NewTendermint, LLC plus an additional permission from the Licensor; waiting
-  for each Crush version's FSL to become MIT two years after Charm released it,
-  since MIT code can be conveyed under this License; or splitting the GnoVM
-  worker out into its own program so the FSL binary links none of it.
+  gnosh binary should be released until it is settled. The ways out build on
+  the ones recorded in `internal/gnovm/LICENSE.md`: a linking exception from
+  NewTendermint, LLC for the GnoVM and the other gno code gnosh links or
+  embeds, plus an additional permission from the Licensor for gnosh's own
+  code, from that subsystem's Licensor, Jae Kwon, for that subsystem, and, for
+  code others contributed, from NewTendermint, LLC or that code's copyright
+  holder; waiting for each Crush version's FSL to become MIT two years after
+  Charm released it, since MIT code can be conveyed under this License; or
+  splitting the GnoVM worker out into its own program so the FSL binary links
+  none of it.
 - **Two Licensors, to be reconciled.** `internal/gnovm/LICENSE.md` names Jae
   Kwon as the Licensor for that subsystem; this file names NewTendermint, LLC,
   with Jae Kwon acting for it. Both instruments are otherwise the same. Which
   one governs the fork as a whole is for the legal review to settle; until then
   each file governs what it says it governs.
-- **Contributions.** CONTRIBUTING.md grants a contribution to the Maintainer
-  and, separately, to Charmbracelet, Inc., so that work can still go upstream.
-  Those separate grants to Charm are what let the fork keep that path open;
-  they are not a grant of anyone's rights under this file. Work that belongs,
-  or is to be assigned, to Jae Kwon or a company he controls is licensed to
-  the Maintainer only; what was submitted under an earlier version of
-  CONTRIBUTING.md, such as pull request #6, may be licensed to Charm too,
-  except what Jae Kwon made.
+- **Contributions.** CONTRIBUTING.md grants a contribution to the Maintainer,
+  NewTendermint, LLC, and, separately, to Charmbracelet, Inc., so that work
+  can still go upstream. Those separate grants to Charm are what let the fork
+  keep that path open; they are not a grant of anyone's rights under this
+  file. Work that belongs, or is to be assigned, to Jae Kwon or a company he
+  controls is not licensed to Charm, though what was submitted under a
+  version of CONTRIBUTING.md older than pull request #16, such as pull
+  request #6, may be, except what Jae Kwon made. Jae Kwon, the Maintainer
+  under the versions of CONTRIBUTING.md before NewTendermint, LLC became it,
+  has assigned his rights under them to NewTendermint, LLC.
+  The "Reservation of rights" above speaks for each copyright holder in its
+  own code; the contributor licences it mentions are NewTendermint, LLC's.
 - **Remote users.** Section 13 of the License asks that whoever modifies the
   Program, and lets people use the modified version remotely (for instance
   through gnosh's server mode or its channels), offer them its Corresponding
   Source. That binds gnosh's own remote interfaces: they should link to gnosh's
   source.
-- **The GnoVM's own terms.** The GnoVM and the Gno standard library gnosh
-  embeds are under the GNO Network GPL v6 with NewTendermint, LLC's own
-  Additional Terms (Strong Attribution). Those terms apply independently of
-  this file: gnosh's interface must carry NewTendermint's attribution notice
-  too.
+- **The GnoVM's own terms.** The GnoVM and the gno code gnosh embeds (the Gno
+  standard library and `internal/gnovm/klashlibs/klash/bptree/v0`) are under
+  the GNO Network GPL v6 with NewTendermint, LLC's own Additional Terms
+  (Strong Attribution). Those terms apply independently of this file: gnosh's
+  interface must carry NewTendermint's attribution notice too.
 - **Authorship.** Much of this fork was written with AI assistance at Jae
   Kwon's direction. How much copyright that leaves for the clause above to rest
   on is a question for the legal review.

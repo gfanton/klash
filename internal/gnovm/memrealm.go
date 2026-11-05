@@ -198,6 +198,9 @@ type memCall struct {
 	// Waits is what the input's Next waits for, when it waits; nil
 	// otherwise (PARALLEL.md).
 	Waits []MemWait
+	// Closes are the closes gnosh is to check before the input is kept
+	// (memContext.checkCloses).
+	Closes []MemClose
 	// At is the call's time, which its Ops share.
 	At int64
 	// batch is what the call wrote, held back from the store until commit;
@@ -321,6 +324,8 @@ func (r *memRealm) call(code string, ctx memContext) (call memCall, err error) {
 	call.NilPush = -1
 	ctx.nilPush = &call.NilPush
 	ctx.waits = &call.Waits
+	ctx.closes = &call.Closes
+	ctx.pushedAt = map[string]int{}
 	if ctx.today == "" {
 		ctx.today = now.Format(time.DateOnly)
 	}
@@ -334,6 +339,7 @@ func (r *memRealm) call(code string, ctx memContext) (call memCall, err error) {
 		}
 		call.Ops = nil
 		call.Frames = nil
+		call.Closes = nil
 		err = errors.New(msg)
 	}
 	defer func() {

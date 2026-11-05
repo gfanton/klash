@@ -69,7 +69,7 @@ func TestHostFrames(t *testing.T) {
 		{Kind: "push", Id: "fix-flaky-test/rerun-suite", Purpose: "rerun the suite", Session: "s1"},
 	}, res.Frames)
 	require.Contains(t, res.Output, "done `fix-flaky-test/find-why-fails` \"find why it fails\" → it races on the shared port\n")
-	require.Contains(t, res.Output, "in `fix-flaky-test/rerun-suite` \"rerun the suite\": when it is done, pop it")
+	require.Contains(t, res.Output, "in `fix-flaky-test/rerun-suite` \"rerun the suite\": do it now, with your tools")
 	require.NotContains(t, res.Output, "next:")
 	stack = []string{"fix-flaky-test", "fix-flaky-test/rerun-suite"}
 

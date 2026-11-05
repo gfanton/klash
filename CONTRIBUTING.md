@@ -34,10 +34,13 @@ was first submitted under, even if you submit it again (by rebasing, for
 example), unless you agree otherwise in writing, other than by submitting
 new work.
 
-**Maintainer** means Jae Kwon, the maintainer of this fork, and their
-successors and assigns. The Maintainer's own work, listed below, is not a
-Contribution under this agreement, whoever submits it, and the work in the
-first item never was one under any earlier version of this file either:
+**Maintainer** means NewTendermint, LLC, and its successors and assigns. Jae
+Kwon was the Maintainer under the versions of this file before NewTendermint,
+LLC became it; he assigns to NewTendermint, LLC all his rights as the
+Maintainer under those versions, including every licence and promise given to
+him under them, whenever given. The Maintainer's own work, listed below, is
+not a Contribution under this agreement, whoever submits it, and the work in
+the first item never was one under any earlier version of this file either:
 
 - work Jae Kwon makes, by himself or with any tools and AI agents, and his
   part of any work he makes with others;
@@ -51,14 +54,16 @@ first item never was one under any earlier version of this file either:
 - work that belongs to a successor or assign and that they make while they
   are the Maintainer.
 
-Whoever submits work in the second item, other than work they did not make
-that they mark "Submitted on behalf of a third party" as section 4 asks,
-grants the Maintainer, and not Charm, the licences in sections 1 and 2 for
-it, and makes the promises in section 4 about it, as if it were a
-Contribution. Work not listed above does not become the Maintainer's own
-work because the Maintainer asked for it, directed it, ran the tools or AI
-agents it was made with, merged it, rebased it or submitted it again. The
-Maintainer grants nothing under this agreement by submitting work.
+Whoever submits work in the second item that is not also in the first,
+other than work they did not make that they mark "Submitted on behalf of a
+third party" as section 4 asks, grants the Maintainer, and not Charm, the
+licences in sections 1 and 2 for it, and makes the promises in section 4
+about it, as if it were a Contribution. Work not listed above does not
+become the Maintainer's own work because Jae Kwon or the Maintainer asked
+for it, directed it, ran the tools or AI agents it was made with, merged it,
+rebased it or submitted it again. Apart from the assignment above, neither
+Jae Kwon nor the Maintainer grants anything under this agreement by
+submitting work. Listing work here does not change who owns it.
 
 **Charm** means Charmbracelet, Inc., the author of the upstream Crush
 project this fork is derived from.

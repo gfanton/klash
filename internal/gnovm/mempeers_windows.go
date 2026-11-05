@@ -16,6 +16,10 @@ package gnovm
 
 func turnHeld(dir, session string) bool { return false }
 
+// turnLocksKnown is false: no turn lock can be read, so gnosh cannot tell
+// which sessions work, and mem keeps every hold (gnomem's workKnown).
+const turnLocksKnown = false
+
 func (h *memHost) ring() {}
 
 func (h *memHost) activate(name string) bool { return false }

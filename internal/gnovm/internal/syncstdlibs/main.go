@@ -10,7 +10,8 @@
 // Command syncstdlibs copies the Gno standard library sources from the
 // github.com/gnolang/gno version in go.mod into internal/gnovm/stdlibs, where
 // they are embedded: a deployed gnosh has no GNOROOT to load them from.
-// (klashlibs, fmt included, is gnosh's own and is not generated.)
+// (klashlibs is not generated: it is gnosh's own, except klash/bptree/v0, a
+// copy of gno's p/nt/bptree/v0 made by hand.)
 // Run it with `go generate ./internal/gnovm` after changing the gno version. The
 // copy's VERSION file must match go.mod, or TestEmbeddedStdlibsVersion fails,
 // since the embedded sources and the native bindings compiled into gnosh must

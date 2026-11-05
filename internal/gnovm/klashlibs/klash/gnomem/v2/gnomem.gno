@@ -155,7 +155,7 @@ func (m *Mem) Start(name string) {
 	if m.holder(name, it, me) != "" {
 		panic(m.heldText(name, it))
 	}
-	m.do(Op{Kind: "set", Name: name, Field: "doing", Old: "", New: me})
+	m.do(Op{Kind: "set", Name: name, Field: "doing", Old: it.Doing, New: me})
 	println("started " + ref(name, it.Title))
 }
 
@@ -202,6 +202,9 @@ func (m *Mem) Done(name string, result ...string) {
 		panic(ref(name, it.Title) + " has open todos " + m.refs(m.openSteps(name)) + ": Done or Drop them first")
 	}
 	r := clip(text("the result", strings.Join(result, " ")), maxText)
+	if !m.workedUnder(name, it) && it.For == "" {
+		closing(name, it.Title, r, thoughtTexts(it.Notes))
+	}
 	if it.Wait != "" {
 		m.do(Op{Kind: "set", Name: name, Field: "wait", Old: it.Wait})
 	}

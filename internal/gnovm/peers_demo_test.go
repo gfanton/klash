@@ -49,6 +49,11 @@ const peerEnv = "GNOSH_PEER_CHILD"
 // leaf 1 to 2.6 s, by its name; a shape and the build 400 ms; the notes
 // 1.2 s; the task 300 ms.
 func peerWork(id string) time.Duration {
+	// GNOSH_PEER_WORK (a duration) makes every todo's work that long: the
+	// swarm's control (peers_swarm_test.go).
+	if d, err := time.ParseDuration(os.Getenv("GNOSH_PEER_WORK")); err == nil {
+		return d
+	}
 	name := stepName(id)
 	switch {
 	case strings.HasSuffix(name, "-area"), strings.HasSuffix(name, "-perimeter"):

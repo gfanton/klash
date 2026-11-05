@@ -69,8 +69,23 @@ func holding(text string) (names, kinds []string, statements bool)
 
 // working reports whether session, another than this input's, is working on
 // todo id now: in a busy stretch, with the todo, or one above it, on its
-// stack (PARALLEL.md); false when gnosh cannot tell.
+// stack (PARALLEL.md); with id "", whether it is in a busy stretch at all.
+// false when gnosh cannot tell.
 func working(session, id string) bool
+
+// workKnown reports whether gnosh can tell which sessions are working:
+// false with no turn locks to read (no data directory, or Windows), when
+// working always answers false.
+func workKnown() bool
+
+// closing tells gnosh this input closes todo id, titled title, as done
+// with result: a todo with no todo under it done (its todos, if any, were
+// dropped or were questions the user answered), not an answer the user
+// gave; thoughts are the thoughts kept on it, one a line. gnosh checks such a close before it keeps the input
+// (CLOSE-CHECK.md): when it has not approved this one, it keeps nothing of
+// the input, checks the close against what was done in the todo, and runs
+// the input again or refuses it. The realm goes on as if it were kept.
+func closing(id, title, result, thoughts string)
 
 // mayWait reports whether this input's Next may wait for working sessions:
 // its last statement is a bare mem.Next(), its session is not a sub-agent,
