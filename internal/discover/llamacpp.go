@@ -46,7 +46,7 @@ func (e *llamacppEnricher) EnrichModels(ctx context.Context, cfg Config, resolve
 	// commonly already ends in /v1. Without the strip that config asks
 	// for /v1/v1/models, llama-server answers 404, and the enricher
 	// silently returns the models with no context window at all.
-	resp, err := doRequest(ctx, http.MethodGet, stripV1Suffix(cfg.BaseURL), "/v1/models", cfg.APIKey, cfg.ExtraHeaders, resolver, nil)
+	resp, err := doRootRequest(ctx, http.MethodGet, cfg.BaseURL, "/v1/models", cfg.APIKey, cfg.ExtraHeaders, resolver, nil)
 	if err != nil {
 		return models, nil
 	}

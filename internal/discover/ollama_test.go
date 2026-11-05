@@ -61,6 +61,33 @@ func TestOllamaEnricher(t *testing.T) {
 		require.Equal(t, int64(0), result[2].ContextWindow)
 	})
 
+	t.Run("base URL from a variable that ends in /v1", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/show" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(ollamaShowResponse{
+				ModelInfo: map[string]any{
+					"llama.context_length": float64(8192),
+				},
+			})
+		}))
+		defer srv.Close()
+
+		cfg := Config{ID: "test-ollama", BaseURL: "$OLLAMA_URL"}
+		resolver := &envResolver{env: map[string]string{"$OLLAMA_URL": srv.URL + "/v1"}}
+		models := []catwalk.Model{{ID: "llama3:latest"}}
+
+		e := &ollamaEnricher{}
+		result, err := e.EnrichModels(context.Background(), cfg, resolver, models)
+		require.NoError(t, err)
+		require.Equal(t, int64(8192), result[0].ContextWindow,
+			"the /v1 a variable resolves to must be stripped too")
+	})
+
 	t.Run("preserves existing context window", func(t *testing.T) {
 		t.Parallel()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

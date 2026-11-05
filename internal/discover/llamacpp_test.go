@@ -73,6 +73,33 @@ func TestLlamacppEnricher(t *testing.T) {
 			"a base URL with /v1 must not be asked for /v1/v1/models")
 	})
 
+	t.Run("base URL from a variable that ends in /v1", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v1/models" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(llamacppModelsResponse{
+				Data: []llamacppModelEntry{
+					{ID: "m1", Meta: llamacppMeta{NCtx: 8192}},
+				},
+			})
+		}))
+		defer srv.Close()
+
+		cfg := Config{ID: "test-llamacpp", BaseURL: "$LLAMA_URL"}
+		resolver := &envResolver{env: map[string]string{"$LLAMA_URL": srv.URL + "/v1"}}
+		models := []catwalk.Model{{ID: "m1"}}
+
+		e := &llamacppEnricher{}
+		result, err := e.EnrichModels(context.Background(), cfg, resolver, models)
+		require.NoError(t, err)
+		require.Equal(t, int64(8192), result[0].ContextWindow,
+			"the /v1 a variable resolves to must be stripped too")
+	})
+
 	t.Run("falls back to n_ctx_train when n_ctx is zero", func(t *testing.T) {
 		t.Parallel()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
