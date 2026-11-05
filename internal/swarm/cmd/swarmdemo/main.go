@@ -23,7 +23,8 @@
 //	-slow 3:100s,4:100s:renew -slow-after 1m
 //	                      the first leaf worker 3 takes a minute in takes
 //	                      it 100 s, more than a shorter lease; worker 4's
-//	                      too, but it renews its hold as it goes
+//	                      too, but it renews its hold as it goes (every
+//	                      third of a lease, counted in blocks)
 //	-halt-pid P -halt-at 2m -halt-for 1m
 //	                      the chain's node, process P on this machine, is
 //	                      frozen (SIGSTOP) for a minute, 2 minutes in
@@ -112,7 +113,7 @@ type follower struct {
 	assigned map[string][]assignment // holder → todos the realm gave it
 	wake     map[string]chan struct{}
 	relapse  map[string]bool     // holders whose place in a queue ran out: they ask again
-	holds    map[string]int64    // todo → its hold's lease end (unix seconds), as the events say
+	holds    map[string]int64    // todo → its hold's lease end (a block height), as the events say
 	done     map[string][]string // todo → the results the chain took for it
 	events   []eventStat
 	blocks   []blockStat
@@ -146,7 +147,7 @@ type eventStat struct {
 	Kind   string  `json:"k"`
 	Todo   string  `json:"id"`              // the todo, or the frame a waiter waits in
 	Worker int     `json:"w,omitempty"`     // the holder's worker number
-	Until  float64 `json:"until,omitempty"` // a hold's or a place's end, seconds from the start
+	Until  int64   `json:"until,omitempty"` // a hold's or a place's lease end: a block height
 }
 
 func newFollower(plan string, start time.Time) *follower {
@@ -191,7 +192,7 @@ func (f *follower) event(b gnochain.Block, e gnochain.Event) {
 	var until int64
 	if u := e.Get("until"); u != "" {
 		until, _ = strconv.ParseInt(u, 10, 64)
-		ev.Until = time.Unix(until, 0).Sub(f.start).Seconds()
+		ev.Until = until
 	}
 	f.events = append(f.events, ev)
 	switch kind {
@@ -281,20 +282,27 @@ func (f *follower) assignment(ctx context.Context, holder string) (assignment, e
 }
 
 // overdue says whether a worker of this run waits while a hold the chain
-// gave ran out before now (unix seconds): no call may come to take it
-// back.
-func (f *follower) overdue(now int64) bool {
+// gave has run out by the next block (a lease ends at a height): no call
+// may come to take it back.
+func (f *follower) overdue() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.wake) == 0 || f.finished {
 		return false
 	}
 	for _, u := range f.holds {
-		if u < now {
+		if u <= f.last+1 {
 			return true
 		}
 	}
 	return false
+}
+
+// height is the last block the follower handled.
+func (f *follower) height() int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.last
 }
 
 // workerOf is the worker number in a holder ("<address>|-|w17"), or 0.
@@ -377,7 +385,7 @@ type report struct {
 	Check   float64     `json:"check_seconds"`
 	WorkSum float64     `json:"work_sum_seconds"` // the plan's work, all todos
 	PopNext bool        `json:"popnext"`
-	Lease   int         `json:"lease"`
+	Lease   int         `json:"lease"` // blocks
 	Plan    string      `json:"plan"`
 	Start   time.Time   `json:"start"`
 	Wall    float64     `json:"wall_seconds"`
@@ -414,7 +422,7 @@ func run(args []string) error {
 	workMax := fs.Duration("work-max", 0, "the most a todo's work takes; each todo's is fixed by its id")
 	check := fs.Duration("check", 0, "time a check takes (a group's todo, the root's: what has todos under it); 0: as -work")
 	popNext := fs.Bool("popnext", true, "one PopNext a todo; false: Pop, then Next")
-	lease := fs.Int("lease", 300, "lease, seconds")
+	lease := fs.Int("lease", 100, "lease, in blocks (gno.land makes a block every ~3 s)")
 	gasNext := fs.Int64("gas-next", 60_000_000, "gas wanted for a Next (and a Renew or Reclaim)")
 	gasPop := fs.Int64("gas-pop", 60_000_000, "gas wanted for a Pop")
 	gasPopNext := fs.Int64("gas-popnext", 60_000_000, "gas wanted for a PopNext")
@@ -549,7 +557,7 @@ func run(args []string) error {
 		go func() {
 			for fctx.Err() == nil {
 				time.Sleep(time.Second)
-				if !fol.overdue(time.Now().Unix()) {
+				if !fol.overdue() {
 					continue
 				}
 				t0 := time.Now()
@@ -722,19 +730,22 @@ func run(args []string) error {
 					st := slowStat{Worker: i, Todo: a.ID, From: claimed, Work: slowness.d.Seconds(), Renew: slowness.renew}
 					w = slowness.d
 					if slowness.renew {
-						// Renew a third of a lease at a time, as gnosh's
-						// renewer does for a turn that goes on.
+						// Renew every third of a lease, in blocks, as
+						// gnosh's renewer does for a turn that goes on.
 						end := time.Now().Add(w)
-						step := time.Duration(*lease) * time.Second / 3
-						for time.Until(end) > step {
-							time.Sleep(step)
-							if _, err := sendGas("Renew", *gasNext, gnochain.MsgCallOf{PkgPath: *realm, Func: "Renew", Args: []string{*planID, label, a.ID, "", "false"}}); err != nil {
-								fmt.Fprintln(os.Stderr, label, "renew", a.ID, reason(err.Error()))
-							} else {
-								st.Renews++
+						step := max(int64(*lease/3), 1)
+						last := fol.height()
+						for time.Now().Before(end) {
+							time.Sleep(min(250*time.Millisecond, time.Until(end)))
+							if h := fol.height(); h >= last+step && time.Now().Before(end) {
+								if _, err := sendGas("Renew", *gasNext, gnochain.MsgCallOf{PkgPath: *realm, Func: "Renew", Args: []string{*planID, label, a.ID, "", "false"}}); err != nil {
+									fmt.Fprintln(os.Stderr, label, "renew", a.ID, reason(err.Error()))
+								} else {
+									st.Renews++
+								}
+								last = fol.height()
 							}
 						}
-						time.Sleep(time.Until(end))
 					} else {
 						time.Sleep(w)
 					}
