@@ -156,6 +156,10 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 // fetch returns it in format: text, markdown or html. It refuses a body that
 // is not UTF-8, saying what it is, and truncates one at MaxFetchSize.
 func formatFetched(body []byte, contentType, format string) (string, error) {
+	cut := int64(len(body)) >= MaxFetchSize
+	if cut {
+		body = trimCutRune(body)
+	}
 	content := string(body)
 	if !utf8.ValidString(content) {
 		return "", notUTF8(contentType, 0)
@@ -201,7 +205,10 @@ func formatFetched(body []byte, contentType, format string) (string, error) {
 	}
 	// truncate content if it exceeds max read size
 	if int64(len(content)) >= MaxFetchSize {
-		content = content[:MaxFetchSize]
+		content = strings.ToValidUTF8(content[:MaxFetchSize], "")
+		cut = true
+	}
+	if cut {
 		content += fmt.Sprintf("\n\n[Content truncated to %d bytes]", MaxFetchSize)
 	}
 	return content, nil
