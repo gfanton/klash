@@ -62,6 +62,7 @@ import (
 // sessions keep one: a conversation whose slot another request takes
 // re-reads all of itself on its next step.
 func TestScenarios(t *testing.T) {
+	t.Parallel()
 	// GNOVM_SCENARIO_KLASH is its name from before the rename.
 	gnosh := cmp.Or(os.Getenv("GNOVM_SCENARIO_GNOSH"), os.Getenv("GNOVM_SCENARIO_KLASH"))
 	if gnosh == "" {

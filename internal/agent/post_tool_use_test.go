@@ -166,7 +166,7 @@ func TestPostToolUseHaltAndContext(t *testing.T) {
 // edited. Without a fresh read recorded, its next edit of the file would
 // be refused as modified since it was read.
 func TestPostToolUseResyncsAFileAHookRewrote(t *testing.T) {
-	t.Parallel()
+	// Its subtests rewrite the same file, so they run in order.
 
 	dir := t.TempDir()
 	file := filepath.Join(dir, "main.go")

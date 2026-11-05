@@ -17,6 +17,7 @@ func TestMetricsSink(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			url, key := c.opts.MetricsSink()
 			if url != c.wantURL || key != c.wKey {
 				t.Fatalf("MetricsSink() = (%q,%q), want (%q,%q)", url, key, c.wantURL, c.wKey)

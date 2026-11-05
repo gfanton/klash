@@ -508,7 +508,7 @@ func TestLargeLine(t *testing.T) {
 // the turn answers; rows out of the context already, popped or behind the
 // summary, are passed over.
 func TestSlideRange(t *testing.T) {
-	t.Parallel()
+	// Its subtests share the frames g and s1, so they run in order.
 
 	work := func(id string, n int) message.ToolResult {
 		return message.ToolResult{ToolCallID: id, Name: "work", Content: strings.Repeat("line of the work\n", 30*n)}

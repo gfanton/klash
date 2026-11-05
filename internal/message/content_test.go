@@ -260,6 +260,7 @@ func TestToolCallSummary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := tt.call.Summary()
 			if tt.check != nil {
 				tt.check(t, got)

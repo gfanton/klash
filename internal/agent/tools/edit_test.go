@@ -141,6 +141,7 @@ func TestReplaceContentInAFileChangedSinceItWasRead(t *testing.T) {
 	}
 
 	t.Run("exact and once", func(t *testing.T) {
+		t.Parallel()
 		edit, filePath := stale(t, "alpha\nbeta\n", "")
 		resp, err := replaceContent(edit, filePath, "alpha", "ALPHA", false, fantasy.ToolCall{ID: "call"})
 		require.NoError(t, err)
@@ -153,6 +154,7 @@ func TestReplaceContentInAFileChangedSinceItWasRead(t *testing.T) {
 			"the file holds changes the agent has not seen, so it is not read: a write of it is still refused")
 	})
 	t.Run("replace_all", func(t *testing.T) {
+		t.Parallel()
 		edit, filePath := stale(t, "alpha\nalpha\n", "")
 		resp, err := replaceContent(edit, filePath, "alpha", "ALPHA", true, fantasy.ToolCall{ID: "call"})
 		require.NoError(t, err)
@@ -160,6 +162,7 @@ func TestReplaceContentInAFileChangedSinceItWasRead(t *testing.T) {
 		require.Contains(t, resp.Content, staleEditNote)
 	})
 	t.Run("deleted exactly", func(t *testing.T) {
+		t.Parallel()
 		edit, filePath := stale(t, "alpha\nbeta\n", "")
 		resp, err := deleteContent(edit, filePath, "beta\n", false, fantasy.ToolCall{ID: "call"})
 		require.NoError(t, err)
@@ -167,24 +170,28 @@ func TestReplaceContentInAFileChangedSinceItWasRead(t *testing.T) {
 		require.Contains(t, resp.Content, staleEditNote)
 	})
 	t.Run("only after whitespace", func(t *testing.T) {
+		t.Parallel()
 		edit, filePath := stale(t, "\tif x {\n\t\treturn\n\t}\n", "")
 		resp, err := replaceContent(edit, filePath, "  if x {\n    return\n  }", "  if y {\n    return\n  }", false, fantasy.ToolCall{ID: "call"})
 		require.NoError(t, err)
 		refused(t, resp, filePath, "\tif x {\n\t\treturn\n\t}\n")
 	})
 	t.Run("more than once", func(t *testing.T) {
+		t.Parallel()
 		edit, filePath := stale(t, "alpha\nalpha\n", "")
 		resp, err := replaceContent(edit, filePath, "alpha", "ALPHA", false, fantasy.ToolCall{ID: "call"})
 		require.NoError(t, err)
 		refused(t, resp, filePath, "alpha\nalpha\n")
 	})
 	t.Run("not there", func(t *testing.T) {
+		t.Parallel()
 		edit, filePath := stale(t, "alpha\n", "")
 		resp, err := replaceContent(edit, filePath, "gamma", "GAMMA", false, fantasy.ToolCall{ID: "call"})
 		require.NoError(t, err)
 		refused(t, resp, filePath, "alpha\n")
 	})
 	t.Run("outside the working directory", func(t *testing.T) {
+		t.Parallel()
 		edit, filePath := stale(t, "alpha\n", t.TempDir())
 		resp, err := replaceContent(edit, filePath, "alpha", "ALPHA", false, fantasy.ToolCall{ID: "call"})
 		require.NoError(t, err)
