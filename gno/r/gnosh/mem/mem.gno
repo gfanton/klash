@@ -78,6 +78,7 @@ const (
 	maxLabel     = 64   // bytes in an agent label
 	maxDropUnder = 32   // open todos one Drop closes with it
 	maxParallel  = 16   // open todos under a todo when it is made parallel
+	purgePage    = 200  // todos one Purge frees
 	minLease     = 10   // blocks
 	maxLease     = 3600 // blocks: three hours at gno.land's block a 3 s
 

@@ -147,6 +147,32 @@ func TestLeaseLapses(cur realm, t *testing.T) {
 	pop(cur, w2, "lease", "t/a", tok2, "done")
 }
 
+// Purge frees a closed plan a page of todos at a time, then the plan.
+func TestPurge(cur realm, t *testing.T) {
+	fresh(cur, t, "pg")
+	for c := 0; c < 4; c++ {
+		var names, titles []string
+		for i := 0; i < 64 && c*64+i < 250; i++ {
+			names = append(names, "a"+strconv.Itoa(c*64+i))
+			titles = append(titles, "todo "+strconv.Itoa(c*64+i))
+		}
+		add(cur, owner, "pg", "t", strings.Join(names, "\n"), strings.Join(titles, "\n"))
+	}
+	held(t, next(cur, w1, "pg", "")) // an agent with a hold, and so a todo it points at
+	// The caller is the realm set before AbortsContains, not inside it.
+	testing.SetRealm(user(owner))
+	uassert.AbortsContains(t, cur, "plan pg is open: Close it first", func() { Purge(cross(cur), "pg") })
+	testing.SetRealm(user(owner))
+	Close(cross(cur), "pg")
+	testing.SetRealm(user(w1))
+	uassert.AbortsContains(t, cur, "only the plan's owner may do this", func() { Purge(cross(cur), "pg") })
+	testing.SetRealm(user(owner))
+	uassert.Equal(t, 51, Purge(cross(cur), "pg"), "251 todos, 200 a call")
+	uassert.True(t, hasPlan("pg"), "the plan stays until its last todo goes")
+	uassert.Equal(t, 0, Purge(cross(cur), "pg"))
+	uassert.False(t, hasPlan("pg"), "the plan is gone")
+}
+
 // Renew keeps a hold past its first lease.
 func TestRenew(cur realm, t *testing.T) {
 	fresh(cur, t, "renew")
