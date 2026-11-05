@@ -274,7 +274,9 @@ func Reopen(cur realm, plan, label, id, why string) {
 
 // Renew extends the caller's holds on ids (space-separated) for another
 // lease, and, when waiting, its place in frame's queue: gnosh's renewer,
-// for each session whose turn goes on, names the todos on its stack.
+// for each session whose turn goes on, names the todos on its stack. Each
+// renewed hold goes out as a "renewed" event with its new lease end (a
+// place as "waitrenewed"), so a watcher knows when it runs out.
 func Renew(cur realm, plan, label, ids, frame string, waiting bool) {
 	holder := holderOf(cur, label)
 	p := getPlan(plan)
@@ -286,6 +288,7 @@ func Renew(cur realm, plan, label, ids, frame string, waiting bool) {
 			panic("you do not hold " + id)
 		}
 		c.extend(t)
+		p.emit("renewed", id, "holder", holder, "until", strconv.FormatInt(t.Until, 10))
 	}
 	if waiting {
 		if frame != "" {

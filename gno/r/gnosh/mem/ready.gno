@@ -431,6 +431,7 @@ func (c *call) wait(a *Agent, frame string) {
 	until := c.now + p.Lease
 	if a.Wait != 0 && a.Frame == frame {
 		a.Until = until
+		p.emit("waitrenewed", frame, "holder", a.Holder, "until", strconv.FormatInt(until, 10))
 		return
 	}
 	c.unwait(a)
