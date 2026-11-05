@@ -18,6 +18,8 @@ import (
 var (
 	initOnce    sync.Once
 	initialized atomic.Bool
+	// fileLogger writes the log file Setup was given.
+	fileLogger atomic.Pointer[lumberjack.Logger]
 )
 
 func Setup(logFile string, debug bool, ws ...io.Writer) {
@@ -29,6 +31,7 @@ func Setup(logFile string, debug bool, ws ...io.Writer) {
 			MaxAge:     30,    // Days
 			Compress:   false, // Enable compression
 		}
+		fileLogger.Store(logRotator)
 
 		level := slog.LevelInfo
 		if debug {
@@ -63,6 +66,17 @@ func Setup(logFile string, debug bool, ws ...io.Writer) {
 
 func Initialized() bool {
 	return initialized.Load()
+}
+
+// ReopenFile has the next log line open the file at Setup's path, or a new
+// one there, since logging would otherwise go on into a removed file. It
+// does nothing before Setup.
+func ReopenFile() error {
+	l := fileLogger.Load()
+	if l == nil {
+		return nil
+	}
+	return l.Close()
 }
 
 func RecoverPanic(name string, cleanup func()) {

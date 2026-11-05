@@ -3,12 +3,18 @@ package db
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/crush/internal/lock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestConnect_SharesConnectionForSameDataDir(t *testing.T) {
@@ -210,6 +216,324 @@ func TestConnect_ServerPathFailsWhenDataDirLocked(t *testing.T) {
 	require.ErrorIs(t, err, ErrDataDirLocked)
 }
 
+// A data directory removed while gnosh runs (a project generator that
+// wants an empty folder) is written back from the open database, and
+// what is written after goes to the restored file.
+func TestConnect_RestoresRemovedDataDir(t *testing.T) {
+	warnings := captureWarnings(t)
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	t.Cleanup(ResetPool)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkOften)
+	require.NoError(t, err)
+	q := New(conn)
+	createSession := func(id string) {
+		t.Helper()
+		_, err := q.CreateSession(t.Context(), CreateSessionParams{ID: id, Title: id})
+		require.NoError(t, err)
+	}
+
+	createSession("before-removal")
+	require.NoError(t, os.RemoveAll(dataDir))
+	createSession("after-removal")
+
+	dbPath := filepath.Join(dataDir, "gnosh.db")
+	require.Eventually(t, func() bool {
+		ids, err := sessionIDsIn(t.Context(), dbPath)
+		return err == nil && len(ids) == 2
+	}, 5*time.Second, 10*time.Millisecond, "the removed database is not back at its path")
+
+	// Lands in the restored file only if the pool let go of its
+	// connection to the removed one.
+	createSession("after-restore")
+	ids, err := sessionIDsIn(t.Context(), dbPath)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"before-removal", "after-removal", "after-restore"}, ids)
+
+	// Without it, git add -A picks up the restored database.
+	gitIgnore, err := os.ReadFile(filepath.Join(dataDir, ".gitignore"))
+	require.NoError(t, err)
+	require.Equal(t, "*\n", string(gitIgnore))
+
+	require.Eventually(t, func() bool {
+		return strings.Contains(warnings(), "Data directory was removed while in use; restored the database")
+	}, 5*time.Second, 10*time.Millisecond, warnings())
+}
+
+// A data directory removed again after a restore, with no query in
+// between, is restored again.
+func TestConnect_RestoresADataDirRemovedTwice(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	t.Cleanup(ResetPool)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkOften)
+	require.NoError(t, err)
+	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "kept", Title: "kept"})
+	require.NoError(t, err)
+
+	dbPath := filepath.Join(dataDir, "gnosh.db")
+	for i := range 2 {
+		require.NoError(t, os.RemoveAll(dataDir))
+		require.Eventually(t, func() bool {
+			ids, err := sessionIDsIn(t.Context(), dbPath)
+			return err == nil && slices.Equal(ids, []string{"kept"})
+		}, 5*time.Second, 10*time.Millisecond, "removal %d is not restored", i+1)
+	}
+}
+
+// A data directory removed since the last check, just before gnosh exits,
+// is restored before the pool closes the removed file.
+func TestRelease_RestoresARemovalSinceTheLastCheck(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	t.Cleanup(ResetPool)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "kept", Title: "kept"})
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dataDir))
+
+	require.NoError(t, Release(dataDir))
+	ids, err := sessionIDsIn(t.Context(), filepath.Join(dataDir, "gnosh.db"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"kept"}, ids)
+}
+
+// A restored data directory is locked again when it was locked before, at
+// the lock named for its database.
+func TestConnect_LocksRestoredDataDir(t *testing.T) {
+	for name, db := range map[string]string{
+		"gnosh.db":                "",
+		"from before the renames": "crush.db",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dataDir := filepath.Join(t.TempDir(), ".gnosh")
+			t.Cleanup(ResetPool)
+			lockName := "gnosh.lock"
+			if db != "" {
+				require.NoError(t, os.Mkdir(dataDir, 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(dataDir, db), nil, 0o600))
+				lockName = "crush.lock"
+			}
+			_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkOften)
+			require.NoError(t, err)
+			require.NoError(t, os.RemoveAll(dataDir))
+
+			// The owner info is written once the lock is held;
+			// trying the lock before then could take it from the
+			// restore.
+			lockPath := filepath.Join(dataDir, lockName)
+			require.Eventually(t, func() bool {
+				return readOwnerInfo(lockPath).PID == os.Getpid()
+			}, 5*time.Second, 10*time.Millisecond, "the restored data directory is not locked")
+			_, err = lock.TryFile(lockPath)
+			require.ErrorIs(t, err, lock.ErrContended)
+		})
+	}
+}
+
+// A removed data directory that another gnosh made again and locked is
+// left to it: the open database is not copied into it.
+func TestConnect_LeavesARemovedDataDirAnotherLocked(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	t.Cleanup(ResetPool)
+	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dataDir))
+
+	require.NoError(t, os.Mkdir(dataDir, 0o700))
+	release, err := lock.TryFile(filepath.Join(dataDir, "gnosh.lock"))
+	require.NoError(t, err)
+	defer release()
+
+	require.NoError(t, Release(dataDir))
+	require.NoFileExists(t, filepath.Join(dataDir, "gnosh.db"))
+}
+
+// Another file put at the database path while gnosh runs is never written
+// over. An empty one, since VACUUM INTO itself refuses a file with
+// anything in it.
+func TestConnect_LeavesAnotherFileAtTheDatabasePath(t *testing.T) {
+	warnings := captureWarnings(t)
+	dataDir := t.TempDir()
+	t.Cleanup(ResetPool)
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkOften)
+	require.NoError(t, err)
+	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "ours", Title: "ours"})
+	require.NoError(t, err)
+
+	// Renamed over the database, so the path is never missing.
+	dbPath := filepath.Join(dataDir, "gnosh.db")
+	other := filepath.Join(dataDir, "other.db")
+	require.NoError(t, os.WriteFile(other, nil, 0o600))
+	require.NoError(t, os.Rename(other, dbPath))
+
+	require.Never(t, func() bool {
+		info, err := os.Stat(dbPath)
+		return err != nil || info.Size() != 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "the other file at the database path was changed")
+	require.Contains(t, warnings(), "Another file is at the database path")
+}
+
+// A file put at the database path after the check found it missing is
+// left as it is, and the restore leaves nothing else behind.
+func TestConnect_RestoreLeavesAFileThatAppearsAtThePath(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Cleanup(ResetPool)
+	_, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dataDir))
+	require.NoError(t, os.Mkdir(dataDir, 0o700))
+	dbPath := filepath.Join(dataDir, "gnosh.db")
+	require.NoError(t, os.WriteFile(dbPath, nil, 0o600))
+
+	// As a check that found the path free just before the file came.
+	pool[poolKey(dataDir)].restore(t.Context())
+
+	info, err := os.Stat(dbPath)
+	require.NoError(t, err)
+	require.Zero(t, info.Size(), "the file at the database path was written over")
+	entries, err := os.ReadDir(dataDir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	require.ElementsMatch(t, []string{".gitignore", "gnosh.db"}, names)
+}
+
+// Dropping an entry stops the check of its file with it.
+func TestConnect_StopsCheckingWhenDropped(t *testing.T) {
+	for name, drop := range map[string]func(t *testing.T, dataDir string){
+		"release":    func(t *testing.T, dataDir string) { require.NoError(t, Release(dataDir)) },
+		"reset pool": func(*testing.T, string) { ResetPool() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ignore := goleak.IgnoreCurrent()
+			dataDir := t.TempDir()
+			t.Cleanup(ResetPool)
+			_, err := Connect(t.Context(), dataDir, WithRestore(true))
+			require.NoError(t, err)
+
+			drop(t, dataDir)
+			goleak.VerifyNone(t, ignore)
+		})
+	}
+}
+
+// Without WithRestore, Connect starts no check of the database file, so a
+// test that never calls Release leaves none running.
+func TestConnect_ChecksNoFileWithoutRestore(t *testing.T) {
+	ignore := goleak.IgnoreCurrent()
+	t.Cleanup(ResetPool)
+
+	_, err := Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	goleak.VerifyNone(t, ignore, goleak.IgnoreTopFunction("database/sql.(*DB).connectionOpener"))
+}
+
+// A pool is found by its data directory, also once the directory was
+// removed with a database from before the renames in it, which FileName
+// can then no longer name: Connect joins the pool instead of opening a new
+// gnosh.db, and Release stops the pool's check.
+func TestConnect_FindsARemovedDataDirByItsPath(t *testing.T) {
+	ignore := goleak.IgnoreCurrent()
+	dataDir := t.TempDir()
+	t.Cleanup(ResetPool)
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "crush.db"), nil, 0o600))
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dataDir))
+
+	again, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	require.Same(t, conn, again, "a second pool on the removed directory")
+	require.NoFileExists(t, filepath.Join(dataDir, "gnosh.db"))
+
+	require.NoError(t, Release(dataDir))
+	require.NoError(t, Release(dataDir))
+	goleak.VerifyNone(t, ignore)
+}
+
+// Each new trouble with the database file is logged, though an earlier
+// one was: a failed restore after another file stood at the path.
+func TestConnect_WarnsOfEachNewTrouble(t *testing.T) {
+	warnings := captureWarnings(t)
+	dataDir := filepath.Join(t.TempDir(), ".gnosh")
+	t.Cleanup(ResetPool)
+	_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkRarely)
+	require.NoError(t, err)
+	entry := pool[poolKey(dataDir)]
+
+	other := filepath.Join(dataDir, "other.db")
+	require.NoError(t, os.WriteFile(other, nil, 0o600))
+	require.NoError(t, os.Rename(other, filepath.Join(dataDir, "gnosh.db")))
+	entry.checkFile(t.Context())
+	entry.checkFile(t.Context())
+	require.Equal(t, 1, strings.Count(warnings(), "Another file is at the database path"), warnings())
+
+	require.NoError(t, os.RemoveAll(dataDir))
+	require.NoError(t, os.Mkdir(dataDir, 0o700))
+	release, err := lock.TryFile(filepath.Join(dataDir, "gnosh.lock"))
+	require.NoError(t, err)
+	defer release()
+	entry.checkFile(t.Context())
+	require.Contains(t, warnings(), "Failed to restore the removed database")
+}
+
+// captureWarnings logs warnings to a buffer for the rest of the test, and
+// returns what was logged so far.
+func captureWarnings(t *testing.T) func() string {
+	t.Helper()
+	var buf logBuffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return buf.String
+}
+
+// logBuffer is written by a pool's check while the test reads it.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// checkOften has a restoring pool check its file every few milliseconds.
+// A test that uses it creates its data directory before it registers
+// ResetPool, so the check stops before t.TempDir's folder is removed.
+var checkOften = withFileCheckInterval(10 * time.Millisecond)
+
+// checkRarely keeps a restoring pool's check from running during a test.
+var checkRarely = withFileCheckInterval(time.Hour)
+
+// sessionIDsIn reads the database file at dbPath on a connection of its
+// own, not the pool's.
+func sessionIDsIn(ctx context.Context, dbPath string) ([]string, error) {
+	conn, err := ConnectReadOnly(ctx, dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	sessions, err := New(conn).ListSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		ids = append(ids, s.ID)
+	}
+	return ids, nil
+}
+
 // A new data directory gets gnosh.db and gnosh.lock; one that already
 // holds the crush.db from before the rename keeps it, and locks
 // crush.lock as an older process sharing it does, so the two cannot open
@@ -237,4 +561,30 @@ func TestDataFileNames(t *testing.T) {
 	require.Equal(t, filepath.Join(old, "crush.db"), FileName(old))
 	require.Equal(t, filepath.Join(old, "crush.lock"), dataDirLockFile(old))
 	require.NoError(t, Release(old))
+}
+
+// A data directory's .gitignore keeps git off everything in it; one
+// already there is left as it is.
+func TestWriteGitIgnore(t *testing.T) {
+	cases := map[string]struct {
+		existing string
+		want     string
+	}{
+		"none yet":      {want: "*\n"},
+		"already there": {existing: "gnosh.db\n", want: "gnosh.db\n"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			path := filepath.Join(dataDir, ".gitignore")
+			if tc.existing != "" {
+				require.NoError(t, os.WriteFile(path, []byte(tc.existing), 0o644))
+			}
+
+			require.NoError(t, WriteGitIgnore(dataDir))
+			got, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, string(got))
+		})
+	}
 }

@@ -3,7 +3,8 @@ package backend
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+
+	"github.com/charmbracelet/crush/internal/db"
 )
 
 func createDotCrushDir(dir string) error {
@@ -11,12 +12,5 @@ func createDotCrushDir(dir string) error {
 		return fmt.Errorf("failed to create data directory: %q %w", dir, err)
 	}
 
-	gitIgnorePath := filepath.Join(dir, ".gitignore")
-	if _, err := os.Stat(gitIgnorePath); os.IsNotExist(err) {
-		if err := os.WriteFile(gitIgnorePath, []byte("*\n"), 0o644); err != nil {
-			return fmt.Errorf("failed to create .gitignore file: %q %w", gitIgnorePath, err)
-		}
-	}
-
-	return nil
+	return db.WriteGitIgnore(dir)
 }
