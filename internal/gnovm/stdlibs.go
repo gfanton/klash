@@ -32,8 +32,9 @@ import (
 var stdlibFS embed.FS
 
 // klashlibFS holds the libraries gnosh adds for its VMs: fmt, since gno has
-// none (formatted natively, with Go's fmt: fmtnative.go), and gnosh's own
-// packages under gnosh/.
+// none (formatted natively, with Go's fmt: fmtnative.go), gnosh's own
+// klash/gnomem/v2, and klash/bptree/v0, a copy of gno's p/nt/bptree/v0 under
+// gno's notices (its LICENSE.md).
 //
 //go:embed klashlibs
 var klashlibFS embed.FS
@@ -55,8 +56,8 @@ func stdlibMemPackage(pkgPath string) (*std.MemPackage, error) {
 	return embeddedMemPackage(stdlibFS, "stdlibs", pkgPath)
 }
 
-// libraryMemPackage is stdlibMemPackage over both gnosh's libraries and the
-// standard library; gnosh's come first.
+// libraryMemPackage is stdlibMemPackage over both the libraries gnosh adds
+// (klashlibs) and the standard library; klashlibs come first.
 func libraryMemPackage(pkgPath string) (*std.MemPackage, error) {
 	mpkg, err := embeddedMemPackage(klashlibFS, "klashlibs", pkgPath)
 	if mpkg != nil || err != nil {
@@ -129,8 +130,8 @@ func libraryPaths() []string {
 
 // ImportablePackages lists the packages a VM may import, besides fmt: the
 // standard library less what VMs refuse (see unavailablePackage) and the
-// internal packages, and gnosh's own for models (klash/bptree/v0;
-// klash/gnomem/v2 is mem's realm's alone).
+// internal packages, and the packages gnosh adds for models (klash/bptree/v0,
+// a copy of gno's p/nt/bptree/v0; klash/gnomem/v2 is mem's realm's alone).
 func ImportablePackages() []string {
 	var out []string
 	for _, p := range libraryPaths() {

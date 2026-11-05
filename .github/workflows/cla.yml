@@ -16,7 +16,7 @@ jobs:
   CLAAssistant:
     # Upstream gates this on its own repository so it stays dead in forks.
     # This fork asks for its own agreement instead (CONTRIBUTING.md), which
-    # grants the rights to the maintainer AND to Charmbracelet, so
+    # grants the rights to NewTendermint, LLC AND to Charmbracelet, so
     # contributors' work can go upstream. Turn it on by setting the
     # repository variable CLA_ENABLED to "true" and adding a
     # PERSONAL_ACCESS_TOKEN secret; the gate is a variable rather than a
@@ -40,8 +40,15 @@ jobs:
           # pointing at the wrong project's terms.
           path-to-document: "https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md#contributor-licence-agreement"
           branch: "main"
-          allowlist: dependabot[bot],Copilot
+          # jaekwon: Jae Kwon grants nothing by submitting work
+          # (CONTRIBUTING.md). The action names a commit by its author's GitHub
+          # login, else its committer's, else its author's name, so it also
+          # passes a commit authored with his email, one whose author has no
+          # linked account that he committed, and one with neither linked whose
+          # author name is jaekwon; anyone can set that name or his email. The
+          # terms bind by submission, not by this bot.
+          allowlist: dependabot[bot],Copilot,jaekwon
           custom-pr-sign-comment: "I have read the Contributor Licence Agreement (CLA) and hereby sign the CLA."
-          custom-notsigned-prcomment: "Thank you for your submission! Before we can accept it, we ask that you agree to the [Contributor Licence Agreement](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md#contributor-licence-agreement). It licenses your contribution to this project's maintainer and to Charmbracelet, the authors of upstream Crush, so that work you do here can go upstream without coming back to you for permission; the parts under internal/gnovm/ are licensed to the maintainer only. You keep every right to your own work. Sign by posting a pull request comment in the format below."
+          custom-notsigned-prcomment: "Thank you for your submission! Before we can accept it, we ask that you agree to the [Contributor Licence Agreement](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md#contributor-licence-agreement). It licenses your contribution to NewTendermint, LLC and to Charmbracelet, the authors of upstream Crush, so that work you do here can go upstream without coming back to you for permission; the parts under internal/gnovm/ are licensed to NewTendermint only, and work that belongs, or is to be assigned, to Jae Kwon or a company he controls is not licensed to Charmbracelet. You keep every right to your own work. Sign by posting a pull request comment in the format below."
           lock-pullrequest-aftermerge: false
           signed-commit-message: "chore(legal): @$contributorName has signed the CLA"

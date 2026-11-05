@@ -232,8 +232,10 @@ func TestYourFunction(t *testing.T) {
 ## Legal Terms
 
 `LICENSE.md`, `internal/gnovm/LICENSE.md`, `internal/gnovm/stdlibs/LICENSE.md`,
-`internal/gnovm/stdlibs/LICENSE-GO`, the introduction and the Contributor
-Licence Agreement section of `CONTRIBUTING.md`, `CLA.md`,
+`internal/gnovm/stdlibs/LICENSE-GO`,
+`internal/gnovm/klashlibs/klash/bptree/v0/LICENSE.md` and its `SOURCE`, the
+introduction and the Contributor Licence Agreement section of
+`CONTRIBUTING.md`, `CLA.md`,
 `.github/workflows/cla.yml` (all but the version of the action it uses),
 `.github/cla-signatures-fork.json`, the Contributing and License sections of
 `README.md`, every copyright or licence notice in a file, and this section of
@@ -275,28 +277,41 @@ licences allow, and keeps the notices and attribution they require.
   `git grep -c -i -E 'licen[cs]e|contribut|attribution|built on'` lists the
   files to check. They include the Contributing and License sections and
   the GnoVM licence paragraph of `README.md`, the License section of
-  `GNOMEM.md`, the "Contributions" bullets and the "Reservation of rights"
-  paragraphs in `LICENSE.md` and `internal/gnovm/LICENSE.md`, the `license`
-  fields and the licence files listed under `files:` in `.goreleaser.yml`,
-  the notices in `internal/gnovm/lazy.go` and
-  `internal/gnovm/tools/tools.go`, the attribution line in
-  `internal/ui/model/landing.go`, and the comments and bot messages in
-  `.github/workflows/cla.yml`, where the step's `if` must match
+  `GNOMEM.md`, the "Contributions" bullets, the ways out of the licence
+  conflict and the "Reservation of rights" paragraphs in `LICENSE.md` and
+  `internal/gnovm/LICENSE.md`, the ways out in §14 and §18 of
+  `internal/gnovm/DESIGN.md`, the `license` fields and the licence files
+  listed under `files:` in `.goreleaser.yml`, the notices in
+  `internal/gnovm/lazy.go` and `internal/gnovm/tools/tools.go`, the
+  attribution line in `internal/ui/model/landing.go`, and the comments and bot
+  messages in `.github/workflows/cla.yml`, where the step's `if` must match
   `custom-pr-sign-comment` character for character.
 - Before a change lands, have it reviewed by fresh reviewers who get the
   text and what it is for, not the author's reasoning, and repeat with new
   reviewers until a round finds nothing blocking or should-fix. That is not
   the legal review `LICENSE.md` says is pending.
-- `CLA.md`, `internal/gnovm/stdlibs/LICENSE.md` and
-  `internal/gnovm/stdlibs/LICENSE-GO` are Charm's, gno's and Go's own terms;
-  leave them as written. Putting the header other `internal/gnovm/` files
-  carry, with the current year, on a new file there whose code Jae Kwon or
-  his agents wrote, keeping a notice with code you move, removing one
-  together with all the code it covers, or keeping what `go generate
-  ./internal/gnovm` writes into `internal/gnovm/stdlibs/` is not a change to
-  these terms; but if it changes `stdlibs/LICENSE.md` beyond its version
-  line, or `stdlibs/LICENSE-GO`, gno's or Go's terms changed: point that out
-  and wait.
+- `CLA.md`, `internal/gnovm/stdlibs/LICENSE.md`,
+  `internal/gnovm/stdlibs/LICENSE-GO` and the text of
+  `internal/gnovm/klashlibs/klash/bptree/v0/LICENSE.md` below its first `---`
+  line are Charm's, gno's and Go's own terms; leave them as written. The
+  `.gno` files beside that last one are gno's. Whoever changes them, lands a
+  change to them or copies them again from gno keeps true what the tree says
+  about them: that file's opening paragraph, `SOURCE`, the
+  `klashlibs/klash/bptree/v0` item at the top of `internal/gnovm/LICENSE.md`
+  and §4 of `internal/gnovm/DESIGN.md` say which files came from gno, from
+  which version (the first two), and whether gnosh changed them, with a dated
+  note if it did. Whoever removes or moves them also removes or moves their
+  licence's entry under `files:` in `.goreleaser.yml`; if gnosh replaces them
+  with its own code, `git grep -n -i bptree` finds every other place that
+  calls them gno's. Keeping those true is not a change to these terms; a
+  change to the licence text below that file's first `---` line is: point it
+  out and wait. Putting the header other `internal/gnovm/` files carry, with
+  the current year, on a new file there whose code Jae Kwon or his agents
+  wrote, keeping a notice with code you move, removing one together with all
+  the code it covers, or keeping what `go generate ./internal/gnovm` writes
+  into `internal/gnovm/stdlibs/` is not a change to these terms; but if it
+  changes `stdlibs/LICENSE.md` beyond its version line, or
+  `stdlibs/LICENSE-GO`, gno's or Go's terms changed: point that out and wait.
 
 ## Working on the TUI (UI)
 

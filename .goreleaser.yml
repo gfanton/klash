@@ -101,8 +101,8 @@ archives:
         dst: LICENSE-gnovm-stdlibs.md
       - src: internal/gnovm/stdlibs/LICENSE-GO
         dst: LICENSE-gnovm-stdlibs-GO
-      - src: internal/gnovm/klashlibs/fmt/LICENSE.md
-        dst: LICENSE-gnovm-fmt.md
+      - src: internal/gnovm/klashlibs/klash/bptree/v0/LICENSE.md
+        dst: LICENSE-gnovm-bptree.md
       - manpages/*
       - completions/*
     format_overrides:

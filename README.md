@@ -1820,12 +1820,12 @@ Installing an extra tool might be needed on Unix-like environments.
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md). A contribution is licensed to this
-fork's maintainer and to Charm, so that work you do here can go upstream to
-Crush without coming back to you; contributions under `internal/gnovm/`, and
-work that belongs, or is to be assigned, to Jae Kwon or a company he
-controls, are licensed to the maintainer only. You keep every right to your
-own work.
+See [CONTRIBUTING.md](./CONTRIBUTING.md). A contribution is licensed to
+NewTendermint, LLC and to Charm, so that work you do here can go upstream to
+Crush without coming back to you; contributions under `internal/gnovm/` are
+licensed to NewTendermint only, and work that belongs, or is to be assigned,
+to Jae Kwon or a company he controls is not licensed to Charm. You keep
+every right to your own work.
 
 ## License
 

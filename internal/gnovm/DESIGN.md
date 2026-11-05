@@ -111,9 +111,10 @@ gnosh reads the goals snapshots directly for injection, checking them against th
 - In the worker, lazily: `memdb` → `dbadapter` → `gno.NewStore(nil, kv, kv)`,
   `SetNativeResolver(stdlibs.NativeResolver)`, a package getter serving the
   embedded `stdlibs/` (synced from go.mod's gno by `go generate`; VERSION and
-  byte-for-byte reader tests) and `klashlibs/`: `fmt` (gno's `ufmt` v0, renamed,
-  with a dated modification notice; its `%v` and float limits are in the tool
-  description) and `gnosh/goals/v1` (§12).
+  byte-for-byte reader tests) and `klashlibs/`: `fmt` (gnosh's own since 29
+  October 2026, when it replaced gno's `ufmt`: Gno wrappers over Go's fmt, run
+  natively by `fmtnative.go`), `klash/gnomem/v2`, and `klash/bptree/v0`
+  (gno's `p/nt/bptree/v0`, copied unchanged, under gno's notices).
 - **On demand**: the imports of an input — or of a whole journal before replay —
   are loaded into the base first (`base.ensure`; required: an overlay's cache
   remembers a miss). The heap delta of each load is measured (single-threaded,
@@ -439,8 +440,9 @@ but not raise it, and cannot set `in_process`. Lands with the worker (phase
   Designation that came with the version received, and the Licensor's
   reasonable interpretation cannot ask for others. It adds severability for
   anything beyond §7(g), and reserves the right to offer this program and
-  contributions licensed to the Maintainer under other terms. Every source file
-  carries the proxy wording, `.gno` files included.
+  contributions licensed to the Maintainer under other terms. Every `.go` and
+  `.gno` file gnosh wrote carries the proxy wording; `stdlibs/` and
+  `klashlibs/klash/bptree/v0` keep gno's notices.
 - **The boundary**: the FSL files hold only these call sites, each one line or
   a few: `main.go` (worker dispatch), `tooldefs` (names), `coordinator.go`
   (`buildTools`, `Rewound`, `Branched`), `agent.go` (the three
@@ -457,13 +459,15 @@ but not raise it, and cannot set `in_process`. Lands with the worker (phase
   client used only tm2 and gno.land's small `ugnot` package (round 4 corrected
   an earlier claim that x402 already linked the GnoVM). The worker, being the
   same binary, does not change that. The ways out (§18) are (a) one binary,
-  with linking exceptions (NewTendermint for the GnoVM, the Licensor for this
-  subsystem) or time (each Crush version's FSL becomes MIT two years after
-  release); or (b) a separate `gnosh-gnovm-worker` program holding everything
-  that links gno, with gnosh's own binary free of it. Changing Charm's licence
-  is not the Licensor's to do. No gnosh binary is released meanwhile (the
-  nightly workflow is gated to upstream). CONTRIBUTING.md, the README's Contributing and License sections, the
-  CLA bot text and the release archive (`LICENSE-gnovm*.md`) match the
+  with linking exceptions (NewTendermint for the GnoVM and the gno code this
+  subsystem embeds; the Licensor, and NewTendermint or the copyright holder
+  for code others contributed, for the rest of this subsystem) or time (each
+  Crush version's FSL becomes MIT two years after release); or (b) a separate
+  `gnosh-gnovm-worker` program holding everything that links gno, with gnosh's
+  own binary free of it. Changing Charm's licence is not the Licensor's to do.
+  No gnosh binary is released meanwhile (the nightly workflow is gated to
+  upstream). CONTRIBUTING.md, the README's Contributing and License sections,
+  the CLA bot text and the release archive (`LICENSE-gnovm*.md`) match the
   `internal/gnovm/` exception. GNGPL §13 binds gnosh's own remote interfaces,
   so server mode and channels link the source.
 - **Attribution notices**, in every layout: the landing screen, the compact
@@ -578,10 +582,13 @@ but not raise it, and cannot set `in_process`. Lands with the worker (phase
   "built on gnosh"), and NewTendermint's for the GnoVM notice (assumed
   https://gno.land, "built on gno.land").
 - The binary-level licence conflict (§14), and which way out to take: (a) one
-  binary, with NewTendermint's linking exception (or waiting for FSL→MIT); or
-  (b) a separate `gnosh-gnovm-worker` binary, which needs nobody's consent but
-  the Licensor's and also ends the self-re-exec hazard that §3's spawn rules
-  guard against.
+  binary, with NewTendermint's linking exception for the GnoVM and the gno
+  code this subsystem embeds, and an additional permission from the Licensor
+  and, for code others contributed, NewTendermint or the copyright holder (or
+  waiting for FSL→MIT); or (b) a separate `gnosh-gnovm-worker` binary, which
+  needs nobody's consent but the Licensor's (and, for glue others contributed,
+  NewTendermint's or that glue's copyright holder's) and also ends the
+  self-re-exec hazard that §3's spawn rules guard against.
 - (Answered: the work went public on 29 October 2026.)
 
 ## 19. GNOMEM: the agent's board (added 2026-10-30)

@@ -24,9 +24,9 @@ import (
 )
 
 // base is the gno store that every VM's overlay reads through. It holds the
-// standard library and gnosh's libraries, each loaded once per process, on
-// demand: an empty VM costs ~43 KB, but a store per VM that loads its own
-// strings, strconv and time costs ~88 MB.
+// standard library and the libraries gnosh adds (klashlibs), each loaded once
+// per process, on demand: an empty VM costs ~43 KB, but a store per VM that
+// loads its own strings, strconv and time costs ~88 MB.
 //
 // Every import must be loaded here before any VM looks the package up: an
 // overlay's cache remembers a miss, so a package loaded after a VM missed it
