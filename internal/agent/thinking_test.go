@@ -194,3 +194,132 @@ func TestQuietReasoning(t *testing.T) {
 		t.Fatalf("options were added for a provider without the switch: %v", opts)
 	}
 }
+
+func compatEffort(t *testing.T, opts fantasy.ProviderOptions) (string, bool) {
+	t.Helper()
+	po, ok := opts[openaicompat.Name].(*openaicompat.ProviderOptions)
+	if !ok || po.ReasoningEffort == nil {
+		return "", false
+	}
+	return string(*po.ReasoningEffort), true
+}
+
+// LM Studio ignores chat_template_kwargs and takes the request's own
+// reasoning_effort: nothink is none, an effort level goes as it is, and
+// think sends nothing, so the setting chosen for the model in LM Studio
+// stands.
+func TestApplyReasoningOnLMStudio(t *testing.T) {
+	t.Parallel()
+
+	lmstudio := config.ProviderConfig{ID: "lmstudio", Type: "lmstudio"}
+	xhighModel := catwalk.Model{ID: "some-model", ReasoningLevels: []string{"low", "medium", "high", "xhigh"}}
+	maxModel := catwalk.Model{ID: "some-model", ReasoningLevels: []string{"low", "max"}}
+
+	tests := []struct {
+		name     string
+		model    catwalk.Model
+		stored   map[string]string
+		want     string
+		wantNone bool
+	}{
+		{
+			name:   "qwen set to nothink",
+			model:  qwenModel,
+			stored: map[string]string{"lmstudio/qwen3.8-27b": "nothink"},
+			want:   "none",
+		},
+		{
+			name:     "qwen set to think leaves LM Studio's own setting",
+			model:    qwenModel,
+			stored:   map[string]string{"lmstudio/qwen3.8-27b": "think"},
+			wantNone: true,
+		},
+		{
+			name:   "gpt-oss set to high",
+			model:  gptossModel,
+			stored: map[string]string{"lmstudio/gpt-oss-120b-abliterated": "high"},
+			want:   "high",
+		},
+		{
+			name:  "an unchosen gpt-oss still carries its default effort",
+			model: gptossModel,
+			want:  "medium",
+		},
+		{
+			name:   "a listed xhigh goes as it is",
+			model:  xhighModel,
+			stored: map[string]string{"lmstudio/some-model": "xhigh"},
+			want:   "xhigh",
+		},
+		{
+			name:     "a level LM Studio does not take is not sent",
+			model:    maxModel,
+			stored:   map[string]string{"lmstudio/some-model": "max"},
+			wantNone: true,
+		},
+		{
+			name:     "a model with no reasoning axis is left alone",
+			model:    plainModel,
+			wantNone: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := fantasy.ProviderOptions{}
+			applyReasoning(opts, tt.model, "lmstudio", lmstudio, cfgWith(tt.stored))
+			if kw, ok := thinkingKwargs(t, opts); ok {
+				t.Fatalf("chat_template_kwargs were written, which LM Studio ignores: %v", kw)
+			}
+			got, ok := compatEffort(t, opts)
+			if tt.wantNone {
+				if ok {
+					t.Fatalf("reasoning_effort = %q, want none sent", got)
+				}
+				return
+			}
+			if !ok || got != tt.want {
+				t.Fatalf("reasoning_effort = %q (present %v), want %q", got, ok, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyReasoningOnLMStudioKeepsOtherOptions(t *testing.T) {
+	t.Parallel()
+
+	opts := fantasy.ProviderOptions{openaicompat.Name: &openaicompat.ProviderOptions{ExtraBody: map[string]any{"top_k": 20}}}
+	applyReasoning(opts, qwenModel, "lmstudio", config.ProviderConfig{ID: "lmstudio", Type: "lmstudio"},
+		cfgWith(map[string]string{"lmstudio/qwen3.8-27b": "nothink"}))
+
+	po := opts[openaicompat.Name].(*openaicompat.ProviderOptions)
+	got, ok := compatEffort(t, opts)
+	if po.ExtraBody["top_k"] != 20 || !ok || got != "none" {
+		t.Fatalf("options = %+v, extra_body = %v", po, po.ExtraBody)
+	}
+}
+
+// On LM Studio a quiet request is reasoning_effort none, for a Qwen and for
+// a model whose id names no axis alike; a gpt-oss is lowered to low.
+func TestQuietReasoningOnLMStudio(t *testing.T) {
+	t.Parallel()
+
+	lmstudio := config.ProviderConfig{ID: "lmstudio", Type: "lmstudio"}
+	for _, model := range []catwalk.Model{qwenModel, plainModel} {
+		opts := fantasy.ProviderOptions{}
+		quietReasoning(opts, model, lmstudio)
+		if kw, ok := thinkingKwargs(t, opts); ok {
+			t.Fatalf("%s: chat_template_kwargs were written, which LM Studio ignores: %v", model.ID, kw)
+		}
+		if got, ok := compatEffort(t, opts); !ok || got != "none" {
+			t.Fatalf("%s: reasoning_effort = %q (present %v), want none", model.ID, got, ok)
+		}
+	}
+
+	opts := fantasy.ProviderOptions{}
+	quietReasoning(opts, gptossModel, lmstudio)
+	if got, ok := compatEffort(t, opts); !ok || got != "low" {
+		t.Fatalf("gpt-oss: reasoning_effort = %q (present %v), want low", got, ok)
+	}
+}

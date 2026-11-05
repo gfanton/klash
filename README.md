@@ -1629,6 +1629,13 @@ provider add llamacpp \
   --base-url "http://localhost:2222"
 ```
 
+LM Studio takes the thinking switch as its own `reasoning_effort`: `/no_think`,
+and the short requests that name a session or a todo, send `none`, which
+turns a Qwen's thinking off; an effort level is sent as it is; `/think`
+sends nothing, so the reasoning setting chosen for the model in LM Studio
+stays in force. (llama.cpp takes the same switch as `chat_template_kwargs`,
+which LM Studio ignores.)
+
 #### Manual Model Configuration
 
 You can still list models explicitly. User-defined models always take

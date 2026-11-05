@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"slices"
+
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
+	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
 
 	"github.com/charmbracelet/crush/internal/config"
@@ -10,15 +13,17 @@ import (
 )
 
 // applyReasoning writes how hard this model should think into the request
-// options of an OpenAI-compatible provider, as llama.cpp's chat-template
-// switch.
+// options of an OpenAI-compatible provider: llama.cpp's chat-template
+// switch, or LM Studio's reasoning_effort.
 //
-// The spelling depends on the model. A Qwen takes
-// {"chat_template_kwargs": {"enable_thinking": bool}}; a gpt-oss takes
+// The spelling depends on the model and on the server. On llama.cpp a Qwen
+// takes {"chat_template_kwargs": {"enable_thinking": bool}}; a gpt-oss takes
 // {"chat_template_kwargs": {"reasoning_effort": "low"|"medium"|"high"}} and
 // ignores enable_thinking outright, which is why the old global switch did
-// nothing on it. A model with no reasoning axis, and a provider that is not
-// OpenAI-compatible, are left untouched.
+// nothing on it. LM Studio ignores chat_template_kwargs altogether and takes
+// the request's own reasoning_effort (see lmstudioReasoning). A model with
+// no reasoning axis, and a provider that is not OpenAI-compatible, are left
+// untouched.
 func applyReasoning(opts fantasy.ProviderOptions, model catwalk.Model, provider string, providerCfg config.ProviderConfig, cfg *config.Config) {
 	level := cfg.ReasoningLevelOrDefault(provider, model)
 	if level == "" {
@@ -50,33 +55,78 @@ func quietReasoning(opts fantasy.ProviderOptions, model catwalk.Model, providerC
 	setReasoning(opts, providerCfg, kind, levels[0])
 }
 
-// setReasoning writes one level into opts in the spelling its kind calls
-// for; other provider kinds are left untouched.
+// setReasoning writes one level into opts in the spelling its kind and its
+// server call for; other provider kinds are left untouched.
 func setReasoning(opts fantasy.ProviderOptions, providerCfg config.ProviderConfig, kind config.ReasoningKind, level string) {
 	if kind == config.ReasoningNone || level == "" {
 		return
 	}
-	if string(providerCfg.Type) != openaicompat.Name && !discover.IsKnownCustomProvider(string(providerCfg.Type)) {
-		return
+	switch {
+	case string(providerCfg.Type) == discover.TypeLMStudio:
+		lmstudioReasoning(opts, kind, level)
+	case string(providerCfg.Type) == openaicompat.Name, discover.IsKnownCustomProvider(string(providerCfg.Type)):
+		kwargs := chatTemplateKwargs(opts)
+		switch kind {
+		case config.ReasoningThink:
+			kwargs["enable_thinking"] = level == config.ReasoningThinkOn
+		case config.ReasoningEffort:
+			kwargs["reasoning_effort"] = level
+		}
 	}
-	kwargs := chatTemplateKwargs(opts)
+}
+
+// lmstudioEfforts are the values LM Studio's OpenAI-compatible endpoint
+// takes for reasoning_effort; it lists them itself when refusing another.
+var lmstudioEfforts = []openai.ReasoningEffort{
+	openai.ReasoningEffortNone,
+	openai.ReasoningEffortMinimal,
+	openai.ReasoningEffortLow,
+	openai.ReasoningEffortMedium,
+	openai.ReasoningEffortHigh,
+	openai.ReasoningEffortXHigh,
+}
+
+// lmstudioReasoning writes level for LM Studio, which ignores
+// chat_template_kwargs and takes the request's reasoning_effort instead:
+// nothink is "none", which turns a Qwen's thinking off, and an effort level
+// goes as it is. think sends nothing, so the reasoning setting chosen for
+// the model in LM Studio stays in force; nor is a level LM Studio does not
+// take sent, as it would refuse the whole request.
+func lmstudioReasoning(opts fantasy.ProviderOptions, kind config.ReasoningKind, level string) {
+	var effort openai.ReasoningEffort
 	switch kind {
 	case config.ReasoningThink:
-		kwargs["enable_thinking"] = level == config.ReasoningThinkOn
+		if level != config.ReasoningNoThink {
+			return
+		}
+		effort = openai.ReasoningEffortNone
 	case config.ReasoningEffort:
-		kwargs["reasoning_effort"] = level
+		effort = openai.ReasoningEffort(level)
+		if !slices.Contains(lmstudioEfforts, effort) {
+			return
+		}
+	default:
+		return
 	}
+	compatOptions(opts).ReasoningEffort = &effort
+}
+
+// compatOptions returns the request's OpenAI-compatible options, making
+// them as needed.
+func compatOptions(opts fantasy.ProviderOptions) *openaicompat.ProviderOptions {
+	po, _ := opts[openaicompat.Name].(*openaicompat.ProviderOptions)
+	if po == nil {
+		po = &openaicompat.ProviderOptions{}
+		opts[openaicompat.Name] = po
+	}
+	return po
 }
 
 // chatTemplateKwargs returns the request's chat_template_kwargs map, making
 // it and everything above it as needed, so a caller can write one key
 // without disturbing the others already there.
 func chatTemplateKwargs(opts fantasy.ProviderOptions) map[string]any {
-	po, _ := opts[openaicompat.Name].(*openaicompat.ProviderOptions)
-	if po == nil {
-		po = &openaicompat.ProviderOptions{}
-		opts[openaicompat.Name] = po
-	}
+	po := compatOptions(opts)
 	if po.ExtraBody == nil {
 		po.ExtraBody = map[string]any{}
 	}

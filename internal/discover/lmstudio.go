@@ -8,8 +8,11 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 )
 
+// TypeLMStudio is the provider type of an LM Studio server.
+const TypeLMStudio = "lmstudio"
+
 func init() {
-	RegisterEnricher("lmstudio", &lmstudioEnricher{})
+	RegisterEnricher(TypeLMStudio, &lmstudioEnricher{})
 }
 
 // lmstudioModelsResponse mirrors the response from LM Studio's native
