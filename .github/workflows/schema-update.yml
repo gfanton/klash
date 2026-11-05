@@ -10,6 +10,9 @@ on:
 
 jobs:
   update-schema:
+    # Upstream's: it commits to main as Charm with Charm's token. gnosh's main
+    # moves only by a landing on the AI box, which a commit here would block.
+    if: github.repository == 'charmbracelet/crush'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
