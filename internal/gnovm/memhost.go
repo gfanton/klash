@@ -75,6 +75,10 @@ var memSlice = 10 * time.Second
 // catches up with the journal. (A variable only so tests can shorten it.)
 var memBatchOps = 1000
 
+// errClosesToCheck is the failure of an input that closes a todo gnosh is
+// to check first (memResult.Closes): gnosh reads the closes, not this.
+var errClosesToCheck = errors.New("not kept yet: gnosh checks the todos this closes first")
+
 // memRequest is one input to mem.
 type memRequest struct {
 	Code string
@@ -102,6 +106,11 @@ type memRequest struct {
 	Pipe     string
 	SubAgent bool
 	MayWait  bool
+	// CheckCloses has mem hand gnosh, before it keeps the input, each close
+	// of a todo with nothing under it that Checked does not name
+	// (MemClose.Checked), and keep nothing then (RunRequest.CheckCloses).
+	CheckCloses bool
+	Checked     []string
 	// Run is set for the agent's own gnovm_run call (Host.runMem), which
 	// carries the session's stack in Frames: only such a call keeps the
 	// session's peers record (afterCall). gnosh's own reads for a session,
@@ -125,6 +134,9 @@ type memResult struct {
 	Goals []MemGoal
 	// Frames are the frames the input pushed and popped, in order.
 	Frames []MemFrame
+	// Closes are the closes gnosh is to check before the input is kept
+	// (memRequest.CheckCloses); with them, nothing was kept.
+	Closes []MemClose
 	// Instance is mem's instance id, which a mem made anew does not share.
 	Instance string
 	// Waits is what the input's Next waits for, when it waits.
@@ -152,6 +164,30 @@ type MemFrame struct {
 	// Session is the session that made it.
 	Session string `json:"session"`
 }
+
+// MemClose is a close of a todo with nothing under it, as done, that mem
+// asks gnosh to check before it keeps the input making it
+// (RunRequest.CheckCloses, CLOSE-CHECK.md).
+type MemClose struct {
+	// Id is the todo, Title its task, Result what the input closes it
+	// with ("" when it gives none: Done of a todo not on the stack), and
+	// Thoughts the thoughts kept on it, one a line.
+	Id       string `json:"id"`
+	Title    string `json:"title,omitempty"`
+	Result   string `json:"result,omitempty"`
+	Thoughts string `json:"thoughts,omitempty"`
+	// Entered is set when the input itself entered the todo, which was not
+	// on the session's stack before it; Worked, when the input changed mem
+	// after entering it, beyond entering and closing it.
+	Entered bool `json:"entered,omitempty"`
+	Worked  bool `json:"worked,omitempty"`
+}
+
+// Checked is how RunRequest.Checked names a close gnosh approved; AnyResult,
+// a todo approved whatever it is closed with in the rest of the call (a
+// result made of the time differs on every run).
+func (c MemClose) Checked() string   { return c.Id + "\x00" + c.Result }
+func (c MemClose) AnyResult() string { return c.Id + "\x00*" }
 
 type MemGoal struct {
 	Name   string    `json:"name"`
@@ -204,12 +240,19 @@ func (h *memHost) call(ctx context.Context, q memRequest) (memResult, error) {
 	mayWait := q.MayWait || q.Pipe != "" && !q.SubAgent && who == "agent" && endsWithBareNext(q.Code) && h.pendingPipe(q.Pipe)
 	mc := memContext{
 		caller: caller, bound: q.Goal, stack: q.Frames, fresh: q.Fresh, names: q.Names, find: h.finder(ctx, x, j), holding: h.holding(j), limit: memLimit{ctx: ctx},
-		working: h.workingFor(), mayWait: mayWait, subAgent: q.SubAgent,
+		working: h.workingFor(), mayWait: mayWait, subAgent: q.SubAgent, checkCloses: q.CheckCloses && who == "agent", checked: q.Checked,
 	}
 	call, err := r.call(q.Code, mc)
 	res := memResult{Output: call.Output, Ops: call.Ops, Frames: call.Frames, Notes: notes, Instance: j.instance}
 	if err != nil {
 		return res, err
+	}
+	if len(call.Closes) > 0 {
+		// gnosh checks these closes before the input is kept: nothing of it
+		// is kept, nobody is woken, and the session's peers record stays,
+		// as for an input that failed. gnosh runs it again once it
+		// approves them all.
+		return memResult{Output: call.Output, Closes: call.Closes, Notes: notes, Instance: j.instance}, errClosesToCheck
 	}
 	if call.batch == nil {
 		h.afterCall(r, q, mc, call, &res, false)
@@ -321,7 +364,7 @@ const memStatusFile = "status.json"
 // writeStatus writes status.json for the store r as it holds j. It is best
 // effort: a reader of an old one sees mem as it was.
 func (h *memHost) writeStatus(r *memRealm, j *journal) {
-	call, err := r.call(`print(mem.JSON())`, memContext{caller: "klash"})
+	call, err := r.call(`print(mem.JSON())`, memContext{caller: "klash", working: h.workingFor()})
 	if err != nil {
 		slog.Warn("mem's status could not be computed", "error", err)
 		return
@@ -893,8 +936,8 @@ func memRules(ops []memOp) []MemRule {
 // runMem runs a gnovm_run call against the project's mem.
 func (h *Host) runMem(ctx context.Context, req RunRequest) (*RunResult, error) {
 	start := time.Now()
-	res, err := h.mem(req.Project).call(ctx, memRequest{Code: req.Code, Session: req.Session, Req: req.Req, Goal: req.Goal, Frames: req.Frames, Fresh: req.Fresh, Names: req.Names, Pipe: req.WaitPipe, SubAgent: req.SubAgent, Run: true})
-	out := &RunResult{VM: MemVM, Output: res.Output, Journaled: res.Seq > 0, Seq: res.Seq, Notes: res.Notes, Wall: time.Since(start), MemGoals: res.Goals, Erased: res.Erased, Frames: res.Frames, Waits: res.Waits}
+	res, err := h.mem(req.Project).call(ctx, memRequest{Code: req.Code, Session: req.Session, Req: req.Req, Goal: req.Goal, Frames: req.Frames, Fresh: req.Fresh, Names: req.Names, Pipe: req.WaitPipe, SubAgent: req.SubAgent, CheckCloses: req.CheckCloses, Checked: req.Checked, Run: true})
+	out := &RunResult{VM: MemVM, Output: res.Output, Journaled: res.Seq > 0, Seq: res.Seq, Notes: res.Notes, Wall: time.Since(start), MemGoals: res.Goals, Erased: res.Erased, Frames: res.Frames, Waits: res.Waits, Closes: res.Closes}
 	if res.Seq > 0 {
 		out.Rules = memRules(res.Ops)
 	}

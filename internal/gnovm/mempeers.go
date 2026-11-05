@@ -95,13 +95,14 @@ func (h *memHost) writePeer(p memPeer) error {
 
 // workingFor is the realm's working() for one call: session is working on
 // todo id when its turn lock is held and its peers record's stack has the
-// todo, or one above it, on it. Each session is looked up once per call.
-// nil when the host cannot tell (no data directory), as with one session.
+// todo, or one above it, on it; on "" when its turn lock is held at all.
+// Each session is looked up once per call. nil when the host cannot tell
+// (no data directory, or no turn locks to read), as with one session.
 func (h *memHost) workingFor() func(session, id string) bool {
 	if h.working != nil {
 		return h.working
 	}
-	if h.data == "" {
+	if h.data == "" || !turnLocksKnown {
 		return nil
 	}
 	type seen struct {
@@ -121,6 +122,9 @@ func (h *memHost) workingFor() func(session, id string) bool {
 		}
 		if !s.held {
 			return false
+		}
+		if id == "" {
+			return true
 		}
 		for _, f := range s.stack {
 			if f == id || strings.HasPrefix(id, f+"/") {

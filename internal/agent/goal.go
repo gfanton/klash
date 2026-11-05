@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/crush/internal/agent/notify"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/gnovm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
@@ -320,6 +321,11 @@ func (a *sessionAgent) closedGoalContinuation(ctx context.Context, call SessionA
 			continue
 		}
 		judged[g.Name] = g.Seq
+		if a.reviewedGoals != nil && takeReviewed(a.reviewedGoals, call.SessionID, g) {
+			// The review of its close approved it as it was closed: a
+			// goal with nothing under it is judged once.
+			continue
+		}
 		met, reason, err := a.checkGoal(ctx, call.SessionID, g.Title, g.Show)
 		if err != nil {
 			a.notifyGoal(call.SessionID, notify.TypeWarning, fmt.Sprintf("The goal `%s` could not be checked, so it stays closed unchecked: %s", g.Name, err))
@@ -350,6 +356,35 @@ func (a *sessionAgent) closedGoalContinuation(ctx context.Context, call SessionA
 		return cont, true
 	}
 	return SessionAgentCall{}, false
+}
+
+// reviewedGoal notes that the review of closes approved the close of todo
+// name in session sessionID with result, in a call mem kept
+// (closedGoalContinuation).
+func (a *sessionAgent) reviewedGoal(sessionID, name, result string) {
+	if a.reviewedGoals != nil {
+		a.reviewedGoals.Set(reviewedKey(sessionID, name), shownResult(result))
+	}
+}
+
+// shownResult is how the start of result reads in mem.Show, which prints a
+// result on one line ("⏎" for a line break), cut short after 160 bytes.
+func shownResult(result string) string {
+	s := strings.ReplaceAll(strings.ReplaceAll(result, "\r", ""), "\n", " ⏎ ")
+	if r := []rune(s); len(r) > 100 {
+		s = string(r[:100])
+	}
+	return s
+}
+
+func reviewedKey(sessionID, name string) string { return sessionID + "\x00" + name }
+
+// takeReviewed reports whether the close of goal g in session sessionID is
+// the one the review approved, with the same result as far as mem.Show
+// prints it, and forgets it.
+func takeReviewed(m *csync.Map[string, string], sessionID string, g gnovm.ClosedGoal) bool {
+	result, ok := m.Take(reviewedKey(sessionID, g.Name))
+	return ok && result != "" && strings.Contains(g.Show, result)
 }
 
 // notifyGoal tells the user, in session sessionID, how the goal stands.

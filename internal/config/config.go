@@ -628,6 +628,17 @@ type Options struct {
 	// alone and sends nothing anywhere: there is no default.
 	MemEmbeddingsURL string `json:"mem_embeddings_url,omitempty" jsonschema:"description=An OpenAI-compatible embeddings server (such as llama-server --embedding) that mem uses to find by meaning\\, and to recall what bears on each prompt you type. mem's text and your prompts are sent to it to be embedded. Unset\\, mem finds by words alone and sends nothing.,example=http://127.0.0.1:8091/v1"`
 	LoopMaxTurns     *int   `json:"loop_max_turns,omitempty" jsonschema:"description=An optional hard cap on how many turns /loop may drive. Unset (or 0 or negative) means no cap: every 25 turns the agent is asked whether it has a genuine reason to stop and otherwise keeps going.,example=200"`
+	// MemReviewCloses, unset or true, has the small model check each
+	// todo's close as done against what happened in the todo, before mem
+	// keeps it (CLOSE-CHECK.md): one model call per todo closed. false
+	// skips that call; the free checks still run.
+	MemReviewCloses *bool `json:"mem_review_closes,omitempty" jsonschema:"description=Before a todo is closed as done\\, the small model checks its result against what happened in the todo\\, and mem refuses the close when nothing there shows it. One model call per todo closed. Set false to skip it; the free checks (nothing done in the todo\\, a file said changed that nothing in the todo changed or showed) still run.,default=true"`
+}
+
+// ReviewsCloses reports whether a todo's close is reviewed by the small
+// model before mem keeps it: unless mem_review_closes is false.
+func (o *Options) ReviewsCloses() bool {
+	return o == nil || o.MemReviewCloses == nil || *o.MemReviewCloses
 }
 
 // DefaultMaxBackgroundJobs is how many background shell jobs may run at once

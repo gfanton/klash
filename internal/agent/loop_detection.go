@@ -138,13 +138,23 @@ func loopContinuation(call SessionAgentCall, repeated []fantasy.ToolCallContent,
 // in 40 minutes, nudged 30 times (QA, 2026-11-04).
 func loopNudgePrompt(repeated []fantasy.ToolCallContent, said []string) string {
 	for _, s := range said {
-		if m := freshRefusal.FindStringSubmatch(s); m != nil {
+		id := refusedClose(s)
+		switch {
+		case id == "":
+		case strings.Contains(s, "nothing came between your entering") || strings.Contains(s, "this call entered"):
 			return fmt.Sprintf(
 				"mem has refused to close `%s` again and again: nothing was done in it since you entered it, "+
 					"no file changed and no command run there, so its work is not done, whatever the result you send says, "+
 					"and the same close is refused every time. Do the work now: look at the files it needs, make the change, "+
 					"check it, then close it with what came of it. If it cannot be done, stop and tell the user plainly that it is not done.",
-				m[1])
+				id)
+		default:
+			return fmt.Sprintf(
+				"The close of `%s` has been refused again and again, the same way each time: %s\n\n"+
+					"Sending the same close again will be refused again. Do what the refusal says is missing, with your tools, "+
+					"or show that it is done (view the file, run the check), then close it with what came of it. "+
+					"If it cannot be done, leave it with mem.Leave(\"why\") and tell the user plainly that it is not done.",
+				id, refusalLine(s))
 		}
 	}
 	var calls strings.Builder
@@ -200,10 +210,6 @@ func getToolInteractionSignature(content fantasy.ResponseContent) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
-
-// freshRefusal is mem's refusal of a close with nothing done since the
-// todo was entered, naming the todo.
-var freshRefusal = regexp.MustCompile("not popped: nothing came between your entering `([^`]+)`")
 
 // runNumbers is the numbers in mem's answer, blanked for its signature.
 var runNumbers = regexp.MustCompile(`[0-9]+(\.[0-9]+)?`)

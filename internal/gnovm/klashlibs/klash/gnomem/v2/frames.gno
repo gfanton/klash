@@ -603,7 +603,7 @@ func (m *Mem) enter(id, thought string, above bool) {
 		m.do(Op{Kind: "set", Name: id, Field: "doing", Old: it.Doing, New: me})
 	}
 	pushed(id, it.Title)
-	println(pushText(id, it.Title, thought))
+	println(m.pushText(id, it, thought))
 	// The thoughts already on it, as a note left for it by another frame or
 	// session (mem.Note), or what it said when it was closed before: they
 	// reach the model as it starts the todo, with no search (QA,
@@ -662,13 +662,28 @@ func (m *Mem) parallel(id string) {
 	println("`" + id + "`'s todos may be done at once, by any session")
 }
 
-// pushText is what a push says: where the model is, and what a pop will do.
-func pushText(id, title, thought string) string {
-	head := "in " + ref(id, title)
-	if title == "" && thought != "" {
+// pushText is what a push of todo id, it, says: where the model is, what
+// to do there, and what a pop will do. A todo with nothing under it is
+// done now, with tools, and its result comes from what they returned:
+// told only "when it is done, pop it", a model with no thinking wrote the
+// result before the work (QA, 2026-11-04, A20). The todos of one with
+// todos under it are its work, so Next is named: told to do it, models did
+// its first todo's work in the task's own frame (A13).
+func (m *Mem) pushText(id string, it *Todo, thought string) string {
+	head := "in " + ref(id, it.Title)
+	if it.Title == "" && thought != "" {
 		head = "in `" + id + "` (thought: " + quote(line(thought, 80)) + ")"
 	}
-	return head + ": when it is done, pop it with what came of it and what the next todo needs. " +
+	what := ": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. "
+	switch nt := m.nextTodo(id); {
+	case it.OpenSteps > 0 && nt != nil:
+		what = ": its todos are its work, mem.Next() steps into " + ref(nt.Id, nt.Purpose) + "; once they are closed, pop it with what came of them and what the next todo needs. "
+	case it.OpenSteps > 0:
+		what = ": its todos are its work, and none can be done now (mem.Show(\"" + id + "\") says why); once they are closed, pop it with what came of them and what the next todo needs. "
+	case m.workedUnder(id, it):
+		what = ": its todos are done; pop it with what came of them and what the next todo needs. "
+	}
+	return head + what +
 		"Everything from here until the pop is removed from your context then, what you were told included; " +
 		"what matters after, keep as a thought first. Your result stays, and nothing you did is undone."
 }
@@ -751,7 +766,7 @@ func (m *Mem) holdsOf(id string) string {
 func (m *Mem) heldText(id string, it *Todo) string {
 	h := m.holder(id, it, caller())
 	if h == "" {
-		h = it.Doing
+		h = m.doing(id, it, caller())
 	}
 	msg := "`" + id + "` is held by " + who(h) + ": only it can pop, close or drop it, and the user can resume that session if it has ended. Do not look for it yourself: go on with what is free, or tell the user"
 	if top(frames()) == id {
@@ -939,7 +954,7 @@ func (m *Mem) refuseTaken(id string, it *Todo) {
 // parent entered with its jobs all done was refused, and the model re-ran
 // the tests only to have something between).
 func (m *Mem) refuseFresh(id string, it *Todo) {
-	if id == fresh() && !(it.DoneSteps > 0 && it.OpenSteps == 0) {
+	if id == fresh() && !(m.workedUnder(id, it) && it.OpenSteps == 0) {
 		panic("not popped: nothing came between your entering " + ref(id, it.Title) + " and this pop, so it is not done. Do it, or check that it is done, then pop it.")
 	}
 }
@@ -980,6 +995,9 @@ func (m *Mem) pop(id string, it *Todo, result string, dropped bool) {
 		}
 		panic(ref(id, it.Title) + " has open todos " + m.refs(m.openSteps(id)) + ": push and pop them, or drop them, first")
 	}
+	if !m.workedUnder(id, it) && it.For == "" {
+		closing(id, it.Title, r, thoughtTexts(it.Notes))
+	}
 	if it.Wait != "" {
 		m.do(Op{Kind: "set", Name: id, Field: "wait", Old: it.Wait})
 	}
@@ -1016,6 +1034,31 @@ const (
 	maxShownThoughts = 5
 	maxShownThought  = 600
 )
+
+// workedUnder reports whether a todo under todo id, it, was done: its work
+// was done in its todos, whose closes were checked. An answer the user gave
+// to a question under it is no work done there (it keeps For "user").
+func (m *Mem) workedUnder(id string, it *Todo) bool {
+	if it.DoneSteps == 0 {
+		return false
+	}
+	for _, s := range it.Steps {
+		if st := m.get(id + "/" + s); st != nil && st.Status == "done" && st.For == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// thoughtTexts is the thoughts kept on a todo, one a line, as gnosh's
+// check of its close reads them (closing).
+func thoughtTexts(notes []note) string {
+	var lines []string
+	for _, n := range notes {
+		lines = append(lines, n.Name+": "+n.Text)
+	}
+	return strings.Join(lines, "\n")
+}
 
 // thoughtLines is notes as a receipt lists them, oldest first: "`name`:
 // text", and the todo a thought became; at most max, the rest counted; ""

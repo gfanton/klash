@@ -52,8 +52,9 @@ from a hosted API to one running on your own machine. On top of that:
   [the machines underneath](#thinks-in-gno-the-machines-underneath).
 - **Plans in Gno.** A task is a todo in `mem` with the todos under it. A todo
   cannot be closed while one under it is open, so "the tests pass" is
-  reached, not claimed, and a separate judge checks each task the agent
-  closes against the conversation: [a todo that outlives the session](#a-todo-that-outlives-the-session).
+  reached, not claimed; the close of each todo the work is done in is
+  checked against what happened in it, and a separate judge checks each
+  task the agent closes against the conversation: [a todo that outlives the session](#a-todo-that-outlives-the-session).
 - **Remembers in Gno.** What it found, what waits on you and the facts you
   told it stay in `mem` on your disk, and a new session starts with them:
   [memory that runs](#memory-that-runs).
@@ -117,7 +118,7 @@ as it happened; the replayed calls are under
 
 ```go
 mem.Frame("klash-to-gnosh-rename/gnosh-readme-rename").Push()
-// in `klash-to-gnosh-rename/gnosh-readme-rename` "rename klash to gnosh in README.md": when it is done, pop it with what came of it and what the next todo needs. …
+// in `klash-to-gnosh-rename/gnosh-readme-rename` "rename klash to gnosh in README.md": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 // … the README read, edited and searched; then
 mem.Pop("README.md fully renamed klash→gnosh (title, prose, build/usage snippet, config file mentions incl. gnosh.toml and gnosh.example.toml); case-insensitive grep for klash finds nothing")
 // done `klash-to-gnosh-rename/gnosh-readme-rename` "rename klash to gnosh in README.md" → README.md fully renamed klash→gnosh (title, prose, build/usage snippet, config file mentions incl. gnosh.toml and gnosh.example.toml); case-insensitive grep for klash finds nothing
@@ -240,8 +241,8 @@ r.Todo("verify that nothing says klash and the tests pass")
 // added `rename-project-klash-gnosh/verify-nothing-says-klash` "verify that nothing says klash and the tests pass"
 mem.Frame("rename-project-klash-gnosh").Push()
 mem.Next()
-// in `rename-project-klash-gnosh` "rename the project from klash to gnosh": when it is done, pop it with what came of it and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
-// in `rename-project-klash-gnosh/rename-code-makefile` "rename it in the code and the Makefile": when it is done, pop it with what came of it and what the next todo needs. …
+// in `rename-project-klash-gnosh` "rename the project from klash to gnosh": its todos are its work, mem.Next() steps into `rename-project-klash-gnosh/rename-code-makefile` "rename it in the code and the Makefile"; once they are closed, pop it with what came of them and what the next todo needs. Everything from here until the pop is removed from your context then, what you were told included; what matters after, keep as a thought first. Your result stays, and nothing you did is undone.
+// in `rename-project-klash-gnosh/rename-code-makefile` "rename it in the code and the Makefile": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 mem.Pop("go.mod, main.go and the Makefile say gnosh; the tests still expect klash")
 // done `rename-project-klash-gnosh/rename-code-makefile` "rename it in the code and the Makefile" → go.mod, main.go and the Makefile say gnosh; the tests still expect klash
 // next: `rename-project-klash-gnosh/rename-tests` "rename it in the tests": mem.Next()
@@ -254,15 +255,15 @@ mem.Show()
 //     [ ] `rename-project-klash-gnosh/rename-readme-config-example` "rename it in the README and the config example"
 //     [ ] `rename-project-klash-gnosh/verify-nothing-says-klash` "verify that nothing says klash and the tests pass"
 mem.Next()
-// in `rename-project-klash-gnosh/rename-tests` "rename it in the tests": when it is done, pop it with what came of it and what the next todo needs. …
+// in `rename-project-klash-gnosh/rename-tests` "rename it in the tests": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 mem.Pop("main_test.go expects gnosh in the usage line and the greeting")
 mem.Next()
 // done `rename-project-klash-gnosh/rename-tests` "rename it in the tests" → main_test.go expects gnosh in the usage line and the greeting
-// in `rename-project-klash-gnosh/rename-readme-config-example` "rename it in the README and the config example": when it is done, pop it with what came of it and what the next todo needs. …
+// in `rename-project-klash-gnosh/rename-readme-config-example` "rename it in the README and the config example": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 mem.Pop("README says gnosh; klash.example.toml is now gnosh.example.toml")
 mem.Next()
 // done `rename-project-klash-gnosh/rename-readme-config-example` "rename it in the README and the config example" → README says gnosh; klash.example.toml is now gnosh.example.toml
-// in `rename-project-klash-gnosh/verify-nothing-says-klash` "verify that nothing says klash and the tests pass": when it is done, pop it with what came of it and what the next todo needs. …
+// in `rename-project-klash-gnosh/verify-nothing-says-klash` "verify that nothing says klash and the tests pass": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs. …
 mem.Pop("grep finds no klash; go test ./... → ok gnosh 0.004s")
 mem.Next()
 // done `rename-project-klash-gnosh/verify-nothing-says-klash` "verify that nothing says klash and the tests pass" → grep finds no klash; go test ./... → ok gnosh 0.004s
@@ -280,17 +281,17 @@ context and keeps its result; the task's own todo is popped last, with the
 evidence that it holds. A todo popped while one under it is open is refused,
 and the refusal names the open one; nothing from the call is kept.
 
-A todo belongs to the session that entered it. When the work goes on in
-another session, that session takes up the free todos under it one frame at a
-time, but only the first session, resumed by its id, can pop or close the one
-it entered: in real runs on 31 October, a task carried to a new session ended
-with every todo under it done and the top one still open, held by the session
-that began it. That was a todo pushed by its name; the todos above one that
-`mem.Next()` steps into from the root are entered on the way and held only
-while their session works, so a later session can close them. A todo the ended session had stepped into stays held the same
-way, and its work waits for that session: in one run of the four-session
-plan, the last session could not take the step the one before it had
-entered.
+A todo belongs to the session that entered it while that session works on
+it. When the work goes on in another session, that session takes up the free
+todos under it one frame at a time, and once their session has stopped, it
+closes the task too: a todo with todos under it is held only while its
+session works, whether it was pushed by its name or entered on the way to a
+todo under it. Before, in real runs on 31 October and 4 November, a task
+carried to a new session ended with every todo under it done and the top one
+still open, held by the session that began it. A todo with nothing under it
+that the ended session had stepped into stays held, and its work waits for
+that session: in one run of the four-session plan, the last session could
+not take the step the one before it had entered.
 
 The facts, across their three sessions:
 

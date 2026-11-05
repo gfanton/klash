@@ -126,6 +126,8 @@ type fakeMem struct {
 	// fresh is the fresh frame (frameStacks.fresh) the tool would have
 	// told mem with each call, by call id.
 	fresh map[string]string
+	// onCall, when set, is called as each call to mem begins.
+	onCall func(ctx context.Context, sessionID, callID string)
 }
 
 // freshAt is the fresh frame mem would have been told of with call id.
@@ -143,6 +145,9 @@ type fakeMemInput struct {
 func (m *fakeMem) tool() fantasy.AgentTool {
 	return fantasy.NewAgentTool(gnovmtools.RunToolName, "mem", func(ctx context.Context, p fakeMemInput, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 		session := tools.GetSessionFromContext(ctx)
+		if m.onCall != nil {
+			m.onCall(ctx, session, call.ID)
+		}
 		stack, fresh := m.frames.stack(ctx, session), m.frames.fresh(ctx, session, call.ID)
 		m.mu.Lock()
 		m.stacks = append(m.stacks, stack)
@@ -336,9 +341,9 @@ const (
 	popS1      = `mem.Pop("found it")`
 	popS2      = `mem.Pop("20 of 20 passed")`
 	popG       = `mem.Pop("fixed")`
-	inG        = "in `g` \"fix it\": when it is done, pop it with what came of it and what the next todo needs."
-	inS1       = "in `g/s1` \"find the cause\": when it is done, pop it with what came of it and what the next todo needs."
-	inS2       = "in `g/s2` \"rerun\": when it is done, pop it with what came of it and what the next todo needs."
+	inG        = "in `g` \"fix it\": its todos are its work, mem.Next() steps into `g/s1` \"find the cause\"; once they are closed, pop it with what came of them and what the next todo needs."
+	inS1       = "in `g/s1` \"find the cause\": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs."
+	inS2       = "in `g/s2` \"rerun\": do it now, with your tools; once what they return shows it done, pop it with that and what the next todo needs."
 	doneS1     = "done `g/s1` \"find the cause\" → found it"
 )
 

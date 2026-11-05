@@ -257,8 +257,8 @@ func (m *Mem) aside(name string, it *Todo, top bool) string {
 			parts = append(parts, "waits on the user")
 		}
 		switch d := m.doer(name, it); {
-		case it.Doing != "":
-			parts = append(parts, "held by "+who(it.Doing)+", "+ago(it.Changed))
+		case d != "" && d == m.doing(name, it, caller()):
+			parts = append(parts, "held by "+who(d)+", "+ago(it.Changed))
 		case d != "":
 			parts = append(parts, who(d)+" is in it")
 		}
@@ -392,8 +392,8 @@ func (m *Mem) showItem(sb *strings.Builder, name string, it *Todo) {
 	if it.For != "" {
 		sb.WriteString("  for the user\n")
 	}
-	if it.Doing != "" {
-		sb.WriteString("  held by " + who(it.Doing) + "\n")
+	if d := m.doing(name, it, caller()); d != "" {
+		sb.WriteString("  held by " + who(d) + "\n")
 	} else if d := m.doer(name, it); d != "" {
 		sb.WriteString("  " + who(d) + " is in it, on the way to a todo under it\n")
 	}

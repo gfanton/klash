@@ -22,6 +22,7 @@ import (
 	"go/token"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -129,6 +130,27 @@ type runOptions struct {
 	namer    NamerFunc
 	onErased func(ctx context.Context, sessionID string, e gnovm.MemErasure)
 	onRules  func(ctx context.Context, sessionID string, rules []gnovm.MemRule)
+	check    CheckCloseFunc
+	kept     func(ctx context.Context, sessionID, callID string, kept bool)
+}
+
+// CheckCloseFunc checks closes a call to mem makes (gnovm.MemClose) before
+// the call is kept: "" approves them all, anything else is the refusal the
+// model is shown.
+type CheckCloseFunc func(ctx context.Context, sessionID, callID string, closes []gnovm.MemClose) string
+
+// CheckCloses has gnovm_run hand f each close of a todo with nothing under
+// it, as done, that a call to mem makes, before the call is kept
+// (RunRequest.CheckCloses): approved, the call runs again and is kept;
+// refused, nothing of it is.
+func CheckCloses(f CheckCloseFunc) RunOption {
+	return func(o *runOptions) { o.check = f }
+}
+
+// ClosesKept has gnovm_run tell f, after a call whose closes CheckCloses
+// checked, whether mem kept the call.
+func ClosesKept(f func(ctx context.Context, sessionID, callID string, kept bool)) RunOption {
+	return func(o *runOptions) { o.kept = f }
 }
 
 // SubAgent says gnovm_run serves a sub-agent's session, whose Next never
@@ -223,7 +245,45 @@ func NewRunTool(vms *gnovm.Lazy, project string, opts ...RunOption) fantasy.Agen
 					req.Names = o.namer(ctx, session, texts)
 				}
 			}
+			req.CheckCloses = o.check != nil && p.Name == gnovm.MemVM
 			res, err := c.Run(ctx, req)
+			// mem kept nothing of a call with a close to check: check them,
+			// then run the same request, names and all, with them approved.
+			// Each run can only bring closes not approved yet; a todo
+			// approved once in the call is not asked about again, though
+			// its result changed between runs (one made of the time).
+			checked := false
+			for err == nil && res.Err != nil && len(res.Closes) > 0 && req.CheckCloses {
+				var fresh []gnovm.MemClose
+				for _, cl := range res.Closes {
+					if !slices.Contains(req.Checked, cl.Checked()) && !slices.Contains(req.Checked, cl.AnyResult()) {
+						fresh = append(fresh, cl)
+					}
+				}
+				if len(fresh) == 0 {
+					// mem asked again about what it was told was approved:
+					// never so; stop rather than loop.
+					break
+				}
+				checked = true
+				if refusal := o.check(ctx, session, call.ID, fresh); refusal != "" {
+					if o.kept != nil {
+						o.kept(context.WithoutCancel(ctx), session, call.ID, false)
+					}
+					// What the run printed was of a call never kept: a "done"
+					// there would read as kept.
+					res.Err = errors.New(refusal)
+					res.Closes, res.Output = nil, ""
+					return fantasy.NewTextErrorResponse(renderRun(res, "")), nil
+				}
+				for _, cl := range fresh {
+					req.Checked = append(req.Checked, cl.Checked(), cl.AnyResult())
+				}
+				res, err = c.Run(ctx, req)
+			}
+			if checked && o.kept != nil {
+				o.kept(context.WithoutCancel(ctx), session, call.ID, err == nil && res.Err == nil)
+			}
 			var died interface{ Error() string }
 			if err != nil && errors.As(err, &died) && strings.Contains(err.Error(), "worker ended before it replied") {
 				if p.Name == gnovm.MemVM {

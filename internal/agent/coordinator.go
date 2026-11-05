@@ -219,6 +219,10 @@ type coordinator struct {
 	// its texts as before. Guarded by madeNamesMu; nil until the first.
 	madeNamesMu sync.Mutex
 	madeNames   map[string]map[string]string
+	// closeVerdicts keeps the reviews' verdicts on closes (checkClose), and
+	// reviewedCloses the approved ones until their call is kept.
+	closeVerdicts  closeVerdicts
+	reviewedCloses reviewedCloses
 
 	// agentMu guards mainAgent and mainAgentName: SetMainAgent runs on
 	// HTTP handler goroutines while runs, cancels, and probes read the
@@ -1323,7 +1327,8 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 	if c.gnovms != nil {
 		allTools = append(allTools,
 			wrap(gnovmtools.NewRunTool(c.gnovms, c.cfg.WorkingDir(), gnovmtools.OnMemGoals(c.memGoals), gnovmtools.BoundGoal(c.goals.boundName), gnovmtools.OnMemErased(c.memErased), gnovmtools.OnMemRules(c.memRules),
-				gnovmtools.MemStack(c.frames.stack), gnovmtools.MemFresh(c.frames.fresh), gnovmtools.OnMemFrames(c.frames.events), gnovmtools.Namer(c.nameFor), gnovmtools.SubAgent(isSubAgent))),
+				gnovmtools.MemStack(c.frames.stack), gnovmtools.MemFresh(c.frames.fresh), gnovmtools.OnMemFrames(c.frames.events), gnovmtools.Namer(c.nameFor), gnovmtools.SubAgent(isSubAgent),
+				gnovmtools.CheckCloses(c.checkCloses), gnovmtools.ClosesKept(c.closesKept))),
 			wrap(gnovmtools.NewNewTool(c.gnovms, c.cfg.WorkingDir())),
 			wrap(gnovmtools.NewListTool(c.gnovms, c.cfg.WorkingDir())),
 			wrap(gnovmtools.NewDropTool(c.gnovms, c.cfg.WorkingDir(), c.permissions)),

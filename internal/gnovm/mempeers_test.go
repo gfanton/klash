@@ -353,3 +353,52 @@ func TestPeersToldOfPeers(t *testing.T) {
 	res = p1.run(`mem.Next()`, true)
 	require.Contains(t, res.Output, "session p2 also works on this plan now: keep to this todo's files", res.Output)
 }
+
+// A task a session pushed is closed by another once its todos are done and
+// the session that pushed it has stopped (A11, Jae 2026-11-05): a hold on a
+// todo with todos under it stands only while its session works on it, as
+// a todo entered on the way is held. Left hard, a plan pushed in one
+// session and finished in another stayed open for good, "3/3 done" (QA,
+// 2026-11-04). A todo with nothing under it stays held.
+func TestPeersTaskHeldOnlyWhileItsSessionWorks(t *testing.T) {
+	t.Parallel()
+	p := newPeersMem(t)
+	p.peer("user").run(`r := mem.Todo("port")
+r.Todo("parse")
+r.Todo("document")
+mem.Todo("lone")`, false)
+	s1, s2 := p.peer("s1"), p.peer("s2")
+	p.working("s1", "s2")
+	s1.run(`mem.Frame("port").Push()`, false)
+	require.Equal(t, []string{"port"}, s1.stack)
+	for range 2 {
+		res := s2.run(`mem.Next()`, false)
+		require.Len(t, s2.stack, 1, "the task is s1's while it works: %s", res.Output)
+		s2.run(`mem.Pop("done")`, false)
+	}
+	_, err := p.h.call(context.Background(), memRequest{Code: `mem.Done("port", "the flag is in")`, Session: "s2", Run: true})
+	require.ErrorContains(t, err, "`port` is held by session s1")
+
+	p.working("s2") // s1 has stopped, inside the task
+	res := s2.run(`mem.Show("port")`, false)
+	require.NotContains(t, res.Output, "held by", "a hold that lapsed is not shown")
+	res = s2.run(`mem.Done("port", "the flag is in")`, false)
+	require.Contains(t, res.Output, "done `port`")
+	res = s1.run(`mem.Pop("the flag")`, false)
+	require.Contains(t, res.Output, "`port` was already done → the flag is in")
+
+	p.working("s1", "s2")
+	s1.run(`mem.Frame("lone").Push()`, false)
+	p.working("s2")
+	_, err = p.h.call(context.Background(), memRequest{Code: `mem.Done("lone", "done")`, Session: "s2", Run: true})
+	require.ErrorContains(t, err, "`lone` is held by session s1", "a todo with nothing under it stays held")
+
+	// Start takes a task whose hold lapsed, as enter does.
+	p.peer("user").run(`t := mem.Todo("docs")
+t.Todo("write")`, false)
+	p.working("s1", "s2")
+	s1.run(`mem.Frame("docs").Push()`, false)
+	p.working("s2")
+	res = s2.run(`mem.Start("docs")`, false)
+	require.Contains(t, res.Output, "started `docs`")
+}

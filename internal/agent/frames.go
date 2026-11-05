@@ -274,37 +274,41 @@ func (f *frameStacks) fresh(ctx context.Context, sessionID, callID string) strin
 }
 
 // workIn reports whether rows, inside frame, hold work: a call to a tool
-// other than mem; a call to mem that changed it (a fact, a note, a thought,
-// a todo planned), which a refused one did not; or an answer the model gave
-// the user (an assistant row with text and no tool call), as a todo asking
-// for an explanation is done by giving it, unless mem had refused to close
-// the frame before it: then the answer was the claim, as "Fixed." after a
-// refused close was (QA, 2026-11-04). A read of mem, a Next, and a pop or
-// close mem refused are no work.
+// other than mem that did not fail; a call to mem that changed it (a fact,
+// a note, a thought, a todo planned), which a refused one did not; or an
+// answer the model gave the user (an assistant row with text and no tool
+// call), as a todo asking for an explanation is done by giving it, unless
+// a close of the frame had been refused before it: then the answer was the
+// claim, as "Fixed." after a refused close was (QA, 2026-11-04). A read of
+// mem, a Next, a pop or close refused, and a call that failed (it never
+// ran, or did nothing: two failed renames let a todo be closed "done", QA
+// 2026-11-04) are no work.
 func workIn(rows []message.Message, frame string) bool {
+	failed := map[string]bool{}
+	for _, row := range rows {
+		for _, r := range row.ToolResults() {
+			if r.IsError {
+				failed[r.ToolCallID] = true
+			}
+		}
+	}
 	refused := false
 	for _, row := range rows {
 		if row.Role == message.Assistant && len(row.ToolCalls()) == 0 && strings.TrimSpace(row.Content().Text) != "" && !refused {
 			return true
 		}
 		for _, call := range row.ToolCalls() {
-			if !isMemCall(call) {
+			if !isMemCall(call) && !failed[call.ID] {
 				return true
 			}
 		}
 		for _, r := range row.ToolResults() {
-			if r.IsError && strings.Contains(r.Content, refusedFreshText(frame)) {
+			if r.IsError && refusedClose(r.Content) == frame {
 				refused = true
 			}
 		}
 	}
 	return memWorked(rows)
-}
-
-// refusedFreshText is how mem's refusal of a pop of frame as never done
-// begins (refuseFresh).
-func refusedFreshText(frame string) string {
-	return "not popped: nothing came between your entering `" + frame + "`"
 }
 
 // memWork is a statement of a call to mem that changes it, a thought and a

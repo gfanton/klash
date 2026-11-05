@@ -744,6 +744,11 @@
           "examples": [
             200
           ]
+        },
+        "mem_review_closes": {
+          "type": "boolean",
+          "description": "Before a todo is closed as done, the small model checks its result against what happened in the todo, and mem refuses the close when nothing there shows it. One model call per todo closed. Set false to skip it; the free checks (nothing done in the todo, a file said changed that nothing in the todo changed or showed) still run.",
+          "default": true
         }
       },
       "additionalProperties": false,
