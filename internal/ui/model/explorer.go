@@ -1108,7 +1108,7 @@ func (m *UI) frameDetail(n *frameNode, r *stackRenderer, rows, held []message.Me
 			result = "nothing said"
 		}
 		lines = append(lines, label("result")+value.Render(result))
-		freed := muted.Render("nothing: nothing came between its push and its pop")
+		freed := muted.Render("nothing: its pop took nothing out of the model's context")
 		if len(held) > 0 {
 			freed = t.Files.Additions.Render("−"+shortTokens(tokens)+" tok") +
 				muted.Render(fmt.Sprintf(" · %s out of the model's context", plural(len(held), "row")))

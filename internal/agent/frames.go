@@ -755,14 +755,20 @@ func poppedRows(msgs []message.Message, pushCallID, popCallID string) []message.
 }
 
 // FrameRows is the rows a frame holds in the model's context: those its
-// pop, the call popCallID, removed, as poppedRows finds them; or, for a
-// frame still open (popCallID ""), those a pop now would remove, up to the
-// last row.
+// pop, the call popCallID, removed, as pop finds them (poppedRows, less
+// turnRows' prompts); or, for a frame still open (popCallID ""), those a
+// pop now would remove, up to the last row. It reads no row past the
+// pop's, so msgs may run on to the session's end.
 func FrameRows(msgs []message.Message, pushCallID, popCallID string) []message.Message {
+	end := len(msgs)
 	if popCallID != "" {
-		return poppedRows(msgs, pushCallID, popCallID)
+		end = slices.IndexFunc(msgs, func(m message.Message) bool { return m.Role == message.Assistant && hasToolCall(m, popCallID) })
+		if end < 0 {
+			return nil
+		}
 	}
-	return rowsBefore(msgs, pushCallID, len(msgs))
+	rows, _ := withoutTurn(rowsBefore(msgs, pushCallID, end), msgs[turnStartAt(msgs, end):end])
+	return rows
 }
 
 // RowTokens is about how many tokens row holds in the model's context, as
@@ -878,12 +884,20 @@ func turnRows(msgs, between []message.Message, popCallID string) (rows []message
 	if start < 0 {
 		return between, 0
 	}
-	at := make(map[string]int, len(msgs))
-	for i, m := range msgs {
-		at[m.ID] = i
+	return withoutTurn(between, msgs[start:])
+}
+
+// withoutTurn is between without the user rows of turn, the rows from a
+// turn's first on, and how many those were.
+func withoutTurn(between, turn []message.Message) (rows []message.Message, spared int) {
+	prompts := map[string]bool{}
+	for _, m := range turn {
+		if m.Role == message.User {
+			prompts[m.ID] = true
+		}
 	}
 	for _, r := range between {
-		if r.Role == message.User && at[r.ID] >= start {
+		if prompts[r.ID] {
 			spared++
 			continue
 		}

@@ -52,13 +52,19 @@ func explorerRows(t *testing.T) []message.Message {
 // their pops long seen.
 func explorerUI(t *testing.T, width, height int) *UI {
 	t.Helper()
+	return explorerUIOf(t, width, height, explorerRows(t)...)
+}
+
+// explorerUIOf is explorerUI with the frames of rows.
+func explorerUIOf(t *testing.T, width, height int, rows ...message.Message) *UI {
+	t.Helper()
 	u, _ := sidebarUI(t, height)
 	u.header = newHeader(u.com)
 	u.keyMap = DefaultKeyMap()
 	u.status = NewStatus(u.com, u)
 	u.width = width
 	u.updateLayoutAndSize()
-	observeRows(u, explorerRows(t)...)
+	observeRows(u, rows...)
 	for i := range u.sessionFrames.calls {
 		u.sessionFrames.calls[i].seen = time.Time{}
 	}
@@ -737,6 +743,26 @@ func TestExplorer_DetailListsWhatTheModelNoLongerHas(t *testing.T) {
 	half := explorerUI(t, 200, 50)
 	press(half, ctrlX)
 	require.Equal(t, -1, at(drawn(half), half.layout.explorer, "what the model").Y, "a half explorer has no room for it")
+}
+
+// A prompt folded into the turn of a frame's pop came between its push
+// and its pop, and stays in the model's context: the pop freed nothing.
+func TestExplorer_DetailSaysAPopThatKeptItsTurnsPromptFreedNothing(t *testing.T) {
+	t.Parallel()
+
+	u := explorerUIOf(t, 200, 50,
+		callRow("e1", 1_700_000_000, memCall("c1")),
+		toolRow("f1", 1_700_000_000, memResult(t, "c1", push("a", "do a"))),
+		textRow("u1", message.User, 1_700_000_005, 40),
+		callRow("e2", 1_700_000_010, memCall("c2")),
+		toolRow("f2", 1_700_000_010, memResult(t, "c2", popWith("a", "done"))),
+	)
+	press(u, ctrlX, typed('+'))
+	require.Equal(t, "a", u.selectedFrame().id)
+
+	body := bodyOf(u)
+	require.NotEmpty(t, lineWith(body, "nothing: its pop took nothing out of the model's context"), strings.Join(body, "\n"))
+	require.Empty(t, lineWith(body, "nothing came between"))
 }
 
 // modelWorkspace is exportWorkspace with a config that has providers, as
