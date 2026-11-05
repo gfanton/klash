@@ -145,7 +145,7 @@ func storageBytes(raw []json.RawMessage) int64 {
 			Type  string          `json:"@type"`
 			Delta json.RawMessage `json:"bytes_delta"`
 		}
-		if json.Unmarshal(ev, &e) != nil || !(strings.HasSuffix(e.Type, "StorageDepositEvent") || strings.HasSuffix(e.Type, "StorageUnlockEvent")) {
+		if json.Unmarshal(ev, &e) != nil || !strings.HasSuffix(e.Type, "StorageDepositEvent") && !strings.HasSuffix(e.Type, "StorageUnlockEvent") {
 			continue
 		}
 		d, _ := strconv.ParseInt(strings.Trim(string(e.Delta), `"`), 10, 64)

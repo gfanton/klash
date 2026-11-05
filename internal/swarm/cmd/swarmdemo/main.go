@@ -708,7 +708,7 @@ func run(args []string) error {
 		cargs := append([]string{"run"}, args...)
 		cargs = append(cargs, "-join", "-plan", *planID, "-workers", fmt.Sprintf("%d-%d", killFirst, killLast),
 			"-kill", "", "-slow", "", "-halt-pid", "0", "-watch=false", "-out", "")
-		child = exec.Command(exe, cargs...)
+		child = exec.CommandContext(context.Background(), exe, cargs...)
 		child.Stdout, child.Stderr = os.Stderr, os.Stderr
 		if err := child.Start(); err != nil {
 			return fmt.Errorf("starting workers %d-%d: %w", killFirst, killLast, err)
@@ -733,7 +733,7 @@ func run(args []string) error {
 		cargs = append(cargs, "-join", "-plan", *planID, "-workers", fmt.Sprintf("%d-%d", downFirst, downLast),
 			"-down", "@"+downAt.String()+"+"+downFor.String(), "-epoch-ms", strconv.FormatInt(start.UnixMilli(), 10),
 			"-kill", "", "-slow", "", "-halt-pid", "0", "-watch=false", "-prices=false", "-out", "")
-		m2 := exec.Command(exe, cargs...)
+		m2 := exec.CommandContext(context.Background(), exe, cargs...)
 		m2.Stdout, m2.Stderr = os.Stderr, os.Stderr
 		if err := m2.Start(); err != nil {
 			return fmt.Errorf("starting workers %d-%d: %w", downFirst, downLast, err)
@@ -1084,12 +1084,12 @@ func purgePlan(ctx context.Context, c *gnochain.Client, realm, seed, planID stri
 	}
 	owner := c.WithSigner(signer(seed, "owner"))
 	if _, err := owner.Call(ctx, realm, "Close", 0, planID); err != nil {
-		return nil, fmt.Errorf("Close: %w", err)
+		return nil, fmt.Errorf("calling Close: %w", err)
 	}
 	for {
 		r, err := owner.Call(ctx, realm, "Purge", 0, planID)
 		if err != nil {
-			return nil, fmt.Errorf("Purge: %w", err)
+			return nil, fmt.Errorf("calling Purge: %w", err)
 		}
 		st.Calls++
 		st.Gas = append(st.Gas, r.Gas)
