@@ -1,7 +1,9 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/agent/notify"
@@ -115,4 +117,48 @@ func TestMemRulesNotice(t *testing.T) {
 		"mem: this session changed the rule `push-after-landing`, which every session follows as yours, to \"push only after landed:\" (it was \"push after the tests\"). If you did not ask for it, /mem log shows the change and /mem undo reverses it",
 		"mem: this session removed the rule `no-emoji`, which every session followed as yours. If you did not ask for it, /mem log shows the change and /mem undo reverses it",
 	}, got)
+}
+
+// A message mem could not rewrite still holds what mem erased, and it still
+// reaches the model: its session is named, as one whose visible part holds
+// it is.
+func TestMemErasedNamesASessionItCouldNotRewrite(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	conn, err := db.Connect(ctx, t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	q := db.New(conn)
+	sessions := session.NewService(q, conn)
+	messages := message.NewService(q)
+	a := &App{Sessions: sessions, Messages: failingUpdates{messages}, agentNotifications: pubsub.NewBroker[notify.Notification]()}
+
+	s, err := sessions.Create(ctx, "Deploy")
+	require.NoError(t, err)
+	recall := "<user-prompt-submit-hook>\n<mem>\nFrom your memory (mem), what may bear on what the user just wrote, found by meaning; `mem.Show(\"name\")` shows one in full:\n- fact `deploy` = sk-live-4f9a2c\n</mem>\n</user-prompt-submit-hook>"
+	m, err := messages.Create(ctx, s.ID, message.CreateMessageParams{Role: message.User, Parts: []message.ContentPart{
+		message.TextContent{Text: "deploy it"},
+		message.TextContent{Text: recall, Hidden: true},
+	}})
+	require.NoError(t, err)
+	erasure := gnovm.MemErasure{Texts: map[string]string{"sk-live-4f9a2c": "(redacted)"}}
+
+	require.Equal(t, `what you saw of it is still in 1 session(s), "Deploy", and reaches the model again in them: start a new session, or delete those`, a.memErased(ctx, erasure))
+	got, err := messages.Get(ctx, m.ID)
+	require.NoError(t, err)
+	require.Contains(t, got.Parts[1].(message.TextContent).Text, "sk-live-4f9a2c", "the failed write left it stored")
+
+	// Written, the same erasure leaves nothing to name.
+	a.Messages = messages
+	require.Empty(t, a.memErased(ctx, erasure))
+	got, err = messages.Get(ctx, m.ID)
+	require.NoError(t, err)
+	require.NotContains(t, got.Parts[1].(message.TextContent).Text, "sk-live-4f9a2c")
+}
+
+// failingUpdates is a message store whose writes fail, as on a full disk.
+type failingUpdates struct{ message.Service }
+
+func (failingUpdates) Update(context.Context, message.Message) error {
+	return errors.New("disk full")
 }

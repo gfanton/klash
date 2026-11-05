@@ -60,11 +60,15 @@ func (a *App) memErased(ctx context.Context, e gnovm.MemErasure) string {
 		visible := false
 		for _, msg := range msgs {
 			if eraseFromMessage(&msg, msg.ID == s.SummaryMessageID, e) {
-				if err := a.Messages.Update(ctx, msg); err == nil {
+				err := a.Messages.Update(ctx, msg)
+				if err == nil {
 					err = a.Messages.Flush(ctx, msg.ID)
 				}
 				if err != nil {
+					// The stored message still holds it, and still reaches
+					// the model.
 					slog.Warn("A message kept what mem erased", "session_id", s.ID, "error", err)
+					visible = true
 				}
 			}
 			visible = visible || holdsAny(msg, secrets)
