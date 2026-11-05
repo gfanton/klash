@@ -118,7 +118,14 @@ func (b *Broker[T]) Subscribe(ctx context.Context) <-chan Event[T] {
 	b.subCount++
 
 	go func() {
-		<-ctx.Done()
+		// Shutdown closes every subscription itself; waiting on ctx
+		// alone would keep this goroutine alive after it for as long
+		// as the caller's context lives.
+		select {
+		case <-ctx.Done():
+		case <-b.done:
+			return
+		}
 
 		b.mu.Lock()
 		defer b.mu.Unlock()
