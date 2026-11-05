@@ -320,6 +320,43 @@ func TestHandler_RefreshPersists(t *testing.T) {
 	require.Equal(t, "refreshed-access", saver.AccessToken)
 }
 
+// TestHandler_RestoreNonExpiringToken proves a token issued without
+// expires_in, as GitHub OAuth Apps issue them, is still usable after a
+// restart: what persist saves for it must not come back as expired.
+func TestHandler_RestoreNonExpiringToken(t *testing.T) {
+	base, mcpURL := newFakeAS(t, fakeASOpts{clientID: "saved-client"})
+
+	var saved *oauth.Token
+	first, err := NewHandler("test", mcpURL, nil, nil, func(tok *oauth.Token) {
+		saved = tok
+	}, false, 0)
+	require.NoError(t, err)
+	t.Cleanup(first.Close)
+	first.persist(&oauth2.Config{
+		ClientID: "saved-client",
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  base + "/authorize",
+			TokenURL: base + "/token",
+		},
+	}, &oauth2.Token{AccessToken: "gho_access"})
+	require.NotNil(t, saved)
+
+	h, err := NewHandler("test", mcpURL, saved, nil, func(*oauth.Token) {}, false, 0)
+	require.NoError(t, err)
+	t.Cleanup(h.Close)
+	h.openURL = func(string) error {
+		t.Error("browser must not open when a non-expiring token is restored")
+		return nil
+	}
+
+	ts, err := h.TokenSource(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, ts)
+	tok, err := ts.Token()
+	require.NoError(t, err)
+	require.Equal(t, "gho_access", tok.AccessToken)
+}
+
 func TestHasRefreshableToken(t *testing.T) {
 	t.Parallel()
 	full := &oauth.Token{AccessToken: "a", Client: &oauth.OAuthClient{TokenURL: "https://x/token"}}
