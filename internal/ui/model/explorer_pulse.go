@@ -284,7 +284,7 @@ func (m *UI) pulseTab(inner, height int) []string {
 	}
 	summary := fmt.Sprintf("%d working · %d waits on you", working, len(waits))
 	if at := m.memPulse.At; at > 0 {
-		summary += " · updated " + updatedAgo(time.Now().Sub(time.Unix(at, 0)))
+		summary += " · updated " + updatedAgo(time.Since(time.Unix(at, 0)))
 	}
 	lines = lines[:min(len(lines), max(height-1, 0))]
 	for len(lines) < height-1 {
