@@ -109,6 +109,8 @@ func (s webStore) CreateMessage(ctx context.Context, sessionID string, params me
 }
 
 func init() {
-	sessionWebCmd.Flags().Int("port", 7777, "Port on 127.0.0.1 to serve on")
+	// Not 7777: setupLocalWorkspace starts the artifact server, which
+	// takes 127.0.0.1:7777 (artifacts.DefaultAddress) before this listens.
+	sessionWebCmd.Flags().Int("port", 7778, "Port on 127.0.0.1 to serve on")
 	sessionCmd.AddCommand(sessionWebCmd)
 }
