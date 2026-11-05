@@ -1181,13 +1181,20 @@ func TestMemLockWaitsWithoutACap(t *testing.T) {
 		t.Fatalf("the call did not wait for the lock: %v", err)
 	case <-time.After(500 * time.Millisecond):
 	}
+	// The race detector slows the call itself several fold, so under it the
+	// time from the lock's release to the call's end says nothing about the
+	// wait.
+	soon, never := 2*time.Second, 5*time.Second
+	if raceEnabled {
+		soon, never = time.Minute, time.Minute
+	}
 	let := time.Now()
 	other()
 	select {
 	case err := <-done:
 		require.NoError(t, err)
-		require.Less(t, time.Since(let), 2*time.Second)
-	case <-time.After(5 * time.Second):
+		require.Less(t, time.Since(let), soon)
+	case <-time.After(never):
 		t.Fatal("the call never got the lock")
 	}
 
