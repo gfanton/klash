@@ -12,8 +12,8 @@ import (
 // chain runs in order, all or nothing.
 
 // NewPlan makes plan id with its root todo "t" titled title, worked by its
-// owner and members, or by anyone if open; a hold lasts lease seconds
-// unless renewed.
+// owner and members, or by anyone if open; a hold lasts lease blocks unless
+// renewed (gno.land makes a block every ~3 s, so 20 is about a minute).
 func NewPlan(cur realm, id, title string, open bool, lease int) string {
 	prev := cur.Previous()
 	if !prev.IsUser() {
@@ -26,7 +26,7 @@ func NewPlan(cur realm, id, title string, open bool, lease int) string {
 		panic("plan " + id + " exists")
 	}
 	if lease < minLease || lease > maxLease {
-		panic("a lease is " + strconv.Itoa(minLease) + " to " + strconv.Itoa(maxLease) + " seconds")
+		panic("a lease is " + strconv.Itoa(minLease) + " to " + strconv.Itoa(maxLease) + " blocks")
 	}
 	p := &Plan{ID: id, Owner: prev.Address(), Open: open, Lease: int64(lease)}
 	p.Self = p

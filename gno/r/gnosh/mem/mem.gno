@@ -9,7 +9,10 @@
 // never get the same todo. When nothing is free but some todos are still
 // held, the caller waits in a queue on chain, and the realm hands the next
 // todo that frees up to the oldest waiter of that frame, in the call that
-// frees it. A hold whose lease runs out comes back on the next call.
+// frees it. A hold whose lease runs out comes back on the next call. A
+// lease counts blocks, not seconds, so a chain that stops for a while
+// makes no hold run out (see now); every lease end, in the state, the
+// views and the events' "until", is a block height.
 //
 // Nothing here is private: titles, holders and results are public. The
 // realm keeps no log of changes; every change goes out as an event, which
@@ -54,7 +57,6 @@ import (
 	"chain/runtime"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Bounds: everything a call walks is capped. What it reads grows only
@@ -76,8 +78,8 @@ const (
 	maxLabel     = 64   // bytes in an agent label
 	maxDropUnder = 32   // open todos one Drop closes with it
 	maxParallel  = 16   // open todos under a todo when it is made parallel
-	minLease     = 30   // seconds
-	maxLease     = 3600 // seconds
+	minLease     = 10   // blocks
+	maxLease     = 3600 // blocks: three hours at gno.land's block a 3 s
 
 	planBuckets  = 16 // maps the plans are spread over
 	todoBuckets  = 32 // maps a plan's todos are spread over, by id
@@ -92,7 +94,7 @@ type Plan struct {
 	ID      string
 	Owner   address
 	Open    bool  // anyone may work it; else its members only
-	Lease   int64 // seconds a hold lasts unless renewed
+	Lease   int64 // blocks a hold lasts unless renewed
 	Seq     int64 // events emitted so far
 	Closed  bool
 	Count   int // todos
@@ -103,8 +105,8 @@ type Plan struct {
 	Todos   [todoBuckets]map[string]*Todo // id → todo
 	Members map[string]bool               // address string → true
 	// Due is the expiring index's top: one line "<until> <id>\n" for each
-	// todo with held children, with the earliest lease end among them
-	// (12 digits, so lines compare as strings), sorted, earliest first;
+	// todo with held children, with the earliest lease end among them (a
+	// height in 12 digits, so lines compare as strings), sorted, earliest first;
 	// "<until> \n" (no id) is the root's own hold.
 	Due string
 	// Pending is the todos calls freed but could not serve to waiters (at
@@ -131,7 +133,7 @@ type Todo struct {
 	Offered  bool    // its bit is set in its parent's Avail
 	Holder   string  // address|session key|label; "" when nobody holds it
 	Token    int64   // the seq of the event that gave the hold; Pop names it
-	Until    int64   // the hold's lease end, unix seconds of block time
+	Until    int64   // the hold's lease end: the block height it runs out at
 	Held     string  // its held children, one heldRec record each, in the order held
 }
 
@@ -142,7 +144,7 @@ type Agent struct {
 	Holds  []*Todo // in the order taken
 	Frame  string  // the frame it waits in ("" for the whole plan), when Wait is set
 	Wait   int64   // the seq of its "waiting" event: its place in Frame's queue; 0 when it does not wait
-	Until  int64   // its place's lease end
+	Until  int64   // its place's lease end, a block height
 	Page   int     // the page of Frame's queue its entry is in
 }
 
@@ -316,4 +318,9 @@ func cleanText(what, s string, max int) string {
 // resetPlans forgets every plan (tests: realm state outlives a test).
 func resetPlans() { plans = [planBuckets]map[string]*Plan{} }
 
-func now() int64 { return time.Now().Unix() }
+// now is the chain's height. Leases count blocks, not seconds: a chain
+// that stops for a while (an upgrade, a halt) makes no blocks, so no hold
+// runs out while it stands still, and the results finished meanwhile still
+// count when it goes on. Block time would jump over the stop and take back
+// every hold at once.
+func now() int64 { return runtime.ChainHeight() }

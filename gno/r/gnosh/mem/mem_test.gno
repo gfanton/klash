@@ -24,13 +24,14 @@ func user(a address) runtime.Realm { return testing.NewUserRealm(a) }
 
 func holderFor(a address, label string) string { return a.String() + "|-|" + label }
 
-// fresh makes a plan, open to anyone, with a 60-second lease, after
+// fresh makes a plan, open to anyone, with a 12-block lease (a minute at
+// the tests' 5 s a block), after
 // clearing every plan a test before made (realm state outlives a test).
 func fresh(cur realm, t *testing.T, id string) {
 	t.Helper()
 	resetPlans()
 	testing.SetRealm(user(owner))
-	NewPlan(cross(cur), id, "the task", true, 60)
+	NewPlan(cross(cur), id, "the task", true, 12)
 }
 
 func add(cur realm, who address, plan, parent, names, titles string) string {
@@ -136,7 +137,7 @@ func TestLeaseLapses(cur realm, t *testing.T) {
 	fresh(cur, t, "lease")
 	add(cur, owner, "lease", "t", "a", "a")
 	_, tok := held(t, next(cur, w1, "lease", ""))
-	testing.SkipHeights(13) // 65 s of block time in tests
+	testing.SkipHeights(13) // 13 blocks: past the 12-block lease
 	id, tok2 := held(t, next(cur, w2, "lease", ""))
 	uassert.Equal(t, "t/a", id)
 	uassert.NotEqual(t, tok, tok2)
@@ -330,7 +331,7 @@ func TestLapseAcrossGroups(cur realm, t *testing.T) {
 		held(t, nextAs(cur, w1, "h"+strconv.Itoa(i), "lap", ""))
 	}
 	uassert.True(t, strings.Contains(PlanJSON("lap"), `"held":6`))
-	testing.SkipHeights(13) // 65 s: every lease has run out
+	testing.SkipHeights(13) // 13 blocks: every lease has run out
 	got, _ := held(t, nextAs(cur, w2, "new", "lap", ""))
 	uassert.Equal(t, "t/g1/a", got, "the first lapsed todo is free again")
 	j := PlanJSON("lap")
@@ -366,7 +367,7 @@ func TestWaiterLapses(cur realm, t *testing.T) {
 	add(cur, owner, "wl", "t", "a", "a")
 	_, tok := held(t, nextAs(cur, w1, "x", "wl", ""))
 	uassert.Equal(t, "waiting\t", nextAs(cur, w2, "early", "wl", ""))
-	testing.SkipHeights(8) // 40 s
+	testing.SkipHeights(8) // 8 blocks
 	testing.SetRealm(user(w1))
 	Renew(cross(cur), "wl", "x", "t/a", "", false)
 	uassert.Equal(t, "waiting\t", nextAs(cur, w3, "late", "wl", ""))
