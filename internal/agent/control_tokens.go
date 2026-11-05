@@ -10,7 +10,7 @@ import (
 // sequence it stops the server's tokenizer from recognizing the sequence as a
 // special token, while staying invisible to a reader and transparent to the
 // model, which reads straight through it.
-const zeroWidth = "​"
+const zeroWidth = "\u200b"
 
 // neutralizeControlTokens defuses model/runtime control sequences that may
 // appear verbatim in untrusted text (web pages a tool fetched, command output,

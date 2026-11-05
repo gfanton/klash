@@ -49,7 +49,7 @@ func TestCallMeterPerCallLimit(t *testing.T) {
 func TestCallMeterRejectsNegativeAndOverflow(t *testing.T) {
 	t.Parallel()
 	var g callMeter
-	g.begin(nil, math.MaxInt64, time.Time{})
+	g.begin(context.Background(), math.MaxInt64, time.Time{})
 	require.NotNil(t, panicValue(func() { g.ConsumeGas(-1, "neg") }))
 	g.ConsumeGas(math.MaxInt64-5, "big")
 	require.IsType(t, storetypes.GasOverflowError{}, panicValue(func() { g.ConsumeGas(10, "over") }))
@@ -58,9 +58,9 @@ func TestCallMeterRejectsNegativeAndOverflow(t *testing.T) {
 func TestCallMeterRefund(t *testing.T) {
 	t.Parallel()
 	var g callMeter
-	g.begin(nil, 1000, time.Time{})
+	g.begin(context.Background(), 1000, time.Time{})
 	g.ConsumeGas(500, "earlier call")
-	g.begin(nil, 1000, time.Time{})
+	g.begin(context.Background(), 1000, time.Time{})
 	g.ConsumeGas(100, "a")
 	g.RefundGas(30, "a")
 	require.EqualValues(t, 70, g.used())
@@ -122,6 +122,6 @@ func TestCallMeterCancellation(t *testing.T) {
 
 	// After end, a cancelled context no longer stops anything.
 	g.end()
-	g.begin(nil, math.MaxInt64, time.Time{})
+	g.begin(context.Background(), math.MaxInt64, time.Time{})
 	require.Nil(t, panicValue(func() { g.ConsumeGas(3*pollEvery, "x") }))
 }

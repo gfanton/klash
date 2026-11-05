@@ -94,11 +94,11 @@ func compactHookAgent(t *testing.T, event string, subAgent bool, hookCfgs ...con
 }
 
 // summarize drives the agent's Summarize with the given trigger and
-// reports the error, the model's summary count, and the hook warnings.
-func (r preCompactRun) summarize(t *testing.T, trigger preCompactTrigger) (error, int, []string) {
+// reports the model's summary count, the hook warnings, and the error.
+func (r preCompactRun) summarize(t *testing.T, trigger preCompactTrigger) (int, []string, error) {
 	t.Helper()
 	err := r.agent.Summarize(t.Context(), r.sessionID, "", fantasy.ProviderOptions{}, nil, trigger)
-	return err, r.model.count(), r.hookWarningMessages()
+	return r.model.count(), r.hookWarningMessages(), err
 }
 
 func (r preCompactRun) hookWarningMessages() []string {
@@ -136,7 +136,7 @@ func TestSummarize_PreCompactFiresWithTheTrigger(t *testing.T) {
 			out := filepath.Join(dir, "trigger")
 			r := preCompactAgent(t, false,
 				preCompactHooks("", `echo "$GNOSH_PRE_COMPACT_TRIGGER" > `+out)...)
-			err, summarized, _ := r.summarize(t, tc.trigger)
+			summarized, _, err := r.summarize(t, tc.trigger)
 			require.NoError(t, err)
 			require.Equal(t, 1, summarized, "the summary goes ahead")
 			data, err := os.ReadFile(out)
@@ -215,7 +215,7 @@ func TestSummarize_PreCompactBlockDoesNotStopTheSummary(t *testing.T) {
 
 	r := preCompactAgent(t, false,
 		preCompactHooks("", `echo "not yet" >&2; exit 2`)...)
-	err, summarized, warnings := r.summarize(t, preCompactTriggerManual)
+	summarized, warnings, err := r.summarize(t, preCompactTriggerManual)
 	require.NoError(t, err)
 	require.Equal(t, 1, summarized, "the summary goes ahead over the hook's objection")
 	require.Len(t, warnings, 1, "the user is told the hook objected")
@@ -231,7 +231,7 @@ func TestSummarize_PreCompactFailedHookWarns(t *testing.T) {
 
 	r := preCompactAgent(t, false,
 		preCompactHooks("", "./hooks/does-not-exist.sh")...)
-	_, summarized, warnings := r.summarize(t, preCompactTriggerAuto)
+	summarized, warnings, _ := r.summarize(t, preCompactTriggerAuto)
 	require.Equal(t, 1, summarized)
 	require.Len(t, warnings, 1, "the user is told the gate did not run")
 	require.Contains(t, warnings[0], "PreCompact", "the event is named")
@@ -247,7 +247,7 @@ func TestSummarize_PreCompactSubAgentFiresNoHooks(t *testing.T) {
 	count := filepath.Join(dir, "count")
 	r := preCompactAgent(t, true,
 		preCompactHooks("", `echo x >> `+count)...)
-	err, summarized, warnings := r.summarize(t, preCompactTriggerManual)
+	summarized, warnings, err := r.summarize(t, preCompactTriggerManual)
 	require.NoError(t, err)
 	require.Equal(t, 1, summarized)
 	_, err = os.Stat(count)
@@ -262,7 +262,7 @@ func TestSummarize_PreCompactHaltDoesNotStopTheSummary(t *testing.T) {
 
 	r := preCompactAgent(t, false,
 		preCompactHooks("", `echo "stop everything" >&2; exit 49`)...)
-	err, summarized, warnings := r.summarize(t, preCompactTriggerAuto)
+	summarized, warnings, err := r.summarize(t, preCompactTriggerAuto)
 	require.NoError(t, err)
 	require.Equal(t, 1, summarized)
 	require.Len(t, warnings, 1)
@@ -276,7 +276,7 @@ func TestSummarize_PreCompactMultipleObjections(t *testing.T) {
 
 	r := preCompactAgent(t, false,
 		preCompactHooks("", `echo "first" >&2; exit 2`, `echo "second" >&2; exit 2`)...)
-	_, summarized, warnings := r.summarize(t, preCompactTriggerManual)
+	summarized, warnings, _ := r.summarize(t, preCompactTriggerManual)
 	require.Equal(t, 1, summarized)
 	require.Len(t, warnings, 1)
 	require.Contains(t, warnings[0], "first", "the first hook's reason, in config order")
@@ -290,7 +290,7 @@ func TestSummarize_PreCompactCleanHookNoWarning(t *testing.T) {
 
 	r := preCompactAgent(t, false,
 		preCompactHooks("", "exit 0")...)
-	_, summarized, warnings := r.summarize(t, preCompactTriggerManual)
+	summarized, warnings, _ := r.summarize(t, preCompactTriggerManual)
 	require.Equal(t, 1, summarized)
 	require.Empty(t, warnings)
 }

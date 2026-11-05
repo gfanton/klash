@@ -25,7 +25,6 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/hyper"
 	"github.com/charmbracelet/crush/internal/agent/notify"
 	"github.com/charmbracelet/crush/internal/agent/prompt"
-	promptpkg "github.com/charmbracelet/crush/internal/agent/prompt"
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
 	"github.com/charmbracelet/crush/internal/config"
@@ -1152,7 +1151,7 @@ func mergeCallOptions(model Model, cfg config.ProviderConfig) (fantasy.ProviderO
 	return modelOptions, temp, topP, topK, freqPenalty, presPenalty
 }
 
-func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, agent config.Agent, isSubAgent bool) (SessionAgent, error) {
+func (c *coordinator) buildAgent(ctx context.Context, agentPrompt *prompt.Prompt, agent config.Agent, isSubAgent bool) (SessionAgent, error) {
 	large, small, err := c.buildAgentModels(ctx, isSubAgent)
 	if err != nil {
 		return nil, err
@@ -1201,11 +1200,11 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 	initCtx := context.WithoutCancel(ctx)
 
 	c.readyWg.Go(func() error {
-		systemPrompt, err := prompt.Build(initCtx, large.Model.Provider(), large.Model.Model(), c.cfg)
+		systemPrompt, err := agentPrompt.Build(initCtx, large.Model.Provider(), large.Model.Model(), c.cfg)
 		if err != nil {
 			return err
 		}
-		systemPrompt, env := promptpkg.SplitEnv(systemPrompt)
+		systemPrompt, env := prompt.SplitEnv(systemPrompt)
 		result.SetSystemPrompt(systemPrompt)
 		result.SetEnvironment(env)
 		return nil
@@ -1985,7 +1984,7 @@ func (c *coordinator) RebuildSystemPrompts(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		systemPrompt, env := promptpkg.SplitEnv(systemPrompt)
+		systemPrompt, env := prompt.SplitEnv(systemPrompt)
 		a.agent.SetSystemPrompt(systemPrompt)
 		a.agent.SetEnvironment(env)
 	}

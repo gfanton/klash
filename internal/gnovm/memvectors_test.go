@@ -96,12 +96,12 @@ func newFakeEmbedder(t *testing.T) *fakeEmbedder {
 			f.answered.Add(1)
 		}
 	}))
-	f.Server.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+	f.Config.ConnState = func(_ net.Conn, s http.ConnState) {
 		if s == http.StateNew {
 			f.conns.Add(1)
 		}
 	}
-	f.Server.Start()
+	f.Start()
 	t.Cleanup(f.Close)
 	return f
 }

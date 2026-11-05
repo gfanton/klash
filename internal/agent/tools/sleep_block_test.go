@@ -33,21 +33,25 @@ func TestForegroundSleep(t *testing.T) {
 		"sleep 30 > /dev/null":           "standalone sleep 30",
 		"sleep 30 && tail -5 build.log":  "sleep 30 followed by: tail -5 build.log",
 		"sleep 60; ps aux | grep ffmpeg": "sleep 60 followed by: ps aux grep ffmpeg",
-		"sleep 24.9":                     "",
-		"python3 x.py && sleep 30":       "",
-		"until [ -f out.mp4 ]; do sleep 30; done": "",
-		"(sleep 30)":   "",
-		"sleep 30 &":   "",
-		"X=1 sleep 30": "",
-		"sleep 1m":     "",
-		"sleep 1e3":    "",
-		"sleep +30":    "",
-		"sleep $T":     "",
-		"sleep 30 40":  "",
-		"sleep":        "",
-		"sleep 30 &&":  "",
 	} {
 		require.Equal(t, want, foregroundSleep(command), command)
+	}
+	for _, command := range []string{
+		"sleep 24.9",
+		"python3 x.py && sleep 30",
+		"until [ -f out.mp4 ]; do sleep 30; done",
+		"(sleep 30)",
+		"sleep 30 &",
+		"X=1 sleep 30",
+		"sleep 1m",
+		"sleep 1e3",
+		"sleep +30",
+		"sleep $T",
+		"sleep 30 40",
+		"sleep",
+		"sleep 30 &&",
+	} {
+		require.Empty(t, foregroundSleep(command), command)
 	}
 }
 

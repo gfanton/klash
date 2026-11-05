@@ -20,7 +20,7 @@ func TestSummarize_PostCompactGetsTheSummary(t *testing.T) {
 	dir := t.TempDir()
 	payloadPath := filepath.Join(dir, "payload.json")
 	r := compactHookAgent(t, hooks.EventPostCompact, false, preCompactHooks("", `cat > `+payloadPath)...)
-	err, summarized, warnings := r.summarize(t, preCompactTriggerAuto)
+	summarized, warnings, err := r.summarize(t, preCompactTriggerAuto)
 	require.NoError(t, err)
 	require.Equal(t, 1, summarized)
 	require.Empty(t, warnings)
@@ -42,7 +42,7 @@ func TestSummarize_PostCompactFailedHookWarns(t *testing.T) {
 	t.Parallel()
 
 	r := compactHookAgent(t, hooks.EventPostCompact, false, preCompactHooks("", `exit 3`)...)
-	err, summarized, warnings := r.summarize(t, preCompactTriggerManual)
+	summarized, warnings, err := r.summarize(t, preCompactTriggerManual)
 	require.NoError(t, err)
 	require.Equal(t, 1, summarized)
 	require.Len(t, warnings, 1)
@@ -52,7 +52,7 @@ func TestSummarize_PostCompactFailedHookWarns(t *testing.T) {
 	dir := t.TempDir()
 	ran := filepath.Join(dir, "ran")
 	sub := compactHookAgent(t, hooks.EventPostCompact, true, preCompactHooks("", `touch `+ran)...)
-	err, summarized, _ = sub.summarize(t, preCompactTriggerAuto)
+	summarized, _, err = sub.summarize(t, preCompactTriggerAuto)
 	require.NoError(t, err)
 	require.Equal(t, 1, summarized)
 	require.NoFileExists(t, ran)
@@ -72,7 +72,7 @@ func TestSummarize_GivesMemAgain(t *testing.T) {
 		calls = append(calls, "block "+sessionID)
 		return block
 	}
-	err, summarized, _ := r.summarize(t, preCompactTriggerAuto)
+	summarized, _, err := r.summarize(t, preCompactTriggerAuto)
 	require.NoError(t, err)
 	require.Equal(t, 1, summarized)
 	require.Equal(t, []string{"summarized " + r.sessionID, "block " + r.sessionID}, calls)

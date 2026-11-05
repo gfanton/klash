@@ -33,7 +33,7 @@ func (b *Backend) BranchSession(ctx context.Context, workspaceID, sessionID, tit
 	if ws.App == nil {
 		return session.Session{}, ErrAgentNotInitialized
 	}
-	return ws.App.BranchSession(ctx, sessionID, title)
+	return ws.BranchSession(ctx, sessionID, title)
 }
 
 // SessionGoal is a session's goal, and false when it has none.
@@ -45,7 +45,7 @@ func (b *Backend) SessionGoal(ctx context.Context, workspaceID, sessionID string
 	if ws.App == nil {
 		return agent.Goal{}, false, ErrAgentNotInitialized
 	}
-	return ws.App.SessionGoal(ctx, sessionID)
+	return ws.SessionGoal(ctx, sessionID)
 }
 
 // SetSessionGoal sets a session's goal, as /goal does, or clears it when
@@ -58,7 +58,7 @@ func (b *Backend) SetSessionGoal(ctx context.Context, workspaceID, sessionID, co
 	if ws.App == nil {
 		return agent.GoalChange{}, ErrAgentNotInitialized
 	}
-	return ws.App.SetSessionGoal(ctx, sessionID, condition)
+	return ws.SetSessionGoal(ctx, sessionID, condition)
 }
 
 // Rewind restores a session's conversation, its code or both to the point
@@ -71,7 +71,7 @@ func (b *Backend) Rewind(ctx context.Context, workspaceID, sessionID, messageID 
 	if ws.App == nil {
 		return app.RewindResult{}, ErrAgentNotInitialized
 	}
-	return ws.App.Rewind(ctx, sessionID, messageID, opts)
+	return ws.Rewind(ctx, sessionID, messageID, opts)
 }
 
 // GetSession retrieves a session by workspace and session ID.

@@ -9,7 +9,7 @@ import (
 
 func TestNeutralizeControlTokens(t *testing.T) {
 	t.Parallel()
-	z := "​"
+	z := "\u200b"
 	cases := []struct{ in, want string }{
 		{"plain text", "plain text"},
 		{"the token is <|image_pad|> here", "the token is <" + z + "|image_pad|> here"},
@@ -34,7 +34,7 @@ func TestNeutralizeControlTokensIdempotent(t *testing.T) {
 
 func TestSanitizeControlTokensToolResultText(t *testing.T) {
 	t.Parallel()
-	z := "​"
+	z := "\u200b"
 	tool := fantasy.Message{Role: fantasy.MessageRoleTool, Content: []fantasy.MessagePart{
 		fantasy.ToolResultPart{ToolCallID: "c1", Output: fantasy.ToolResultOutputContentText{
 			Text: `{"media_marker":"<__media_4KQ0bnaSxbqiLUlxIDD0rcAfBecKwdGJ__>"}`,

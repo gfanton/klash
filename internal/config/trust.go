@@ -805,7 +805,7 @@ func ForgetCommand(folder string) string {
 func shellPath(path string) string {
 	short := home.Short(path)
 	plain := strings.IndexFunc(short, func(r rune) bool {
-		return r >= utf8.RuneSelf || !(unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("/._-+~:@%,=", r))
+		return r >= utf8.RuneSelf || !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("/._-+~:@%,=", r)
 	}) < 0
 	if plain && !strings.HasPrefix(short, "-") {
 		return short

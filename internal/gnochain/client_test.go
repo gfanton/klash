@@ -65,9 +65,9 @@ func deliverTx(errLog string, gasUsed int64) []byte {
 	if len(base) > 0 {
 		msg = field(msg, 1, base)
 	}
-	msg = varint(msg, uint64(2<<3|0))
+	msg = varint(msg, uint64(2<<3)) // field 2, a varint
 	msg = varint(msg, zigzag(3_000_000_000))
-	msg = varint(msg, uint64(3<<3|0))
+	msg = varint(msg, uint64(3<<3)) // field 3, a varint
 	return varint(msg, zigzag(gasUsed))
 }
 

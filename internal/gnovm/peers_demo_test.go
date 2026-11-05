@@ -316,8 +316,7 @@ func (o peersOutcome) bounds() (critical, total time.Duration) {
 func (o peersOutcome) simulate(n int, start, cost time.Duration) time.Duration {
 	root := o.ids["ship the geometry release"]
 	ordered := map[string]bool{root: true}
-	var children func(id string) []string
-	children = func(id string) []string {
+	children := func(id string) []string {
 		var out []string
 		for _, title := range []string{"build the shapes", "circle", "circle area", "circle perimeter", "square", "square area", "square perimeter", "triangle", "triangle area", "triangle perimeter", "write the release notes"} {
 			c := o.ids[title]

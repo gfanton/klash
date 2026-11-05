@@ -35,7 +35,7 @@ type renamedAfterReads struct {
 func (s *renamedAfterReads) Get(ctx context.Context, id string) (session.Session, error) {
 	sess, err := s.Service.Get(ctx, id)
 	if err == nil {
-		err = s.Service.Rename(ctx, id, fmt.Sprintf("named %d", s.names.Add(1)))
+		err = s.Rename(ctx, id, fmt.Sprintf("named %d", s.names.Add(1)))
 	}
 	return sess, err
 }

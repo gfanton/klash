@@ -15,8 +15,8 @@ func TestCleanName(t *testing.T) {
 
 	require.Equal(t, "fix the login bug", CleanName("  fix the login bug \n"))
 	require.Equal(t, "a b", CleanName("a\tb"))
-	require.Equal(t, "zero width", CleanName("zero​width"))
-	require.Equal(t, "", CleanName("​‍\t "), "nothing left")
+	require.Equal(t, "zero width", CleanName("zero\u200bwidth"))
+	require.Equal(t, "", CleanName("\u200b\u200d\t "), "nothing left")
 	require.Equal(t, "日本語のセッション", CleanName("日本語のセッション"))
 	long := CleanName(strings.Repeat("é", 250))
 	require.Equal(t, 200, len([]rune(long)))

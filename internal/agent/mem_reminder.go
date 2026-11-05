@@ -41,7 +41,7 @@ func isMemCall(call message.ToolCall) bool {
 func memReminderDue(msgs []message.Message) bool {
 	sinceMem, sinceReminder := 0, 0
 	memFound, reminderFound := false, false
-	for i := len(msgs) - 1; i >= 0 && !(memFound && reminderFound); i-- {
+	for i := len(msgs) - 1; i >= 0 && (!memFound || !reminderFound); i-- {
 		switch msg := msgs[i]; msg.Role {
 		case message.Assistant:
 			if !memFound && slices.ContainsFunc(msg.ToolCalls(), isMemCall) {

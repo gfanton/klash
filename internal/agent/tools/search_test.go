@@ -204,7 +204,7 @@ func TestSearchSaysWhenBingFailsToo(t *testing.T) {
 
 	serveBingStub(t, http.StatusOK, "<html><body>Please solve the challenge</body></html>")
 	_, err = search(context.Background(), http.DefaultClient, "anything", 10)
-	require.ErrorContains(t, err, "Bing did not serve a result page")
+	require.ErrorContains(t, err, "the page Bing served is not a result page")
 
 	serveBingStub(t, http.StatusOK, `<html><body><ol id="b_results"></ol></body></html>`)
 	results, err := search(context.Background(), http.DefaultClient, "nothing matches this", 10)

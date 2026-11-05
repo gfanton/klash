@@ -176,7 +176,7 @@ func searchBing(ctx context.Context, client *http.Client, query string, maxResul
 	// A result page has its results list even when nothing matched; a
 	// page without one is a challenge, not "no results".
 	if !strings.Contains(string(body), `id="b_results"`) {
-		return nil, errors.New("Bing did not serve a result page")
+		return nil, errors.New("the page Bing served is not a result page")
 	}
 	return parseBingResults(string(body), maxResults)
 }

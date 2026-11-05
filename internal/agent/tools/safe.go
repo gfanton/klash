@@ -59,7 +59,7 @@ func eachCallIn(command string, dirs workDirs, callOK func(*syntax.CallExpr) boo
 		}
 		return callOK(call)
 	})
-	return ok && !(moved && git) && !(git && len(dirs.gitPrograms) > 0)
+	return ok && (!git || (!moved && len(dirs.gitPrograms) == 0))
 }
 
 // plainWords is call's words when each is plain text with nothing to

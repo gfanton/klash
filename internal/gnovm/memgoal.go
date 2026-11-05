@@ -221,7 +221,7 @@ func goalTurn(b GoalBinding, g memGoalJSON, now time.Time, marker string) (GoalT
 	}
 	holds := goalHolds(g, now)
 	// A wait on the goal holds back every item under it, which then says so.
-	waits := g.Wait != "" && !(memIsDay(g.Wait) && g.Wait <= today)
+	waits := g.Wait != "" && (!memIsDay(g.Wait) || g.Wait > today)
 	why := map[string]bool{}
 	for _, h := range g.Held {
 		why[h.Why] = true

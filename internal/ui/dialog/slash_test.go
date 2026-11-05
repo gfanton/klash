@@ -102,7 +102,7 @@ func TestLookupAndSuggest(t *testing.T) {
 
 	require.Equal(t, "status", c.Suggest("stauts"))
 	require.Equal(t, "new", c.Suggest("nem"), "the nearest, not the last near one (name)")
-	require.Equal(t, "review", c.Suggest("reveiw"))
+	require.Equal(t, "review", c.Suggest("reveiw")) //nolint:misspell // the typo is the test
 	require.Equal(t, "", c.Suggest("zqxzqx"))
 }
 
