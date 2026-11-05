@@ -534,7 +534,8 @@ func TestPoppedRows(t *testing.T) {
 }
 
 // A frame holds what its pop removes, or would remove now while it is
-// still open: everything after its push's round.
+// still open: everything after its push's round but the prompts of its
+// pop's turn.
 func TestFrameRows(t *testing.T) {
 	t.Parallel()
 
@@ -549,6 +550,54 @@ func TestFrameRows(t *testing.T) {
 	require.Equal(t, []string{"a2", "t2"}, rowIDs(FrameRows(rows, "c1", "c2")), "a popped frame: what its pop removed")
 	require.Equal(t, []string{"a2", "t2", "a3", "t3"}, rowIDs(FrameRows(rows, "c1", "")), "an open frame: up to the last row")
 	require.Empty(t, FrameRows(rows[:2], "c1", ""), "nothing yet past the push's round")
+}
+
+// A frame does not hold the user rows of its pop's turn, which the pop
+// leaves in the model's context; while it is open, those of the turn now.
+func TestFrameRowsLeaveThePopsTurn(t *testing.T) {
+	t.Parallel()
+
+	typed := func(id, text string) message.Message {
+		return row(message.User, id, message.TextContent{Text: text})
+	}
+	answer := func(id string) message.Message {
+		return row(message.Assistant, id, message.TextContent{Text: "done"})
+	}
+	rows := []message.Message{
+		typed("u0", "plan it; do only (1)"),
+		row(message.Assistant, "a1", callPart("c1")), // push
+		row(message.Tool, "t1", resultPart("c1")),
+		answer("a1b"),
+		typed("u1", "port is 8080"), // an earlier turn, in the frame
+		answer("a2b"),
+		typed("u2", "now do (2)"), // the pop's turn
+		row(message.Assistant, "a3", callPart("v1")),
+		row(message.Tool, "t3", resultPart("v1")),
+		typed("u2f", "and the docs"),                 // folded into it
+		row(message.Assistant, "a4", callPart("c2")), // the pop
+		row(message.Tool, "t4", resultPart("c2")),
+	}
+	held := []string{"a1b", "u1", "a2b", "a3", "t3"}
+	require.Equal(t, held, rowIDs(FrameRows(rows, "c1", "c2")), "popped")
+	require.Equal(t, held, rowIDs(FrameRows(rows[1:], "c1", "c2")), "popped, from the push's round on")
+	require.Equal(t, held, rowIDs(FrameRows(rows[:10], "c1", "")), "open")
+	require.Equal(t, held, rowIDs(FrameRows(rows[1:10], "c1", "")), "open, from the push's round on")
+
+	// Popped in the turn it was pushed in, the turn starts before the
+	// rows given: every prompt among them is the turn's.
+	sameTurn := []message.Message{
+		typed("u0", "plan it"),
+		row(message.Assistant, "a1", callPart("c1")), // push
+		row(message.Tool, "t1", resultPart("c1")),
+		row(message.Assistant, "a2", callPart("v1")),
+		row(message.Tool, "t2", resultPart("v1")),
+		typed("u0f", "and the docs"),                 // folded into the push's turn
+		row(message.Assistant, "a3", callPart("c2")), // the pop
+		row(message.Tool, "t3", resultPart("c2")),
+	}
+	require.Equal(t, []string{"a2", "t2"}, rowIDs(FrameRows(sameTurn, "c1", "c2")), "popped in the push's turn")
+	require.Equal(t, []string{"a2", "t2"}, rowIDs(FrameRows(sameTurn[1:], "c1", "c2")), "popped in the push's turn, from its round on")
+	require.Equal(t, []string{"a2", "t2"}, rowIDs(FrameRows(sameTurn[1:6], "c1", "")), "open in the push's turn, from its round on")
 }
 
 func TestPopClauses(t *testing.T) {
