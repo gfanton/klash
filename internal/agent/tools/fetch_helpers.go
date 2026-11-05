@@ -99,6 +99,22 @@ func notText(contentType string, size int64) error {
 	return fmt.Errorf("this is not a text page but %s; fetching reads text. Save it with the download tool", what)
 }
 
+// trimCutRune drops the start of a character that a read stopped at a
+// size limit has cut in two, so that a long page in UTF-8 is not taken
+// for one in another encoding. Bytes that are not UTF-8 are left as they
+// are, to be refused.
+func trimCutRune(b []byte) []byte {
+	for i := 1; i <= utf8.UTFMax && i <= len(b); i++ {
+		if utf8.RuneStart(b[len(b)-i]) {
+			if utf8.FullRune(b[len(b)-i:]) {
+				return b
+			}
+			return b[:len(b)-i]
+		}
+	}
+	return b
+}
+
 // BrowserUserAgent is a realistic browser User-Agent for better compatibility.
 const BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -134,6 +150,9 @@ func FetchURLAndConvert(ctx context.Context, client *http.Client, url string) (s
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSize))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+	if int64(len(body)) >= maxSize {
+		body = trimCutRune(body)
 	}
 
 	content := string(body)

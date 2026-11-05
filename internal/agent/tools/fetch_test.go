@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"charm.land/fantasy"
 	"github.com/stretchr/testify/require"
@@ -184,4 +187,28 @@ func TestFetchURLAndConvertSaysAFileIsNotText(t *testing.T) {
 	srv = fetchServer(t, "text/plain; charset=windows-1252", []byte("caf\xe9"))
 	_, err = FetchURLAndConvert(context.Background(), srv.Client(), srv.URL)
 	require.EqualError(t, err, "response content is not valid UTF-8")
+}
+
+// A page longer than fetch reads is cut at a byte count, which can fall
+// inside a character: a page in Japanese, or in French with an accent at
+// the wrong place, was refused as not UTF-8 instead of being returned up
+// to the cut.
+func TestFetchCutsALongPageBetweenCharacters(t *testing.T) {
+	t.Parallel()
+
+	// One ASCII byte, then two-byte characters: the cut at MaxFetchSize,
+	// an even count, falls in the middle of one.
+	page := "a" + strings.Repeat("é", MaxFetchSize)
+	srv := fetchServer(t, "text/plain; charset=utf-8", []byte(page))
+	resp, err := runFetchTool(t, srv.Client(), srv.URL)
+	require.NoError(t, err)
+	require.False(t, resp.IsError, resp.Content)
+	require.True(t, utf8.ValidString(resp.Content))
+	require.True(t, strings.HasPrefix(resp.Content, "aéé"))
+	require.Contains(t, resp.Content, fmt.Sprintf("[Content truncated to %d bytes]", MaxFetchSize))
+
+	srv = fetchServer(t, "text/plain; charset=utf-8", []byte(page+strings.Repeat("é", 3_000_000)))
+	content, err := FetchURLAndConvert(context.Background(), srv.Client(), srv.URL)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(content, "aéé"))
 }
