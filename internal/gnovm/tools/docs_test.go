@@ -730,7 +730,7 @@ func TestDocInstallLinesRun(t *testing.T) {
 	}
 
 	dir, home := t.TempDir(), t.TempDir()
-	cmd := exec.Command(bash, "-e", "-c", strings.Replace(block, "go build -o gnosh .", "touch gnosh", 1))
+	cmd := exec.CommandContext(t.Context(), bash, "-e", "-c", strings.Replace(block, "go build -o gnosh .", "touch gnosh", 1))
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	out, err := cmd.CombinedOutput()

@@ -240,26 +240,35 @@ func putRow(tx *sql.Tx, kind, name string, cols map[string]string) error {
 
 // deleteThoughts deletes the thought rows of item name.
 func deleteThoughts(tx *sql.Tx, name string) error {
-	rows, err := tx.Query(`SELECT name FROM names WHERE kind = 'thought' AND name LIKE ? ESCAPE '\'`, strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(name)+"#%")
+	names, err := thoughtNames(tx, name)
 	if err != nil {
 		return err
 	}
-	var names []string
-	for rows.Next() {
-		var n string
-		if err := rows.Scan(&n); err != nil {
-			rows.Close()
-			return err
-		}
-		names = append(names, n)
-	}
-	rows.Close()
 	for _, n := range names {
 		if err := deleteRow(tx, "thought", n); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// thoughtNames are the names of item name's thought rows, read to the end
+// and closed before any is deleted.
+func thoughtNames(tx *sql.Tx, name string) ([]string, error) {
+	rows, err := tx.Query(`SELECT name FROM names WHERE kind = 'thought' AND name LIKE ? ESCAPE '\'`, strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(name)+"#%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		names = append(names, n)
+	}
+	return names, rows.Err()
 }
 
 func deleteRow(tx *sql.Tx, kind, name string) error {

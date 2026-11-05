@@ -179,7 +179,7 @@ func TestRipgrepMatchesKeepARootUnderAnIgnoredName(t *testing.T) {
 	}
 	root := filepath.Join(t.TempDir(), "out", "proj")
 	mkfiles(t, root, "a.go", "node_modules/x.go")
-	cmd := exec.Command(rg, "--files", "--null", "--glob", "/**/*.go")
+	cmd := exec.CommandContext(t.Context(), rg, "--files", "--null", "--glob", "/**/*.go")
 	cmd.Dir = root
 	got, err := runRipgrep(cmd, root, 100)
 	require.NoError(t, err)

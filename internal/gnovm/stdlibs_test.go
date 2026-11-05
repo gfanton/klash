@@ -57,7 +57,7 @@ func TestEmbeddedStdlibsVersion(t *testing.T) {
 // on the module's copy of each stdlib.
 func TestStdlibMemPackageMatchesGno(t *testing.T) {
 	t.Parallel()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/gnolang/gno").Output()
+	out, err := exec.CommandContext(t.Context(), "go", "list", "-m", "-f", "{{.Dir}}", "github.com/gnolang/gno").Output()
 	modDir := strings.TrimSpace(string(out))
 	if err != nil || modDir == "" {
 		t.Skip("gno module source not available:", err)

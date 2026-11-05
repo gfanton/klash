@@ -19,6 +19,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -35,7 +36,8 @@ func main() {
 }
 
 func run() error {
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}} {{.Version}}", "github.com/gnolang/gno").Output()
+	ctx := context.Background()
+	out, err := exec.CommandContext(ctx, "go", "list", "-m", "-f", "{{.Dir}} {{.Version}}", "github.com/gnolang/gno").Output()
 	if err != nil {
 		return fmt.Errorf("go list github.com/gnolang/gno: %w (run `go mod download` first)", err)
 	}
@@ -88,7 +90,7 @@ func run() error {
 		return err
 	}
 	// Many stdlib files came from Go and keep Go's BSD license.
-	goroot, err := exec.Command("go", "env", "GOROOT").Output()
+	goroot, err := exec.CommandContext(ctx, "go", "env", "GOROOT").Output()
 	if err != nil {
 		return fmt.Errorf("go env GOROOT: %w", err)
 	}

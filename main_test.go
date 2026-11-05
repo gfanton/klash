@@ -12,7 +12,7 @@ import (
 func TestPprofListenFallsBackWhenTheDefaultIsTaken(t *testing.T) {
 	t.Parallel()
 
-	taken, err := net.Listen("tcp", "localhost:0")
+	taken, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "localhost:0")
 	require.NoError(t, err)
 	defer taken.Close()
 
@@ -27,7 +27,7 @@ func TestPprofListenFallsBackWhenTheDefaultIsTaken(t *testing.T) {
 func TestPprofListenUsesTheAddressAsked(t *testing.T) {
 	t.Parallel()
 
-	probe, err := net.Listen("tcp", "localhost:0")
+	probe, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "localhost:0")
 	require.NoError(t, err)
 	free := probe.Addr().String()
 	require.NoError(t, probe.Close())

@@ -210,7 +210,7 @@ func peersRun(t *testing.T, roles []string) peersOutcome {
 	for i, role := range roles {
 		log := filepath.Join(dir, fmt.Sprintf("peer-%d.log", i))
 		logs = append(logs, log)
-		cmd := exec.Command(os.Args[0], "-test.run=^TestPeerChild$", "-test.timeout=5m")
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestPeerChild$", "-test.timeout=5m")
 		cmd.Env = append(os.Environ(), peerEnv+"=1", "GNOSH_PEER_DIR="+dir, "GNOSH_PEER_PROJECT="+project,
 			fmt.Sprintf("GNOSH_PEER_SESSION=peer%d", i+1), "GNOSH_PEER_ROLE="+role, "GNOSH_PEER_ROOT="+root, "GNOSH_PEER_LOG="+log)
 		out := &strings.Builder{}
@@ -556,7 +556,7 @@ func TestPeersKilledHolder(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, res.Err, res.Output)
 	log := filepath.Join(dir, "holder.log")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestPeerChild$", "-test.timeout=5m")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestPeerChild$", "-test.timeout=5m")
 	cmd.Env = append(os.Environ(), peerEnv+"=1", "GNOSH_PEER_DIR="+dir, "GNOSH_PEER_PROJECT="+project, "GNOSH_PEER_SESSION=holder", "GNOSH_PEER_ROLE=hold", "GNOSH_PEER_LOG="+log)
 	require.NoError(t, cmd.Start())
 	defer func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() }()

@@ -91,7 +91,7 @@ func do(t *testing.T, method, url string, body any) (*http.Response, []byte) {
 			t.Fatal(err)
 		}
 	}
-	req, err := http.NewRequest(method, url, &buf)
+	req, err := http.NewRequestWithContext(t.Context(), method, url, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -23,7 +23,7 @@ func TestSessionWebRefusesOtherSites(t *testing.T) {
 	h := New(store, nil)
 
 	serve := func(method, target, host, origin, body string) int {
-		req := httptest.NewRequest(method, target, strings.NewReader(body))
+		req := httptest.NewRequestWithContext(t.Context(), method, target, strings.NewReader(body))
 		req.Host = host
 		if origin != "" {
 			req.Header.Set("Origin", origin)
@@ -75,7 +75,7 @@ func TestSessionWebRefusesFramingAndCrossSiteNavigation(t *testing.T) {
 	h := New(store, nil)
 
 	serve := func(method, target, body, site string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, target, strings.NewReader(body))
+		req := httptest.NewRequestWithContext(t.Context(), method, target, strings.NewReader(body))
 		req.Host = "localhost:7777"
 		if site != "" {
 			req.Header.Set("Sec-Fetch-Site", site)
@@ -129,7 +129,7 @@ func TestSessionWebAcceptsEveryLoopbackSpelling(t *testing.T) {
 	h := New(store, nil)
 
 	code := func(host string) int {
-		req := httptest.NewRequest("GET", "/api/sessions", nil)
+		req := httptest.NewRequestWithContext(t.Context(), "GET", "/api/sessions", nil)
 		req.Host = host
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)

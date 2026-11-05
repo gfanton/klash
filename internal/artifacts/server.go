@@ -12,6 +12,7 @@ package artifacts
 
 import (
 	"cmp"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -92,12 +93,13 @@ func Start(addr, dir string) *Server {
 	if addr == Off {
 		return nil
 	}
-	ln, err := net.Listen("tcp", cmp.Or(addr, DefaultAddress))
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", cmp.Or(addr, DefaultAddress))
 	if err != nil && addr == "" {
 		// The default port is taken — by another Gnosh, most likely.
 		// Any free port still serves this session's artifacts, on the
 		// same loopback address the default binds.
-		ln, err = net.Listen("tcp", "127.0.0.1:0")
+		ln, err = lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	}
 	if err != nil {
 		slog.Warn("Artifacts are not served over HTTP; they are recorded as paths", "address", cmp.Or(addr, DefaultAddress), "error", err)
@@ -356,7 +358,8 @@ func baseURL(addr net.Addr) string {
 // route. With no route out, the loopback address at least works on this
 // machine.
 func localAddress() string {
-	conn, err := net.Dial("udp", "198.51.100.1:9")
+	var d net.Dialer
+	conn, err := d.DialContext(context.Background(), "udp", "198.51.100.1:9")
 	if err != nil {
 		return "127.0.0.1"
 	}

@@ -469,7 +469,8 @@ func spawnWorker(opts ClientOptions) (*workerConn, error) {
 		repW.Close()
 		return nil, err
 	}
-	cmd := exec.Command(bin, "gnovm-worker")
+	// The worker outlives any one call; Close ends it.
+	cmd := exec.CommandContext(context.Background(), bin, "gnovm-worker")
 	cmd.ExtraFiles = []*os.File{reqR, repW} // fds 3 and 4
 	// Not the project directory: gnosh loads a .env from its working
 	// directory before main runs, and the project's is agent-writable.

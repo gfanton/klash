@@ -26,7 +26,7 @@ func TestGlobRipgrepGivesTheNewestFirst(t *testing.T) {
 	day := time.Now().Add(-24 * time.Hour)
 	require.NoError(t, os.Chtimes(older, day, day))
 
-	cmd := exec.Command("printf", `a.go\0deep/inside/edited.go\0`) // NUL-separated, as rg --null prints
+	cmd := exec.CommandContext(t.Context(), "printf", `a.go\0deep/inside/edited.go\0`) // NUL-separated, as rg --null prints
 	cmd.Dir = dir
 	matches, err := runRipgrep(cmd, dir, 100)
 	require.NoError(t, err)

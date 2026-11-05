@@ -49,6 +49,7 @@ func TestMemIndexFTS5(t *testing.T) {
 			require.NoError(t, rows.Scan(&n))
 			names = append(names, n)
 		}
+		require.NoError(t, rows.Err())
 		return names
 	}
 	require.Equal(t, []string{"fix-ci/2"}, match(`"flak"`))

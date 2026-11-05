@@ -271,7 +271,7 @@ func TestCloseFreesThePortAtOnce(t *testing.T) {
 		require.NoError(t, s.Close())
 		require.NoError(t, s.Close(), "closing twice is not a failure")
 
-		ln, err := net.Listen("tcp", addr)
+		ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", addr)
 		require.NoError(t, err, "the port was still held after Close returned")
 		require.NoError(t, ln.Close())
 	}
@@ -285,7 +285,7 @@ func TestTheFallbackStaysOnThisMachine(t *testing.T) {
 	// Not parallel: it takes the default port for the duration. Whether
 	// or not that listen succeeds, the port is in use afterwards, so
 	// Start("") has to fall back either way.
-	if taken, err := net.Listen("tcp", DefaultAddress); err == nil {
+	if taken, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", DefaultAddress); err == nil {
 		defer taken.Close()
 	}
 

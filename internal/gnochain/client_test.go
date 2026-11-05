@@ -27,7 +27,7 @@ import (
 // gno.land's vm package (consensus, p2p, the RPC server), and gno's keybase
 // package (Ledger support in C, golang.org/x/crypto/openpgp).
 func TestNoNodeInGnosh(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", ".").Output()
+	out, err := exec.CommandContext(t.Context(), "go", "list", "-deps", ".").Output()
 	require.NoError(t, err)
 	for _, dep := range strings.Fields(string(out)) {
 		for _, bad := range []string{"mdbx", "gno.land/pkg/gnoclient", "gno.land/pkg/sdk/vm", "tm2/pkg/bft/rpc", "tm2/pkg/bft/consensus", "tm2/pkg/p2p", "merlin", "StrobeGo", "crypto/keys", "ledger", "zondax", "x/crypto/openpgp"} {

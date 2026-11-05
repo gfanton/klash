@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
@@ -52,12 +53,14 @@ func servePprof(setting string) {
 // that hung later could not be. Its port is in its log, or in
 // `ss -ltnp | grep pid=<pid>`.
 func pprofListen(setting, defaultAddr string) (net.Listener, error) {
+	var lc net.ListenConfig
+	ctx := context.Background()
 	if strings.Contains(setting, ":") {
-		return net.Listen("tcp", setting)
+		return lc.Listen(ctx, "tcp", setting)
 	}
-	ln, err := net.Listen("tcp", defaultAddr)
+	ln, err := lc.Listen(ctx, "tcp", defaultAddr)
 	if err == nil {
 		return ln, nil
 	}
-	return net.Listen("tcp", "localhost:0")
+	return lc.Listen(ctx, "tcp", "localhost:0")
 }

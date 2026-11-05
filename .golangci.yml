@@ -45,6 +45,17 @@ linters:
         text: "SA1019.*LoggingMessageHandler"
         linters:
           - staticcheck
+      # Test helpers close each response in t.Cleanup or before they
+      # return it, which bodyclose cannot follow.
+      - path: _test\.go
+        linters:
+          - bodyclose
+      # mem's index and vectors are local SQLite files kept in step with its
+      # journal: a statement runs to its end rather than stop with a caller.
+      - path: internal/gnovm/mem(index|vectors)(_test)?\.go
+        text: database/sql
+        linters:
+          - noctx
       # SA4023 false positive: RemoveConfigField returns non-nil errors.
       - path: internal/cmd/logout.go
         text: "SA4023"

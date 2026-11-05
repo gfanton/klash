@@ -163,7 +163,7 @@ func NewX402FetchTool(permissions permission.Service, questions question.Service
 			}
 
 			// Ask once without paying. Anything but a 402 is the answer.
-			unpaid, body, err := x402Get(ctx, client, params.URL, nil)
+			unpaid, body, err := x402Get(ctx, client, params.URL, nil) //nolint:bodyclose // x402Get closed it after reading it
 			if err != nil {
 				return fantasy.NewTextErrorResponse("Failed to fetch URL: " + err.Error()), nil
 			}
@@ -254,7 +254,7 @@ func NewX402FetchTool(permissions permission.Service, questions question.Service
 			}
 
 			hash := x402TxHash(payload.Payload)
-			paid, body, err := x402Get(ctx, x402PaidClient(client), params.URL, paymentHeaders)
+			paid, body, err := x402Get(ctx, x402PaidClient(client), params.URL, paymentHeaders) //nolint:bodyclose // x402Get closed it after reading it
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("The payment was signed, but the paid request failed: %s. The payment may have settled: a seller settles before it answers. Its transaction is %s; look it up before paying again. If no block executed it, it stays valid until the paying account sends another transaction", err, hash)), nil
 			}

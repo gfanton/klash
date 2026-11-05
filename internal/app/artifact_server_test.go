@@ -45,7 +45,7 @@ func TestARunGivesUpTheArtifactPort(t *testing.T) {
 	app.setArtifactServer(false, opts)
 	require.Nil(t, app.artifacts, "a run must not hold the port a sidebar session opened")
 
-	ln, err := net.Listen("tcp", addr)
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", addr)
 	require.NoError(t, err, "the port must be free again, not held by a run")
 	require.NoError(t, ln.Close())
 

@@ -495,7 +495,7 @@ func TestBashTool_AllowRules(t *testing.T) {
 	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil, []string{"touch *"}, nil, nil, nil)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 	require.NoError(t, os.Mkdir(filepath.Join(workingDir, "sub"), 0o755))
-	require.NoError(t, exec.Command("git", "init", "-q", workingDir).Run(), "git status needs a repository")
+	require.NoError(t, exec.CommandContext(t.Context(), "git", "init", "-q", workingDir).Run(), "git status needs a repository")
 
 	for command, asks := range map[string]int{
 		"touch a.txt":                 0,
