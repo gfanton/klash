@@ -110,3 +110,57 @@ func TestCancelNotificationCarriesSessionID(t *testing.T) {
 	assert.Equal(t, pending.ID, ev.Payload.BatchID)
 	assert.Equal(t, "s-cancel", ev.Payload.SessionID)
 }
+
+// TestSecondResolutionReportsFalse covers two clients resolving the same
+// question at once: the second must be told it was already resolved, not
+// panic on a closed channel or block on a full one.
+func TestSecondResolutionReportsFalse(t *testing.T) {
+	t.Parallel()
+
+	ask := func(t *testing.T) (*questionService, chan error) {
+		svc := NewService()
+		done := make(chan error, 1)
+		go func() {
+			_, err := svc.Ask(t.Context(), freeTextRequest("s-twice"))
+			done <- err
+		}()
+		require.Eventually(t, func() bool {
+			_, ok := svc.Pending()
+			return ok
+		}, 2*time.Second, 5*time.Millisecond)
+		return svc, done
+	}
+
+	t.Run("cancel twice", func(t *testing.T) {
+		t.Parallel()
+		svc, done := ask(t)
+		require.True(t, svc.Cancel())
+		require.NotPanics(t, func() {
+			require.False(t, svc.Cancel())
+		})
+		require.ErrorIs(t, <-done, ErrCancelled)
+	})
+
+	t.Run("answer twice", func(t *testing.T) {
+		t.Parallel()
+		svc, done := ask(t)
+		require.True(t, svc.Answer([]Answer{{FillInText: "first"}}))
+		second := make(chan bool, 1)
+		go func() { second <- svc.Answer([]Answer{{FillInText: "second"}}) }()
+		select {
+		case ok := <-second:
+			require.False(t, ok)
+		case <-time.After(2 * time.Second):
+			t.Fatal("second Answer blocked")
+		}
+		require.NoError(t, <-done)
+	})
+
+	t.Run("answer after cancel", func(t *testing.T) {
+		t.Parallel()
+		svc, done := ask(t)
+		require.True(t, svc.Cancel())
+		require.False(t, svc.Answer([]Answer{{FillInText: "late"}}))
+		require.ErrorIs(t, <-done, ErrCancelled)
+	})
+}
