@@ -95,6 +95,9 @@ func (s *Sender) Send(ctx context.Context, gas int64, calls ...MsgCallOf) (Sent,
 		msgs[i] = m
 	}
 	amt := (gas*s.gp.Price.Amount + s.gp.Gas - 1) / s.gp.Gas
+	if h := s.c.FeeHeadroom; h > 1 {
+		amt = int64(float64(amt)*h + 0.999)
+	}
 	if amt < 1 {
 		amt = 1
 	}
@@ -116,7 +119,9 @@ func (s *Sender) Send(ctx context.Context, gas int64, calls ...MsgCallOf) (Sent,
 	}
 	if res.failed() {
 		s.known = false // a refusal leaves the sequence; read it again to be sure
-		return Sent{}, fmt.Errorf("the node refused the transaction: %s", firstLine(res.Log))
+		// The whole log: a chain error's first line is a banner, and its
+		// reason (a wrong sequence, insufficient fees) is further down.
+		return Sent{}, fmt.Errorf("the node refused the transaction: %s", strings.TrimSpace(res.Log))
 	}
 	sent := Sent{Hash: res.Hash, Seq: s.seq}
 	if len(sent.Hash) == 0 {

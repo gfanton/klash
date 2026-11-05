@@ -37,6 +37,12 @@ type Client struct {
 	MaxDeposit int64
 	// GasMargin is added to a simulation's gas, as a fraction (0.25 = 25%).
 	GasMargin float64
+	// FeeHeadroom multiplies the fee a Sender pays over what the chain's gas
+	// price asks (0 or 1: exactly that). Under load gno.land moves its price
+	// at least one unit a block, so at the floor of 1ugnot per 1,000 gas it
+	// flaps between 1 and 2, and a fee paid at 1 is refused, or dropped from
+	// the mempool when it is checked again, whenever the price is 2.
+	FeeHeadroom float64
 }
 
 // Dial connects to a node's RPC (http://host:26657) and checks it serves
@@ -170,6 +176,9 @@ func ParseValue(out string) (string, error) {
 	}
 	return val, nil
 }
+
+// GasPrice reads the chain's gas price, as gasPrice does.
+func (c *Client) GasPrice(ctx context.Context) (std.GasPrice, error) { return c.gasPrice(ctx) }
 
 // gasPrice reads the chain's gas price; a chain that prices nothing answers
 // gas 0, and then the floor of 1ugnot per 1000 gas is used.
