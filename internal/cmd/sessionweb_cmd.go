@@ -52,7 +52,7 @@ straight into Crush's database; reopen the session in the TUI to see them.`,
 			}
 			return sessionweb.Context{Template: text, TemplateSource: source, Tools: tools}, nil
 		}
-		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		ln, err := listenSessionWeb(cmd.Context(), port, cmd.Flags().Changed("port"))
 		if err != nil {
 			return err
 		}
@@ -72,6 +72,19 @@ straight into Crush's database; reopen the session in the TUI to see them.`,
 		}
 		return nil
 	},
+}
+
+// listenSessionWeb listens on 127.0.0.1 at port. Unless the port was asked
+// for, a taken one falls back to any free port, as the artifact server's
+// does, so a second project's page still opens; the URL printed names the
+// port it got.
+func listenSessionWeb(ctx context.Context, port int, asked bool) (net.Listener, error) {
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil && !asked {
+		ln, err = lc.Listen(ctx, "tcp", "127.0.0.1:0")
+	}
+	return ln, err
 }
 
 // webStore adapts Crush's services to what the page needs; updates are
