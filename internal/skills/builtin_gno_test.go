@@ -26,6 +26,8 @@ func TestBuiltinGnoSkill(t *testing.T) {
 		"cost.md",
 		"testing.md",
 		"go-differences.md",
+		"gno-interrealm-v2.md",
+		"gno-security-guide.md",
 	}
 	for _, ref := range refs {
 		location := BuiltinPrefix + "gno/references/" + ref

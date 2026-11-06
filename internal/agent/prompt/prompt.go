@@ -57,6 +57,26 @@ type PromptDat struct {
 	// tools only a TUI can answer — question, artifact — are in the
 	// toolset. A prompt must not ask for a tool the agent was not given.
 	Interactive bool
+	// GnoProject is whether the working directory holds Gno code: a
+	// gnomod.toml, gno.mod or .gno file. Its prompt then asks for an audit
+	// todo in any plan that writes Gno code (gnoProject).
+	GnoProject bool
+}
+
+// gnoProject reports whether dir holds Gno code: a gnomod.toml, gno.mod,
+// gnowork.toml or .gno file directly in it. A new realm project asked only
+// for a feature and a deploy went out with three defects the gno guides
+// name: the model never opened the gno skill, which says to audit, or
+// never reached the audit it planned last (QA, 2026-11-06). Told in the
+// prompt, which every turn reads, the plan carries the audit.
+func gnoProject(dir string) bool {
+	for _, f := range []string{"gnomod.toml", "gno.mod", "gnowork.toml"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			return true
+		}
+	}
+	m, _ := filepath.Glob(filepath.Join(dir, "*.gno"))
+	return len(m) > 0
 }
 
 // ContextFile is a context file and what it was loaded as: its path and
@@ -531,6 +551,7 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 
 		AvailSkillXML: availSkillXML,
 		Skills:        allSkills,
+		GnoProject:    gnoProject(store.WorkingDir()),
 	}
 	switch runs := cfg.HeldProject.GitRuns(); {
 	case isGit && len(runs) > 0:

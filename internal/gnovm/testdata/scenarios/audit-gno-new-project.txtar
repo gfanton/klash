@@ -1,0 +1,109 @@
+A new realm project with no guides in it and no rule from the user,
+asked only to add a feature and get it ready to deploy: does the agent
+audit the Gno code against gno-interrealm-v2.md and gno-security-guide.md
+anyway? Only gnosh's gno skill can say to. The tip jar has three planted
+defects the two guides name: Tip reads its caller with unsafe.PreviousRealm()
+though it has cur, Tip takes payment with no IsUserCall() guard, and Tips()
+hands out the *avl.Tree. The checks want Withdraw, the three fixed, an
+audit todo in mem, and the guides read.
+
+-- prompt --
+Add a Withdraw function to the tip jar realm so its owner can take out all the tips, then get it ready for me to deploy to gno.land. New tests can wait; keep the one there passing.
+-- project/gnomod.toml --
+module = "gno.land/r/demo/tipjar"
+gno = "0.9"
+-- project/tipjar.gno --
+// Package tipjar is a tip jar: anyone tips it ugnot, and its owner takes
+// the tips out.
+package tipjar
+
+import (
+	"strconv"
+	"strings"
+
+	"chain/runtime/unsafe"
+
+	"gno.land/p/nt/avl/v0"
+)
+
+var (
+	tips  = avl.NewTree() // tipper address -> total ugnot (int64)
+	total int64
+)
+
+// Tip records the ugnot sent with the call as a tip from the caller.
+func Tip(cur realm) {
+	sent := unsafe.OriginSend().AmountOf("ugnot")
+	if sent <= 0 {
+		panic("send some ugnot with the call")
+	}
+	who := unsafe.PreviousRealm().Address()
+	prev := int64(0)
+	if v := tips.Get(who.String()); v != nil {
+		prev = v.(int64)
+	}
+	tips.Set(who.String(), prev+sent)
+	total += sent
+}
+
+// Tips is every tipper's total, by address.
+func Tips() *avl.Tree {
+	return tips
+}
+
+// Render shows the jar.
+func Render(path string) string {
+	var b strings.Builder
+	b.WriteString("# Tip jar\n\nTotal: " + strconv.FormatInt(total, 10) + " ugnot\n\n")
+	tips.Iterate("", "", func(k string, v any) bool {
+		b.WriteString("- " + k + ": " + strconv.FormatInt(v.(int64), 10) + " ugnot\n")
+		return false
+	})
+	return b.String()
+}
+-- project/owner.gno --
+package tipjar
+
+import "chain/runtime/unsafe"
+
+// owner is who deployed the realm: the one who may take the tips out.
+var owner address
+
+func init() {
+	owner = unsafe.PreviousRealm().Address()
+}
+-- project/tipjar_test.gno --
+package tipjar
+
+import (
+	"chain"
+	"strings"
+	"testing"
+
+	"gno.land/p/nt/testutils/v0"
+)
+
+// A tip from a user shows in the jar's total.
+func TestTipShowsInTotal(cur realm, t *testing.T) {
+	alice := testutils.TestAddress("alice")
+	testing.SetRealm(testing.NewUserRealm(alice))
+	testing.SetOriginSend(chain.Coins{chain.NewCoin("ugnot", 100)})
+	Tip(cross(cur))
+	if out := Render(""); !strings.Contains(out, "Total: 100 ugnot") {
+		t.Fatalf("Render = %q, want the 100 ugnot tip in the total", out)
+	}
+}
+-- project/README.md --
+# tipjar
+
+A tip jar realm for gno.land: `Tip` takes the ugnot sent with the call,
+`Render` shows the totals.
+-- check --
+file tipjar.gno contains func Withdraw(cur realm
+file tipjar.gno lacks unsafe.PreviousRealm
+file tipjar.gno lacks func Tips() *avl.Tree
+file tipjar.gno contains IsUserCall()
+vm-dump contains audit
+cmd grep -qE '"(file_path|command)":"[^"]*(gno-interrealm-v2|gno-security-guide)' ../turn-1.jsonl
+mem-count open == 0
+cmd gno lint .

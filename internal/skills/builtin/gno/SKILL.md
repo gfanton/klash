@@ -152,6 +152,20 @@ Before writing or reviewing a realm that holds assets, has an admin, or
 takes callbacks or interfaces, view
 `gnosh://skills/gno/references/security-review.md`.
 
+## Audit before it ships
+
+A plan that writes or changes Gno code has an audit todo, made with the
+plan, right after the todo that writes the code and before its tests, any
+deploy and any "done":
+`mem.Todo(task, …, "audit the Gno code rule by rule against gno-interrealm-v2.md and gno-security-guide.md")`.
+In it, view `gnosh://skills/gno/references/gno-interrealm-v2.md` and
+`gnosh://skills/gno/references/gno-security-guide.md` (the interrealm
+specification and the security guide, from the gno repository), check
+every exported function against each of their rules and the checklist in
+`security-review.md`, fix what breaks one, and close the todo with each
+finding and its fix. The specification is the authority: read it, do not
+pattern-match from other languages.
+
 ## Money
 
 - Coins are the chain's native ledger, real bearer value a realm holds
@@ -247,8 +261,8 @@ question tool, and never try to sign through bash: no
 tool list, you cannot sign in this run: reply with the exact `gnokey`
 command for the user to run in their own terminal, and stop there.
 
-Before a deploy: `gno fmt`, `gno lint` and `gno test` pass; the security
-review is clean; `gnokey list` shows the key; the path is under a namespace
+Before a deploy: `gno fmt`, `gno lint` and `gno test` pass; the audit
+todo is closed with its findings fixed; `gnokey list` shows the key; the path is under a namespace
 the key owns, which today is its own address
 (`gno.land/{p,r}/<g1 address>/...`); on a shared network the account holds
 GNOT (`bank/balances`; https://faucet.gno.land funds the test networks).
@@ -326,6 +340,9 @@ one payment.
 
 - `gnosh://skills/gno/references/security-review.md`: the review checklist
   and the cases behind it.
+- `gnosh://skills/gno/references/gno-interrealm-v2.md` and
+  `gnosh://skills/gno/references/gno-security-guide.md`: the interrealm
+  specification and the security guide the audit checks against.
 - `gnosh://skills/gno/references/toolchain.md`: gno, gnokey and gnodev
   flags, query paths, the airgapped signing flow.
 - `gnosh://skills/gno/references/cost.md`: what a realm costs, the
