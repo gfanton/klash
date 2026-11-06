@@ -33,6 +33,20 @@ func stripV1Suffix(baseURL string) string {
 // to the base URL with proper slash handling.
 func doRequest(ctx context.Context, method, baseURL, path, apiKey string, extraHeaders map[string]string, resolver Resolver, body any) (*http.Response, error) {
 	resolvedBase, _ := resolver.ResolveValue(baseURL)
+	return send(ctx, method, resolvedBase, path, apiKey, extraHeaders, resolver, body)
+}
+
+// doRootRequest is doRequest for an endpoint served at the server root,
+// not under the OpenAI-compatible /v1 prefix. The trailing /v1 is stripped
+// once the base URL is resolved, so a base URL taken from a variable loses
+// it too.
+func doRootRequest(ctx context.Context, method, baseURL, path, apiKey string, extraHeaders map[string]string, resolver Resolver, body any) (*http.Response, error) {
+	resolvedBase, _ := resolver.ResolveValue(baseURL)
+	return send(ctx, method, stripV1Suffix(resolvedBase), path, apiKey, extraHeaders, resolver, body)
+}
+
+// send is doRequest once the base URL is resolved.
+func send(ctx context.Context, method, resolvedBase, path, apiKey string, extraHeaders map[string]string, resolver Resolver, body any) (*http.Response, error) {
 	resolvedKey, _ := resolver.ResolveValue(apiKey)
 
 	url := strings.TrimRight(resolvedBase, "/") + "/" + strings.TrimLeft(path, "/")
