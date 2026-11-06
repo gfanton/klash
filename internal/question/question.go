@@ -257,9 +257,11 @@ func (s *questionService) Ask(ctx context.Context, req Request) ([]Answer, error
 		return nil, err
 	}
 
+	pending := make(chan []Answer, 1)
+	cancelled := make(chan struct{})
 	s.mu.Lock()
-	s.pending = make(chan []Answer, 1)
-	s.cancelled = make(chan struct{})
+	s.pending = pending
+	s.cancelled = cancelled
 	s.pendingID = req.ID
 	s.pendingReq = req
 	s.mu.Unlock()
@@ -278,9 +280,9 @@ func (s *questionService) Ask(ctx context.Context, req Request) ([]Answer, error
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-s.cancelled:
+	case <-cancelled:
 		return nil, ErrCancelled
-	case answers := <-s.pending:
+	case answers := <-pending:
 		return answers, nil
 	}
 }
@@ -292,6 +294,10 @@ func (s *questionService) Answer(answers []Answer) bool {
 	batchID := s.pendingID
 	sessionID := s.pendingReq.SessionID
 	ch := s.pending
+	// The first to answer or cancel takes the question, so a second
+	// client answering it as well is told it was already resolved.
+	s.pending = nil
+	s.cancelled = nil
 	s.mu.Unlock()
 
 	if ch == nil {
@@ -317,6 +323,8 @@ func (s *questionService) Cancel() bool {
 	batchID := s.pendingID
 	sessionID := s.pendingReq.SessionID
 	cancelCh := s.cancelled
+	s.pending = nil
+	s.cancelled = nil
 	s.mu.Unlock()
 
 	if cancelCh == nil {
