@@ -284,33 +284,43 @@ func TestConnect_RestoresADataDirRemovedTwice(t *testing.T) {
 // back at its path, before the pool holds the restored file, is restored
 // again.
 func TestConnect_RestoresARemovalDuringTheRestore(t *testing.T) {
-	warnings := captureWarnings(t)
-	dataDir := filepath.Join(t.TempDir(), ".gnosh")
-	t.Cleanup(ResetPool)
-	removedAgain := false
-	removeAgain := withRestoredHook(func() {
-		if !removedAgain {
-			removedAgain = true
+	for name, remove := range map[string]func(dataDir string) error{
+		"data directory": os.RemoveAll,
+		// As rm -r midway: the file is gone, its directory not yet.
+		"database file": func(dataDir string) error {
+			return os.Remove(filepath.Join(dataDir, "gnosh.db"))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			warnings := captureWarnings(t)
+			dataDir := filepath.Join(t.TempDir(), ".gnosh")
+			t.Cleanup(ResetPool)
+			removedAgain := false
+			removeAgain := withRestoredHook(func() {
+				if !removedAgain {
+					removedAgain = true
+					require.NoError(t, remove(dataDir))
+				}
+			})
+			conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely, removeAgain)
+			require.NoError(t, err)
+			_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "kept", Title: "kept"})
+			require.NoError(t, err)
 			require.NoError(t, os.RemoveAll(dataDir))
-		}
-	})
-	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely, removeAgain)
-	require.NoError(t, err)
-	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "kept", Title: "kept"})
-	require.NoError(t, err)
-	require.NoError(t, os.RemoveAll(dataDir))
 
-	// As two checks would: the first restores and sees its file removed
-	// again, the second finds it gone.
-	entry := pool[poolKey(dataDir)]
-	entry.checkFile(t.Context())
-	require.True(t, removedAgain, "the restore never put the file back")
-	require.Contains(t, warnings(), "Failed to restore the removed database")
-	entry.checkFile(t.Context())
+			// As two checks would: the first restores and sees its file
+			// removed again, the second finds it gone.
+			entry := pool[poolKey(dataDir)]
+			entry.checkFile(t.Context())
+			require.True(t, removedAgain, "the restore never put the file back")
+			require.Contains(t, warnings(), "Failed to restore the removed database")
+			entry.checkFile(t.Context())
 
-	ids, err := sessionIDsIn(t.Context(), filepath.Join(dataDir, "gnosh.db"))
-	require.NoError(t, err, "the second removal is not restored")
-	require.Equal(t, []string{"kept"}, ids)
+			ids, err := sessionIDsIn(t.Context(), filepath.Join(dataDir, "gnosh.db"))
+			require.NoError(t, err, "the second removal is not restored")
+			require.Equal(t, []string{"kept"}, ids)
+		})
+	}
 }
 
 // The same, while a query waits for the pool's connection, whichever
