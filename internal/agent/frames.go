@@ -88,12 +88,21 @@ type stackFrame struct {
 // was to be kept as a thought. spareLast is how many they are: the last
 // user rows of the range (turnRows), each one user message in the model's
 // list, so a list cuts the same as the rows are marked.
+//
+// note is what the push's answer says came after it once the range is cut
+// (rangeNote), "" when nothing was: worked out once from the session's
+// rows, when the range is made and when the record is derived again, never
+// from the list a request sends. So every request after the cut says the
+// same, the pop's turn, the turns after it (whose lists no longer hold the
+// cut rows) and a summary's alike, and a provider's cache of the prefix
+// holds from one request to the next.
 type poppedRange struct {
 	frame      string
 	pushCallID string
 	popCallID  string
 	spare      bool
 	spareLast  int
+	note       string
 }
 
 func newFrameStacks(sessions session.Service, messages message.Service, files filetracker.Service, workingDir string) *frameStacks {
@@ -138,9 +147,30 @@ func (f *frameStacks) record(ctx context.Context, sessionID string) *sessionFram
 		if r.spare {
 			_, rec.pops[i].spareLast = turnRows(msgs, poppedRows(msgs, r.pushCallID, r.popCallID), r.popCallID)
 		}
+		rec.pops[i].note = rangeNote(msgs, r)
 	}
 	f.records[sessionID] = rec
 	return rec
+}
+
+// rangeNote is the note of range r (poppedRange.note), from msgs, the
+// session's rows, the popped ones included: what a pop removed (its rows
+// but for the user rows of its turn), or what lies between a slide's two
+// calls, so a slide that cut part of a body before still counts it; ""
+// when that is nothing, or when the push is not among the rows, as no
+// answer of it is sent to say it.
+func rangeNote(msgs []message.Message, r poppedRange) string {
+	if r.pushCallID == "" {
+		return ""
+	}
+	rows := poppedRows(msgs, r.pushCallID, r.popCallID)
+	if r.spare {
+		rows, _ = turnRows(msgs, rows, r.popCallID)
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	return workNote(rows, !r.spare)
 }
 
 // slideMarkOf is how a row a slide removed is marked (message.Popped):
@@ -469,6 +499,7 @@ func (f *frameStacks) pop(ctx context.Context, sessionID string, rec *sessionFra
 	for i, r := range rec.pops {
 		if r.spare && r.popCallID == popCallID && r.frame == ev.Id {
 			rec.pops[i].spareLast = spared
+			rec.pops[i].note = rangeNote(msgs, r)
 		}
 	}
 	if len(rows) == 0 {
@@ -586,6 +617,7 @@ func (f *frameStacks) slide(ctx context.Context, sessionID string, need int64, p
 		return "", 0, false
 	}
 	_, _, removed := f.remove(ctx, sessionID, rec, rows, slideMarkOf(r), stale)
+	r.note = rangeNote(msgs, r)
 	rec.pops = append(rec.pops, r)
 	if !slices.Contains(rec.slid, r.frame) {
 		rec.slid = append(rec.slid, r.frame)
@@ -608,17 +640,20 @@ func (f *frameStacks) slide(ctx context.Context, sessionID string, need int64, p
 // slideRange is the cut a slide makes, as a pop's range, with the rows it
 // removes: those the model still has, neither popped nor behind the
 // summary (stale). The oldest go first. Before the first frame, the rows
-// since the summary, or since the prompt the turn answers (the row
-// promptID), are cut from after their first round, which anchors the cut
-// as a push's round does, to an assistant row with a tool call, the
-// frame's push at the latest. Then, for each frame from the bottom of
-// stack, the body is the rows after its push's round and before the next
-// frame's push; a body with nothing left to cut is passed over. The top
-// frame's body, or one the prompt falls in, is cut from its start to an
-// assistant row with a tool call, which keeps the rest and the prompt. A
-// cut to a row of the agent's choosing is the shortest that frees need
-// tokens and at least half of what lies before it, or the longest when
-// none does.
+// since the summary are cut from after their first round, which anchors
+// the cut as a push's round does, to an assistant row with a tool call,
+// the frame's push at the latest; when the prompt the turn answers (the
+// row promptID) falls there, the rounds of the turns before it go first,
+// cut to a row before it, then those after it, anchored by their own first
+// round. A slide in the middle of a turn so takes the oldest rounds, as
+// one before its prompt does, and never the prompt. Then, for each frame
+// from the bottom of stack, the body is the rows after its push's round
+// and before the next frame's push; a body with nothing left to cut is
+// passed over. The top frame's body, or one the prompt falls in, is cut
+// from its start to an assistant row with a tool call, which keeps the
+// rest and the prompt. A cut to a row of the agent's choosing is the
+// shortest that frees need tokens and at least half of what lies before
+// it, or the longest when none does.
 func slideRange(msgs []message.Message, stack []*stackFrame, need int64, promptID string, stale map[string]bool) (poppedRange, []message.Message, bool) {
 	fresh := func(rows []message.Message) (out []message.Message, tokens int64) {
 		for _, row := range rows {
@@ -678,21 +713,35 @@ func slideRange(msgs []message.Message, stack []*stackFrame, need int64, promptI
 	if promptID != "" {
 		prompt = slices.IndexFunc(msgs, func(m message.Message) bool { return m.ID == promptID })
 	}
-	// The rounds before the first frame, since the summary or the prompt.
+	// The rounds before the first frame, since the summary: those of the
+	// turns before the prompt first, when the first frame came after it,
+	// then the turn's own, so the prompt stays between the two. Each part
+	// keeps its first round, which anchors its cut.
 	if bottom := pushOf(stack[0].callID); bottom >= 0 {
-		start := prompt + 1
-		for i := bottom - 1; i >= start; i-- {
+		start := 0
+		for i := bottom - 1; i >= 0; i-- {
 			if msgs[i].IsSummaryMessage {
 				start = i + 1
 				break
 			}
 		}
-		for i := start; i < bottom; i++ {
-			if msgs[i].Role == message.Assistant && len(msgs[i].ToolCalls()) > 0 {
-				if r, rows, ok := oldest("", i, msgs[i].ToolCalls()[0].ID, bottom+1, bottom); ok {
-					return r, rows, true
+		parts := [][2]int{{start, bottom}}
+		if prompt >= start && prompt < bottom {
+			parts = [][2]int{{start, prompt}, {prompt + 1, bottom}}
+		}
+		for _, part := range parts {
+			// A cut of the turns before the prompt ends at a row before it.
+			limit, upto := bottom+1, bottom
+			if part[1] < bottom {
+				limit, upto = part[1], part[1]
+			}
+			for i := part[0]; i < part[1]; i++ {
+				if msgs[i].Role == message.Assistant && len(msgs[i].ToolCalls()) > 0 {
+					if r, rows, ok := oldest("", i, msgs[i].ToolCalls()[0].ID, limit, upto); ok {
+						return r, rows, true
+					}
+					break
 				}
-				break
 			}
 		}
 	}
@@ -1037,7 +1086,7 @@ func roughCount(n int64) string {
 	return strconv.FormatInt(n, 10)
 }
 
-// cutPopped is msgs, the messages a step sends, without those a pop
+// cutPopped is msgs, the messages a request sends, without those a pop
 // removed from the model's context: for each pop, everything after the
 // round of its push (the assistant message holding the push call and the
 // tool message answering it) and before the round of its pop, but for the
@@ -1047,17 +1096,27 @@ func roughCount(n int64) string {
 // union. The list that remains keeps a tool message followed by an
 // assistant message, so it is valid for every provider.
 //
-// The push's answer that stays says what came after it (workNote): without
-// that, a long session's context is a row of pushes each answered by its
-// pop at once, and a model copies the row, popping todos it never did.
+// The push's answer that stays says what came after it (poppedRange.note):
+// without that, a long session's context is a row of pushes each answered
+// by its pop at once, and a model copies the row, popping todos it never
+// did. The note is the range's own, so it is said the same whether msgs
+// still hold the cut rows (the pop's turn, cut here) or not (a later turn,
+// or a summary, whose rows were read without them): what one request sent,
+// the next sends again. One answer says one note: a pop's over a slide's
+// (a pop takes all its frame's slides took), else the one reaching
+// furthest.
 func cutPopped(msgs []fantasy.Message, ranges []poppedRange) []fantasy.Message {
 	if len(ranges) == 0 {
 		return msgs
 	}
 	skip := make([]bool, len(msgs))
-	type note struct{ callID, text string }
+	type note struct {
+		callID, text string
+		pop          bool
+		end          int
+	}
 	notes := map[int]note{}
-	cut := false
+	changed := false
 	for _, r := range ranges {
 		end := indexOfCall(msgs, r.popCallID)
 		if end < 0 {
@@ -1099,13 +1158,17 @@ func cutPopped(msgs []fantasy.Message, ranges []poppedRange) []fantasy.Message {
 				continue
 			}
 			skip[i] = true
-			cut = true
+			changed = true
 		}
-		if answer >= 0 && from < end {
-			notes[answer] = note{r.pushCallID, workNote(msgs[from:end])}
+		if answer >= 0 && r.note != "" {
+			n := note{r.pushCallID, r.note, r.spare, end}
+			if old, ok := notes[answer]; !ok || (n.pop && !old.pop) || (n.pop == old.pop && n.end > old.end) {
+				notes[answer] = n
+			}
+			changed = true
 		}
 	}
-	if !cut {
+	if !changed {
 		return msgs
 	}
 	kept := make([]fantasy.Message, 0, len(msgs))
@@ -1121,25 +1184,31 @@ func cutPopped(msgs []fantasy.Message, ranges []poppedRange) []fantasy.Message {
 	return kept
 }
 
-// workNote is what a push's answer adds once its frame is popped: that the
-// work came there, and how much, by tool, so a pop never looks as if it
-// came straight after the push.
-func workNote(removed []fantasy.Message) string {
+// workNote is what a push's answer adds once rows after it are cut (see
+// poppedRange.note): that work came there, and how much, by tool, so a pop
+// never looks as if it came straight after the push; for a slide (slide),
+// that it left to make room, its frame still open.
+func workNote(rows []message.Message, slide bool) string {
+	why := "removed from your context when you popped it"
+	if slide {
+		why = "removed from your context to make room"
+	}
 	byTool := map[string]int{}
 	calls := 0
-	for _, m := range removed {
-		if m.Role != fantasy.MessageRoleAssistant {
+	for _, row := range rows {
+		if row.Role != message.Assistant {
 			continue
 		}
-		for _, part := range m.Content {
-			if call, ok := fantasy.AsMessagePart[fantasy.ToolCallPart](part); ok {
-				byTool[call.ToolName]++
-				calls++
-			}
+		for _, call := range row.ToolCalls() {
+			byTool[call.Name]++
+			calls++
 		}
 	}
 	if calls == 0 {
-		return fmt.Sprintf("[Then came %d messages of work in it, removed from your context when you popped it.]", len(removed))
+		if slide {
+			return fmt.Sprintf("[Then came %d messages, %s.]", len(rows), why)
+		}
+		return fmt.Sprintf("[Then came %d messages of work in it, %s.]", len(rows), why)
 	}
 	names := make([]string, 0, len(byTool))
 	for name := range byTool {
@@ -1154,7 +1223,10 @@ func workNote(removed []fantasy.Message) string {
 	if calls > 1 {
 		what = fmt.Sprintf("%d tool calls", calls)
 	}
-	return fmt.Sprintf("[Then came the work in it, %s (%s), removed from your context when you popped it.]", what, strings.Join(counts, ", "))
+	if slide {
+		return fmt.Sprintf("[Then came %s (%s), %s.]", what, strings.Join(counts, ", "), why)
+	}
+	return fmt.Sprintf("[Then came the work in it, %s (%s), %s.]", what, strings.Join(counts, ", "), why)
 }
 
 // withNote is m, a tool message, with text added to its answer to callID;

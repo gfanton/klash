@@ -120,19 +120,73 @@ func TestCutPopped(t *testing.T) {
 		}, texts(got))
 		validSequence(t, got)
 	})
-	t.Run("the push's answer says the work came after it", func(t *testing.T) {
+	t.Run("the push's answer says the range's note", func(t *testing.T) {
 		t.Parallel()
-		got := cutPopped(list, []poppedRange{{frame: "g/s1", pushCallID: "c2", popCallID: "c3"}})
-		require.Equal(t, "ok\n[Then came the work in it, 1 tool call (gnovm_run 1), removed from your context when you popped it.]", resultText(got[5], "c2"))
+		const note = "[Then came the work in it, 1 tool call (view 1), removed from your context when you popped it.]"
+		got := cutPopped(list, []poppedRange{{frame: "g/s1", pushCallID: "c2", popCallID: "c3", note: note}})
+		require.Equal(t, "ok\n"+note, resultText(got[5], "c2"))
 		require.Equal(t, "ok", resultText(list[5], "c2"), "the list given is not changed")
+		silent := cutPopped(list, []poppedRange{{frame: "g/s1", pushCallID: "c2", popCallID: "c3"}})
+		require.Equal(t, "ok", resultText(silent[5], "c2"), "a range with nothing to say says nothing")
 		nested := cutPopped(list, []poppedRange{
-			{frame: "g/s1", pushCallID: "c2", popCallID: "c3"},
-			{frame: "g/s2", pushCallID: "c3", popCallID: "c4"},
-			{frame: "g", pushCallID: "c1", popCallID: "c5"},
+			{frame: "g/s1", pushCallID: "c2", popCallID: "c3", note: "inner"},
+			{frame: "g/s2", pushCallID: "c3", popCallID: "c4", note: "inner too"},
+			{frame: "g", pushCallID: "c1", popCallID: "c5", note: "outer"},
 		})
-		require.Equal(t, "ok\n[Then came the work in it, 5 tool calls (gnovm_run 5), removed from your context when you popped it.]", resultText(nested[3], "c1"))
-		adjacent := cutPopped(list, []poppedRange{{frame: "x", pushCallID: "c4", popCallID: "c5"}})
-		require.Equal(t, "ok", resultText(adjacent[14], "c4"), "nothing came between, so nothing is said")
+		require.Equal(t, "ok\nouter", resultText(nested[3], "c1"))
+	})
+	t.Run("the note is said the same once the cut rows are gone", func(t *testing.T) {
+		t.Parallel()
+		// A later turn's list, read without the rows the pop marked: nothing
+		// is cut, and the push's answer says what it said in the pop's turn,
+		// so the request sends the prefix the one before it sent.
+		later := []fantasy.Message{
+			sys("system"), user("fix it"),
+			assistant("c1"), toolMsg("c1"),
+			assistant("c2"), toolMsg("c2"),
+			assistant("c3"), toolMsg("c3"),
+			assistant("v2"), toolMsg("v2"),
+		}
+		r := poppedRange{frame: "g/s1", pushCallID: "c2", popCallID: "c3", note: "the work"}
+		inTurn := cutPopped(list, []poppedRange{r})
+		after := cutPopped(later, []poppedRange{r})
+		require.Equal(t, texts(later), texts(after))
+		require.Equal(t, "ok\nthe work", resultText(after[5], "c2"))
+		require.Equal(t, contents(inTurn[:10]), contents(after[:10]), "the same prefix in the pop's turn and after it")
+		validSequence(t, after)
+	})
+	t.Run("a range that says nothing adds nothing, whatever else is cut", func(t *testing.T) {
+		t.Parallel()
+		// What came between the push and the pop was the user's, spared: the
+		// pop removed nothing, and a cut elsewhere in the same list must not
+		// make the push's answer count the spared row as work.
+		spared := []fantasy.Message{
+			sys("system"), user("fix it"),
+			assistant("c1"), toolMsg("c1"),
+			user("now this"),
+			assistant("c2"), toolMsg("c2"),
+			assistant("v1"), toolMsg("v1"),
+			assistant("c3"), toolMsg("c3"),
+			assistant(),
+		}
+		got := cutPopped(spared, []poppedRange{
+			{frame: "g", pushCallID: "c1", popCallID: "c2", spare: true, spareLast: 1},
+			{frame: "h", pushCallID: "c2", popCallID: "c3", note: "the work"},
+		})
+		require.Equal(t, "ok", resultText(got[3], "c1"))
+		require.Contains(t, texts(got), "user:now this")
+		require.Equal(t, "ok\nthe work", resultText(got[6], "c2"))
+		require.NotContains(t, texts(got), "assistant:v1")
+	})
+	t.Run("one note per answer: a pop's over a slide's, else the furthest", func(t *testing.T) {
+		t.Parallel()
+		slide := poppedRange{frame: "g", pushCallID: "c1", popCallID: "c3", note: "slid"}
+		pop := poppedRange{frame: "g", pushCallID: "c1", popCallID: "c5", spare: true, note: "popped"}
+		require.Equal(t, "ok\npopped", resultText(cutPopped(list, []poppedRange{slide, pop})[3], "c1"))
+		require.Equal(t, "ok\npopped", resultText(cutPopped(list, []poppedRange{pop, slide})[3], "c1"))
+		far := poppedRange{frame: "g", pushCallID: "c1", popCallID: "c4", note: "far"}
+		require.Equal(t, "ok\nfar", resultText(cutPopped(list, []poppedRange{far, slide})[3], "c1"))
+		require.Equal(t, "ok\nfar", resultText(cutPopped(list, []poppedRange{slide, far})[3], "c1"))
 	})
 	t.Run("nested pops remove the union, the inner push and pop rounds too", func(t *testing.T) {
 		t.Parallel()
@@ -206,6 +260,61 @@ func TestCutPoppedSparesTheTurn(t *testing.T) {
 
 	slide := cutPopped(list, []poppedRange{{frame: "g", pushCallID: "c1", popCallID: "c2"}})
 	require.NotContains(t, texts(slide), "user:now do (2) and (3), with #42", "a slide's range spares nothing: it ends before the prompt")
+}
+
+// A range's note is worked out from the session's rows, the popped ones
+// included: a pop counts what it removed, not the user rows of its turn;
+// a slide counts everything between its two calls, a part slid before
+// included, and says it left to make room.
+func TestRangeNote(t *testing.T) {
+	t.Parallel()
+
+	view := func(id string) message.ToolCall {
+		return message.ToolCall{ID: id, Name: "view", Input: "{}", Finished: true}
+	}
+	rows := []message.Message{
+		row(message.User, "u0", message.TextContent{Text: "fix it"}),
+		row(message.Assistant, "a1", callPart("c1")), // push g
+		row(message.Tool, "t1", resultPart("c1")),
+		row(message.Assistant, "a2", view("v1")),
+		row(message.Tool, "t2", message.ToolResult{ToolCallID: "v1", Name: "view", Content: "file"}),
+		row(message.Assistant, "a3", callPart("w1"), view("v2")),
+		row(message.Tool, "t3", resultPart("w1")),
+		row(message.Tool, "t3b", message.ToolResult{ToolCallID: "v2", Name: "view", Content: "file"}),
+		row(message.Assistant, "a4", message.TextContent{Text: "done"}),
+		row(message.User, "u1", message.TextContent{Text: "now pop it"}),
+		row(message.Assistant, "a5", callPart("c2")), // pop g
+		row(message.Tool, "t5", resultPart("c2")),
+	}
+	rows[3].Popped = "slide:g:c1:w1" // slid earlier: still counted
+	rows[4].Popped = "slide:g:c1:w1"
+
+	pop := poppedRange{frame: "g", pushCallID: "c1", popCallID: "c2", spare: true}
+	require.Equal(t, "[Then came the work in it, 3 tool calls (gnovm_run 1, view 2), removed from your context when you popped it.]", rangeNote(rows, pop))
+	slide := poppedRange{frame: "g", pushCallID: "c1", popCallID: "w1"}
+	require.Equal(t, "[Then came 1 tool call (view 1), removed from your context to make room.]", rangeNote(rows, slide))
+
+	words := []message.Message{
+		row(message.Assistant, "a1", callPart("c1")),
+		row(message.Tool, "t1", resultPart("c1")),
+		row(message.Assistant, "a2", message.TextContent{Text: "thinking"}),
+		row(message.Assistant, "a3", callPart("c2")),
+		row(message.Tool, "t3", resultPart("c2")),
+	}
+	require.Equal(t, "[Then came 1 messages of work in it, removed from your context when you popped it.]", rangeNote(words, poppedRange{frame: "g", pushCallID: "c1", popCallID: "c2", spare: true}))
+
+	spared := []message.Message{
+		row(message.Assistant, "a0", message.TextContent{Text: "ready"}),
+		row(message.User, "u1", message.TextContent{Text: "go"}),
+		row(message.Assistant, "a1", callPart("c1")),
+		row(message.Tool, "t1", resultPart("c1")),
+		row(message.User, "u2", message.TextContent{Text: "also this"}),
+		row(message.Assistant, "a2", callPart("c2")),
+		row(message.Tool, "t2", resultPart("c2")),
+	}
+	require.Empty(t, rangeNote(spared, poppedRange{frame: "g", pushCallID: "c1", popCallID: "c2", spare: true}), "only the turn's own user row came between: nothing removed, nothing said")
+	require.Empty(t, rangeNote(rows, poppedRange{frame: "g", pushCallID: "", popCallID: "c2", spare: true}), "no push among the rows: no answer to say it")
+	require.Empty(t, rangeNote(rows, poppedRange{frame: "g", pushCallID: "c1", popCallID: "c-none", spare: true}))
 }
 
 // The turn a pop was made in begins with a prompt typed after an answer;
@@ -661,8 +770,44 @@ func TestSlideRange(t *testing.T) {
 		inTurn := list(prompt("u0", "fix it"), round("x1", 1), round("v1", 2), prompt("u1", "also x"), round("v2", 2), round("v3", 2), push("c1"), round("w1", 2))
 		r, ids, ok = cut(inTurn, []*stackFrame{g}, 1<<40, "u1")
 		require.True(t, ok)
-		require.Equal(t, poppedRange{frame: "", pushCallID: "v2", popCallID: "c1"}, r, "since the prompt the turn answers")
+		require.Equal(t, poppedRange{frame: "", pushCallID: "v2", popCallID: "c1"}, r, "the turn before has no round to cut but its anchor and its last: the turn's own")
 		require.Equal(t, []string{"a-v3", "t-v3"}, ids)
+	})
+
+	t.Run("in the middle of a turn, the turns before the prompt go first", func(t *testing.T) {
+		answer := []message.Message{row(message.Assistant, "a-said", message.TextContent{Text: "done for now"})}
+		// The frame came in this turn: the rounds of the turn before the
+		// prompt go before the turn's own, and the cut ends before the
+		// prompt, at the last round with a call before it.
+		thisTurn := list(prompt("u0", "fix it"), round("x1", 1), round("v1", 2), round("v2", 2), round("v3", 2), answer, prompt("u1", "also x"), round("y1", 1), round("y2", 2), round("y3", 2), push("c1"), round("w1", 2))
+		r, ids, ok := cut(thisTurn, []*stackFrame{g}, 1<<40, "u1")
+		require.True(t, ok)
+		require.Equal(t, poppedRange{frame: "", pushCallID: "x1", popCallID: "v3"}, r)
+		require.Equal(t, []string{"a-v1", "t-v1", "a-v2", "t-v2"}, ids)
+		require.NotContains(t, ids, "u1", "never the prompt")
+
+		// Gone, the turn's own rounds come next, anchored by their first.
+		for i := range thisTurn {
+			if id := thisTurn[i].ID; strings.HasSuffix(id, "-v1") || strings.HasSuffix(id, "-v2") {
+				thisTurn[i].Popped = "slide::x1:v3"
+			}
+		}
+		r, ids, ok = cut(thisTurn, []*stackFrame{g}, 1<<40, "u1")
+		require.True(t, ok)
+		require.Equal(t, poppedRange{frame: "", pushCallID: "y1", popCallID: "c1"}, r)
+		require.Equal(t, []string{"a-y2", "t-y2", "a-y3", "t-y3"}, ids)
+
+		// The frame came in an earlier turn: its rounds before it go before
+		// a lower frame's body, though the prompt came after it.
+		earlier := list(prompt("u0", "fix it"), round("x1", 1), round("v1", 2), round("v2", 2), round("v3", 2), push("c1"), round("w1", 2), round("w2", 2), answer, prompt("u1", "also x"), push("c2"), round("w3", 2), round("w4", 2))
+		r, ids, ok = cut(earlier, []*stackFrame{g, s1}, 1, "u1")
+		require.True(t, ok)
+		require.Equal(t, "", r.frame, "the oldest first: the rounds before the first frame")
+		require.Equal(t, "x1", r.pushCallID)
+		require.NotContains(t, ids, "u1")
+		for _, id := range ids {
+			require.True(t, strings.HasSuffix(id, "-v1") || strings.HasSuffix(id, "-v2") || strings.HasSuffix(id, "-v3"), "only rounds before the frame: %v", ids)
+		}
 	})
 
 	t.Run("nothing to slide", func(t *testing.T) {

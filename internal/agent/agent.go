@@ -2106,6 +2106,10 @@ func (a *sessionAgent) compactConversation(ctx, genCtx context.Context, sessionI
 	}
 
 	aiMsgs, _ := a.preparePrompt(msgs, largeModel.CatwalkCfg.SupportsImages)
+	// As a turn's request does: the rows were read without what pops cut,
+	// and each push's answer says what came after it, as the request
+	// before this one said it, so the cached prefix still holds.
+	aiMsgs = cutPopped(aiMsgs, a.frames.ranges(ctx, sessionID))
 
 	defer func() {
 		if flushErr := a.messages.FlushAll(ctx); flushErr != nil {

@@ -228,6 +228,25 @@ func contents(msgs []fantasy.Message) []fantasy.Message {
 	return out
 }
 
+// providerSees is msgs as a provider is sent them: without their provider
+// options, and without the metadata a tool result keeps for gnosh alone
+// (ClientMetadata), which the turn that made a call holds and a later
+// turn, reading the result back, does not.
+func providerSees(msgs []fantasy.Message) []fantasy.Message {
+	out := contents(msgs)
+	for i, m := range out {
+		parts := slices.Clone(m.Content)
+		for j, part := range parts {
+			if rp, ok := fantasy.AsMessagePart[fantasy.ToolResultPart](part); ok {
+				rp.ClientMetadata = ""
+				parts[j] = rp
+			}
+		}
+		out[i].Content = parts
+	}
+	return out
+}
+
 // framesScenario is an agent whose gnovm_run is fakeMem, with a frames
 // record of its own, in a session of its own.
 type framesScenario struct {
@@ -477,7 +496,7 @@ func TestFrames_PopCutsTheContext(t *testing.T) {
 	require.Equal(t, []string{"g", "g/s2"}, s.frames.stack(t.Context(), s.sessID))
 	again := newFrameStacks(s.env.sessions, s.env.messages, s.env.filetracker, s.env.workingDir)
 	require.Equal(t, []string{"g", "g/s2"}, again.stack(t.Context(), s.sessID), "a restart derives the same stack")
-	require.Equal(t, []poppedRange{{frame: "g/s1", pushCallID: "c2", popCallID: "c3", spare: true}}, again.ranges(t.Context(), s.sessID))
+	require.Equal(t, []poppedRange{{frame: "g/s1", pushCallID: "c2", popCallID: "c3", spare: true, note: "[Then came the work in it, 1 tool call (view 1), removed from your context when you popped it.]"}}, again.ranges(t.Context(), s.sessID))
 	require.Equal(t, s.frames.ranges(t.Context(), s.sessID), again.ranges(t.Context(), s.sessID), "derived again, the pop spares what it spared")
 	require.Equal(t, [][]string{nil, {"g"}, {"g", "g/s1"}}, s.mem.stacks, "the stack the tool was told before each call")
 
@@ -495,6 +514,25 @@ func TestFrames_PopCutsTheContext(t *testing.T) {
 	require.Contains(t, last, "go on")
 	require.Contains(t, last, "You are in `g/s2` \"rerun\" (your stack: `g`, then `g/s2`): pop it with its result when it is done")
 	require.NotContains(t, s.model.sent(5), "assistant:v1", "the next turn's history skips the popped rows")
+
+	// The next turn's first request sends the push's answer as the pop's
+	// turn sent it, its note included, though its rows were read without
+	// the cut ones: the prefix the provider cached still holds.
+	next := s.model.prompts[5]
+	at := slices.Index(texts(next), "tool:c2")
+	require.Equal(t, now, resultText(next[at], "c2"))
+	pop := slices.Index(texts(next), "tool:c3")
+	require.Equal(t, slices.Index(s.model.sent(4), "tool:c3"), pop)
+	require.Equal(t, providerSees(s.model.prompts[4][:pop+1]), providerSees(next[:pop+1]), "the prefix through the pop's round is the one the turn before sent")
+
+	// So does a summary asked for after it.
+	require.NoError(t, s.agent.Summarize(t.Context(), s.sessID, "", fantasy.ProviderOptions{}, nil, preCompactTriggerManual))
+	summary := s.model.prompts[s.model.requestCount()-1]
+	require.NotContains(t, texts(summary), "assistant:v1")
+	at = slices.Index(texts(summary), "tool:c2")
+	require.Positive(t, at)
+	require.Equal(t, now, resultText(summary[at], "c2"), "the summary's request says the note the turns said")
+	validSequence(t, summary)
 }
 
 // Pops nest: the outer pop takes the inner push and pop rounds with
