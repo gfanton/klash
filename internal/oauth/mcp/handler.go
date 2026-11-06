@@ -231,7 +231,12 @@ func NewHandler(
 		restored := &oauth2.Token{
 			AccessToken:  savedToken.AccessToken,
 			RefreshToken: savedToken.RefreshToken,
-			Expiry:       time.Unix(savedToken.ExpiresAt, 0),
+		}
+		// A token issued without expires_in is saved with ExpiresAt 0.
+		// Leave its Expiry zero, which oauth2 reads as never expiring,
+		// rather than 1970, which it reads as long expired.
+		if savedToken.ExpiresAt > 0 {
+			restored.Expiry = time.Unix(savedToken.ExpiresAt, 0)
 		}
 		oc := &oauth2.Config{
 			ClientID:     savedToken.Client.ClientID,
