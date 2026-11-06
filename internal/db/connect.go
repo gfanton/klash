@@ -163,7 +163,22 @@ func Connect(ctx context.Context, dataDir string, opts ...ConnectOption) (*sql.D
 	}
 
 	dbPath := FileName(dataDir)
-	conn, err := openDB(dbPath)
+	// A restoring pool never creates its file, made here for a new
+	// database: a connection that did, opened while the file is removed,
+	// would leave an empty database the check takes for another file.
+	if cfg.restore {
+		f, err := os.OpenFile(dbPath, os.O_RDONLY|os.O_CREATE, 0o644)
+		if err == nil {
+			err = f.Close()
+		}
+		if err != nil {
+			if lock != nil {
+				lock.release()
+			}
+			return nil, fmt.Errorf("failed to create database: %w", err)
+		}
+	}
+	conn, err := openDB(dbPath, cfg.restore)
 	if err != nil {
 		if lock != nil {
 			lock.release()
