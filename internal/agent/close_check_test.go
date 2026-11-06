@@ -133,6 +133,25 @@ func TestRefusedClose(t *testing.T) {
 	require.Contains(t, reviewText("popped", "x", "nothing shows the test run."), "found: nothing shows the test run. Do what is missing")
 }
 
+// A refused pop of a todo whose work was done before it was entered points
+// at closing it by its name from where the work was done, which is checked
+// against that frame; a refused close by name, already there, does not
+// (bench, 2026-11-06).
+func TestRefusalPointsAtDoneByName(t *testing.T) {
+	t.Parallel()
+	const id = "plan/fix-tax"
+	require.Contains(t, enteredHereText(id), `mem.Done("plan/fix-tax", "what came of it")`)
+	popped := reviewText("popped", id, "no edit of tax.go is shown.")
+	require.Contains(t, popped, `mem.Leave("done before")`)
+	require.Contains(t, popped, `mem.Done("plan/fix-tax", "what came of it")`)
+	require.Contains(t, claimText("popped", id, "tax.go", false), `mem.Done("plan/fix-tax", "what came of it")`)
+	require.NotContains(t, reviewText("closed", id, "no edit of tax.go is shown."), "done before")
+	require.NotContains(t, claimText("closed", id, "tax.go", false), "done before")
+	for _, text := range []string{enteredHereText(id), popped, claimText("popped", id, "tax.go", false)} {
+		require.Equal(t, id, refusedClose(text), text)
+	}
+}
+
 // A call that failed is no work: two failed renames let a todo be closed
 // "done" (QA, 2026-11-04).
 func TestWorkInFailedCall(t *testing.T) {

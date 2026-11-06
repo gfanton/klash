@@ -157,19 +157,33 @@ const closeReviewTimeout = 3 * time.Minute
 // The refusals begin as mem's own refusal of a fresh pop does, "not
 // popped: … `todo`", which closeRefused reads.
 func enteredHereText(id string) string {
-	return fmt.Sprintf("not popped: this call entered `%s` and closed it with nothing done in it, so nothing from the call was kept and you are not in `%s`. Enter it, do its work, then pop it with what came of it.", id, id)
+	return fmt.Sprintf("not popped: this call entered `%s` and closed it with nothing done in it, so nothing from the call was kept and you are not in `%s`. If its work is still to do, enter it, do the work, then pop it with what came of it. If you already did its work where you are now, close it by its name without entering it: mem.Done(%q, \"what came of it\").", id, id, id)
+}
+
+// doneBeforeHint is the way out of a refused pop of a todo whose work was
+// done before it was entered. A pop is checked against what happened in
+// the todo, where that work does not show; a todo closed by its name is
+// checked against the frame it is closed from (closeWindow), where it
+// does. On the bench, 2026-11-06, Qwen did a whole plan from its root,
+// then entered and popped each todo and was refused again and again, while
+// the same model closing a plan by name from its root was kept at once.
+func doneBeforeHint(verb, id string) string {
+	if verb != "popped" {
+		return ""
+	}
+	return fmt.Sprintf(" If you did it before you entered `%s`, step out with mem.Leave(\"done before\") and close it by its name from where you did it: mem.Done(%q, \"what came of it\").", id, id)
 }
 
 func claimText(verb, id, file string, made bool) string {
 	if made {
 		return fmt.Sprintf("not %s: nothing in `%s` made `%s`, which your result says was made, and there is no such file. Make it, then close `%s` with what came of it; or close it with what you did instead.", verb, id, file, id)
 	}
-	return fmt.Sprintf("not %s: nothing in `%s` changed or showed `%s`, which your result says changed. If the change is still to make, make it; if it was made before, view it here so it shows; then close `%s` with what came of it.", verb, id, file, id)
+	return fmt.Sprintf("not %s: nothing in `%s` changed or showed `%s`, which your result says changed. If the change is still to make, make it; if it was made before, view it here so it shows; then close `%s` with what came of it.", verb, id, file, id) + doneBeforeHint(verb, id)
 }
 
 func reviewText(verb, id, reason string) string {
-	return fmt.Sprintf("not %s: the check of `%s` found: %s. Do what is missing; if it is done already, show it here (view it, or run what checks it); then close `%s` with what came of it. If it cannot be done now, mem.Leave(\"why\") leaves it open; either way, tell the user plainly how it stands.",
-		verb, id, strings.TrimSuffix(compactReason(reason), "."), id)
+	return fmt.Sprintf("not %s: the check of `%s` found: %s. Do what is missing; if it is done already, show it here (view it, or run what checks it); then close `%s` with what came of it.%s If it cannot be done now, mem.Leave(\"why\") leaves it open; either way, tell the user plainly how it stands.",
+		verb, id, strings.TrimSuffix(compactReason(reason), "."), id, doneBeforeHint(verb, id))
 }
 
 // closeRefusal is a refusal of a close of a todo, by mem (refuseFresh) or
