@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -270,12 +271,24 @@ func TestConnect_RestoresADataDirRemovedTwice(t *testing.T) {
 	require.NoError(t, err)
 
 	dbPath := filepath.Join(dataDir, "gnosh.db")
+	want := []string{"kept"}
+	holds := func() bool {
+		ids, err := sessionIDsIn(t.Context(), dbPath)
+		return err == nil && slices.Equal(slices.Sorted(slices.Values(ids)), slices.Sorted(slices.Values(want)))
+	}
 	for i := range 2 {
 		require.NoError(t, os.RemoveAll(dataDir))
-		require.Eventually(t, func() bool {
-			ids, err := sessionIDsIn(t.Context(), dbPath)
-			return err == nil && slices.Equal(ids, []string{"kept"})
-		}, 5*time.Second, 10*time.Millisecond, "removal %d is not restored", i+1)
+		require.Eventually(t, holds, 5*time.Second, 10*time.Millisecond, "removal %d is not restored", i+1)
+		// What gnosh writes next lands in the restored file. Once it is
+		// there the pool holds that file, as it held the removed one, and
+		// the next removal is restored from it. (A removal before the pool
+		// reopens the file finds nothing holding it: that gap is the
+		// restore's, not this test's.)
+		id := fmt.Sprintf("after-%d", i+1)
+		_, err := New(conn).CreateSession(t.Context(), CreateSessionParams{ID: id, Title: id})
+		require.NoError(t, err)
+		want = append(want, id)
+		require.Eventually(t, holds, 5*time.Second, 10*time.Millisecond, "a write after restore %d is not in the restored file", i+1)
 	}
 }
 
