@@ -128,6 +128,12 @@ func NewJobOutputTool(workingDir, spillDir string) fantasy.AgentTool {
 				bgShell.ClaimEnd()
 				status = "completed"
 				if err != nil {
+					// A job that ended without an exit status of its own,
+					// such as one the shell refused to run, has its reason
+					// in the error rather than on its stderr.
+					if !shell.IsExitStatus(err) {
+						outputParts = append(outputParts, err.Error())
+					}
 					exitCode := shell.ExitCode(err)
 					if exitCode != 0 {
 						outputParts = append(outputParts, fmt.Sprintf("Exit code %d", exitCode))

@@ -200,3 +200,26 @@ func TestJobToolsTakeTheEndsTheyReport(t *testing.T) {
 	run(NewJobKillTool(dir), JobKillToolName, stopped.ID)
 	require.False(t, stopped.ClaimEnd(), "job_kill stopped it")
 }
+
+// A background job that ends without an exit status of its own, as when the
+// shell refuses a banned command partway through it, must say why in
+// job_output, as the bash tool does for a command run in the foreground.
+// Otherwise the agent reads a bare "Exit code 1" and guesses at the cause.
+func TestJobOutputSaysWhyAJobCouldNotRun(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	bgManager := shell.GetBackgroundShellManager()
+	job, err := bgManager.Start(context.Background(), dir, blockFuncs(nil), "echo built; curl http://localhost:8080/health", "", testMaxJobs)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = bgManager.Kill(job.ID) })
+	job.Wait()
+
+	resp, err := NewJobOutputTool(dir, t.TempDir()).Run(context.Background(), fantasy.ToolCall{
+		ID: "test-call", Name: JobOutputToolName, Input: `{"shell_id":"` + job.ID + `"}`,
+	})
+	require.NoError(t, err)
+	require.Contains(t, resp.Content, "Status: completed")
+	require.Contains(t, resp.Content, "built")
+	require.Contains(t, resp.Content, "command is not allowed for security reasons")
+}
