@@ -1818,6 +1818,21 @@ Installing an extra tool might be needed on Unix-like environments.
 | Linux/BSD + Wayland | `wl-copy` and `wl-paste` |
 | Linux/BSD + X11     | `xclip` or `xsel`        |
 
+When Gnosh runs on another machine, over ssh, a copy reaches your clipboard
+through your terminal: Gnosh asks the terminal to set it with an escape
+code, OSC 52. Many terminals do (Ghostty, kitty and WezTerm among them), but
+Apple's Terminal ignores it, so Gnosh says the text was copied and it never
+arrives. Connect with `gnosh ssh` instead of `ssh`, from a Gnosh installed
+on your own computer, and it puts the copies on your clipboard itself. This
+line in `~/.zshrc` makes every `ssh` typed in Apple's Terminal do that:
+
+```sh
+[[ $TERM_PROGRAM == Apple_Terminal ]] && ssh() { gnosh ssh "$@"; }
+```
+
+Inside tmux on the far side, `set -g set-clipboard on` in `~/.tmux.conf`
+lets the copies out of tmux.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md). A contribution is licensed to

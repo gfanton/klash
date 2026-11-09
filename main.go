@@ -23,6 +23,12 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "gnovm-worker" {
 		os.Exit(gnovm.WorkerMain())
 	}
+	// gnosh ssh hands its arguments to ssh as they are and runs for as long
+	// as the ssh session does, so none of the start below is for it: above
+	// all not the pprof server, whose port it would hold all that time.
+	if len(os.Args) > 1 && os.Args[1] == "ssh" {
+		os.Exit(cmd.SSH(os.Args[2:]))
+	}
 	if setting := env.Getenv("GNOSH_PROFILE"); setting != "" {
 		go servePprof(setting)
 	}

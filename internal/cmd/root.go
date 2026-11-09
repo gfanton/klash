@@ -91,6 +91,7 @@ func init() {
 		memCmd,
 		doctorCmd,
 		trustCmd,
+		sshCmd,
 	)
 }
 
