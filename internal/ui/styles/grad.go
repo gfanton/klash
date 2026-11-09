@@ -14,16 +14,18 @@ import (
 // rendered with a horizontal gradient foreground from color1 to color2. Each
 // string in the returned slice corresponds to a grapheme cluster in the input
 // string. If bold is true, the rendered strings will be bolded.
+//
+// The fade is spread evenly over the clusters (fade.Ramp), so even a short
+// word shows every color of a fade through a *fade.Via.
 func ForegroundGrad(base lipgloss.Style, input string, bold bool, color1, color2 color.Color) []string {
 	if input == "" {
 		return []string{""}
 	}
+	if bold {
+		base = base.Bold(true)
+	}
 	if len(input) == 1 {
-		style := base.Foreground(color1)
-		if bold {
-			style.Bold(true)
-		}
-		return []string{style.Render(input)}
+		return []string{base.Foreground(color1).Render(input)}
 	}
 	var clusters []string
 	gr := uniseg.NewGraphemes(input)
@@ -31,13 +33,8 @@ func ForegroundGrad(base lipgloss.Style, input string, bold bool, color1, color2
 		clusters = append(clusters, string(gr.Runes()))
 	}
 
-	ramp := lipgloss.Blend1D(len(clusters), fade.Stops(color1, color2)...)
-	for i, c := range ramp {
-		style := base.Foreground(c)
-		if bold {
-			style.Bold(true)
-		}
-		clusters[i] = style.Render(clusters[i])
+	for i, c := range fade.Ramp(len(clusters), color1, color2) {
+		clusters[i] = base.Foreground(c).Render(clusters[i])
 	}
 	return clusters
 }
@@ -76,6 +73,18 @@ func (s *Styles) Wordmark(trueColor bool, color1, color2 color.Color) (gno, from
 		return nil, color1, color2
 	}
 	return s.Logo.GnoColor, s.Logo.GnoRestColorA, s.Logo.GnoRestColorB
+}
+
+// WordmarkField colors the diagonal lines that follow a one-line wordmark,
+// in the compact header and the sidebar's small logo. In a theme whose logo
+// fields fade (Logo.FieldColorB set), these fade too: from FieldColorB
+// beside the name to Logo.FieldColor at the far end. Otherwise they are
+// all in base's color.
+func (s *Styles) WordmarkField(base lipgloss.Style, lines string) string {
+	if s.Logo.FieldColorB == nil {
+		return base.Render(lines)
+	}
+	return ApplyForegroundGrad(base, lines, s.Logo.FieldColorB, s.Logo.FieldColor)
 }
 
 // ApplyBoldForegroundGrad renders a given string with a horizontal gradient

@@ -27,6 +27,10 @@ type header struct {
 	// cached logo and compact logo
 	logo        string
 	compactLogo string
+	// the compact header's diagonal lines, cached by their count: they
+	// fade, which costs a style per cell, and the header draws every frame
+	diags    string
+	diagsLen int
 
 	com     *common.Common
 	width   int
@@ -55,9 +59,11 @@ func (h *header) refresh() {
 		wordmark = styles.ApplyBoldWordmark(t.Header.LogoGradCanvas, name, gno, from, to)
 	}
 	h.compactLogo = " " + wordmark + " "
-	// Force drawHeader to re-render the wide logo on the next frame.
+	// Force drawHeader to re-render the wide logo and the diagonals on the
+	// next frame.
 	h.width = 0
 	h.logo = ""
+	h.diagsLen = 0
 }
 
 // drawHeader draws the header for the given session. lspErrorCount comes
@@ -113,9 +119,11 @@ func (h *header) drawHeader(
 		diagToDetailsSpacing
 
 	if remainingWidth > 0 {
-		b.WriteString(t.Header.Diagonals.Render(
-			strings.Repeat(headerDiag, max(minHeaderDiags, remainingWidth)),
-		))
+		if n := max(minHeaderDiags, remainingWidth); n != h.diagsLen {
+			h.diags = t.WordmarkField(t.Header.Diagonals, strings.Repeat(headerDiag, n))
+			h.diagsLen = n
+		}
+		b.WriteString(h.diags)
 		b.WriteString(" ")
 	}
 

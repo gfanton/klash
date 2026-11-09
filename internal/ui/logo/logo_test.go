@@ -89,6 +89,40 @@ func TestWideLogoRightEdgeIsStraight(t *testing.T) {
 	}
 }
 
+// The sidebar's small logo fades its lines from hot pink beside the name to
+// purple in Gnosh's theme, as the compact header does, and keeps them one
+// color in Charmtone.
+func TestSmallLogoLinesFade(t *testing.T) {
+	linesOf := func(st *styles.Styles) []color.Color {
+		s := SmallRender(st, 40, Opts{})
+		scr := uv.NewScreenBuffer(lipgloss.Width(s), 1)
+		uv.NewStyledString(s).Draw(scr, scr.Bounds())
+		var fg []color.Color
+		for x := range lipgloss.Width(s) {
+			if c := scr.CellAt(x, 0); c != nil && c.Content == diag {
+				fg = append(fg, c.Style.Fg)
+			}
+		}
+		if len(fg) < 20 {
+			t.Fatalf("the small logo has %d lines: %q", len(fg), ansi.Strip(s))
+		}
+		return fg
+	}
+
+	k := styles.GnoshCosmos()
+	fg := linesOf(&k)
+	if !colorEqual(fg[0], k.Logo.FieldColorB) || !colorEqual(fg[len(fg)-1], k.Logo.FieldColor) {
+		t.Errorf("Gnosh's lines run %v to %v, want %v to %v", fg[0], fg[len(fg)-1], k.Logo.FieldColorB, k.Logo.FieldColor)
+	}
+
+	c := styles.CharmtonePantera()
+	for i, f := range linesOf(&c) {
+		if !colorEqual(f, c.Logo.SmallDiagonals.GetForeground()) {
+			t.Fatalf("Charmtone's line %d is %v, want its one color", i, f)
+		}
+	}
+}
+
 // The sidebar's small logo spells the name in capitals, as the big logo and
 // the compact header do.
 func TestSmallLogoNameIsCapitals(t *testing.T) {
