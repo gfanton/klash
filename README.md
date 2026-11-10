@@ -22,6 +22,7 @@ Gnosh is functional AI: the agent's context is a call stack. It runs the <a href
 
 <p align="center">
   <a href="#frames-no-more-compaction">Frames</a> ·
+  <a href="#a-swarm-on-one-plan">Swarm</a> ·
   <a href="#memory-that-runs">Memory that runs</a> ·
   <a href="GNOMEM.md">GNOMEM</a> ·
   <a href="#security-first">Security first</a> ·
@@ -47,6 +48,12 @@ from a hosted API to one running on your own machine. On top of that:
   done is cut from the model's context with its result kept, so finished work
   never piles up, and a long task needs no compaction to survive it:
   [frames](#frames-no-more-compaction).
+- **A swarm on one plan.** Gnosh sessions in one project share one `mem`:
+  one plans the work, the others take its free todos, each once, under
+  mem's lock. On a server with memory to spare they run side by side for
+  little more than the cost of one: six sessions on one 48 GB GPU did a
+  nine-package job 1.8x faster than Crush and 2.7x faster than one Gnosh
+  session: [the swarm](#a-swarm-on-one-plan).
 - **Thinks in Gno.** The Gno VM runs inside Gnosh, and the agent works an
   answer out in a machine instead of estimating it:
   [the machines underneath](#thinks-in-gno-the-machines-underneath).
@@ -128,6 +135,45 @@ mem.Pop("README.md fully renamed klash→gnosh (title, prose, build/usage snippe
 
 [GNOMEM](GNOMEM.md#frames) has the design: what a frame holds, what a thought
 is, and how a thought becomes a todo of its own.
+
+## A swarm on one plan
+
+A model server with memory to spare runs several requests at once for
+little more than the cost of one: on a 48 GB RTX 6000 Ada serving Qwen 3.8
+27B with vLLM, one request streamed 30 tokens a second and eight at once
+streamed 218 in all, 27 each. A coding session uses one of those streams.
+Gnosh sessions in one project share one `mem`, so several of them can work
+one plan: each takes a free todo with `mem.Next()` under mem's lock, none
+takes a todo twice, and one with nothing free waits on mem instead of
+polling.
+
+To run one, give gnosh the task in one terminal and say others will help:
+
+```
+Two more gnosh sessions will work on this with you. First plan it in mem,
+with the todos that do not depend on each other under .Parallel().
+```
+
+Once it has planned, open gnosh in the same project in more terminals and
+tell each: `Help with the plan in mem: take todos with mem.Next() until none
+are left.` [bench/run.sh](bench/run.sh) does the same unattended
+(`SWARM=6 bench/run.sh gnosh-swarm algos 1`).
+
+Measured on that server, each harness alone on it in turn, on a job of nine
+small Go packages with a test suite each (every run passed):
+
+| harness | sessions | time | model requests |
+|---|---|---|---|
+| Gnosh | 6 | **312 s** | 108 |
+| Crush | 1 | 550 s | 13 |
+| Gnosh | 3 | 692 s | 107 |
+| Gnosh | 1 | 850 s | 30 |
+| Codex | 1 | 1,240 s | 21 |
+
+Crush is quick alone because it batches, writing several packages in one
+reply, where a Gnosh session takes a step a reply; three Gnosh sessions did
+not catch it, six did. How it was measured, and the other results:
+[bench/RESULTS.md](bench/RESULTS.md).
 
 ## Memory that runs
 

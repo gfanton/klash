@@ -1,0 +1,1 @@
+This repository has nine small Go packages: stack, lru, roman, rle, brackets, wordfreq, matrix, intervals and topo. Their functions are unfinished (they panic with "TODO") and their tests fail. Implement every one of them, following each function's doc comment, so that `go test ./...` passes. The tests are correct: don't change any _test.go file.

@@ -1,0 +1,10 @@
+We are going to make six changes to the notes package. Make them one at a time and run `go test ./...` after each; update the tests where a change needs it.
+
+1. Note gets a `Tags []string` field. Add fills it from the words of the text that start with '#': a tag is the word without its '#', in lower case; each tag appears once, in the order of its first appearance; a lone "#" is not a tag. Add("Buy milk #Shopping #home #shopping") has Tags ["shopping", "home"]. A note without tags has nil Tags.
+2. `func (s *Store) Search(word string) []Note` returns the notes whose text contains word, ignoring case, in ID order.
+3. Delete becomes `func (s *Store) Delete(ids ...int) int`: it deletes every listed note that exists and returns how many it deleted.
+4. `func (s *Store) WithTag(tag string) []Note` returns the notes that have the tag (ignoring case, with or without a leading '#'), in ID order.
+5. `func (s *Store) Stats() (notes, words int)` returns the number of notes and the total number of words in them, as strings.Fields counts words.
+6. `func (s *Store) Export() string` returns one line per note in ID order, "ID<TAB>Text\n" (for example "1\tBuy milk #shopping\n"); an empty store exports "".
+
+In this session, make only changes 1 and 2. Then stop, and say what is left for next time.

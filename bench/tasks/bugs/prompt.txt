@@ -1,0 +1,1 @@
+`go test ./...` fails in this repository. Find and fix the bugs in the code so that every test passes. The tests are correct: don't change any _test.go file.
