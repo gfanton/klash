@@ -205,17 +205,14 @@ func TestClosePrompt(t *testing.T) {
 	require.LessOrEqual(t, len([]rune(closeTranscript(long))), closeTranscriptLimit+1)
 }
 
-// The window of a todo entered in the call that popped the one before
-// starts after that call, so the todo before's work is not this one's: a
-// view in s1 does not show what s2 claims (code review, 2026-11-05). A call
-// made before the close in its own round is in it.
-func TestCloseWindowStartsAfterThePopBefore(t *testing.T) {
+// The window of a todo under a plan reaches back to where the plan was
+// made (fix A, Jae 2026-11-11): every model on the bench worked a plan
+// first and entered each todo only to close it, so s1's view and the pop
+// and push are evidence too, and the review judges s2's claim against them.
+// A lone todo, with no plan above it, keeps its own window: only s2's own
+// round. A call made before the close in its own round is in it.
+func TestCloseWindowReachesBackToThePlan(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	s1File, s2File := filepath.Join(dir, "min.go"), filepath.Join(dir, "README.md")
-	for _, f := range []string{s1File, s2File} {
-		require.NoError(t, os.WriteFile(f, []byte("x\n"), 0o644))
-	}
 	popS2 := `mem.Pop("Max added")`
 	replies := map[string]memReply{
 		pushG:      {text: inG, events: []gnovm.MemFrame{pushed("g", "fix it")}},
@@ -223,30 +220,50 @@ func TestCloseWindowStartsAfterThePopBefore(t *testing.T) {
 		popS1PushS: {text: doneS1 + "\n" + inS2, events: []gnovm.MemFrame{poppedFrame("g/s1", "found it", 0), pushed("g/s2", "rerun")}},
 		popS2:      {text: "done `g/s2` \"rerun\" → Max added", events: []gnovm.MemFrame{poppedFrame("g/s2", "Max added", 0)}},
 	}
-	s := newFramesScenario(t, replies, [][]fantasy.StreamPart{
-		calling(memCall("c1", pushG)),
-		calling(memCall("c2", pushS1)),
-		calling(viewCall("v1", s1File)),
-		calling(memCall("c3", popS1PushS)),
-		calling(viewCall("v2", s2File), memCall("c4", popS2)),
-		saying("done"),
-	}, 200_000)
-	var w closeWindow
-	var ok bool
-	s.mem.onCall = func(ctx context.Context, sessionID, callID string) {
-		if callID == "c4" {
-			w, ok = s.frames.closeWindow(ctx, sessionID, gnovm.MemClose{Id: "g/s2"}, callID)
+	window := func(t *testing.T, underPlan bool) []string {
+		dir := t.TempDir()
+		s1File, s2File := filepath.Join(dir, "min.go"), filepath.Join(dir, "README.md")
+		for _, f := range []string{s1File, s2File} {
+			require.NoError(t, os.WriteFile(f, []byte("x\n"), 0o644))
 		}
-	}
-	s.run("fix the flaky test")
-	require.True(t, ok)
-	require.True(t, w.onStack)
-	var calls []string
-	for _, r := range w.rows {
-		for _, c := range r.ToolCalls() {
-			calls = append(calls, c.ID)
+		var steps [][]fantasy.StreamPart
+		if underPlan {
+			steps = append(steps, calling(memCall("c1", pushG)))
 		}
+		steps = append(steps,
+			calling(memCall("c2", pushS1)),
+			calling(viewCall("v1", s1File)),
+			calling(memCall("c3", popS1PushS)),
+			calling(viewCall("v2", s2File), memCall("c4", popS2)),
+			saying("done"),
+		)
+		s := newFramesScenario(t, replies, steps, 200_000)
+		var w closeWindow
+		var ok bool
+		s.mem.onCall = func(ctx context.Context, sessionID, callID string) {
+			if callID == "c4" {
+				w, ok = s.frames.closeWindow(ctx, sessionID, gnovm.MemClose{Id: "g/s2"}, callID)
+			}
+		}
+		s.run("fix the flaky test")
+		require.True(t, ok)
+		require.True(t, w.onStack)
+		require.True(t, w.start.After(time.Now().Add(-time.Minute)))
+		var calls []string
+		for _, r := range w.rows {
+			for _, c := range r.ToolCalls() {
+				calls = append(calls, c.ID)
+			}
+		}
+		return calls
 	}
-	require.Equal(t, []string{"v2"}, calls, "only s2's own round: not s1's view, nor the pop and push")
-	require.True(t, w.start.After(time.Now().Add(-time.Minute)))
+	t.Run("under a plan", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, []string{"c1", "c2", "v1", "c3", "v2"}, window(t, true),
+			"everything since the plan was pushed: s2's work may predate its entry")
+	})
+	t.Run("a lone todo", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, []string{"v2"}, window(t, false), "only s2's own round: not s1's view, nor the pop and push")
+	})
 }

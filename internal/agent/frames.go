@@ -300,6 +300,16 @@ func (f *frameStacks) fresh(ctx context.Context, sessionID, callID string) strin
 	if push < 0 || now <= push || workIn(poppedRows(msgs, top.callID, callID), top.id) {
 		return ""
 	}
+	// A todo's work counts from where its plan was made, the push at the
+	// bottom of the stack, not only from where the todo was entered: every
+	// model on the bench (Qwen, gpt-oss, GLM, Gemma; Jae, 2026-11-11, fix
+	// A) did a plan's work first and entered each todo only to close it,
+	// and was refused for nothing done in it. The claim check and the
+	// review still judge the result against that work.
+	if base := rec.stack[0]; base.callID != "" && base.callID != top.callID && round(base.callID) >= 0 &&
+		workIn(poppedRows(msgs, base.callID, callID), top.id) {
+		return ""
+	}
 	return top.id
 }
 

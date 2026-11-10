@@ -117,7 +117,11 @@ done in (one with no done todo under it; an answer you gave is not one) is
 checked as it is closed, before mem keeps the call: a result that says a
 file changed when nothing in the todo changed or showed that file is
 refused, and so is a todo entered and closed in one call with nothing done
-in it. Then the small model reads what happened in the todo,
+in it. "In the todo" counts from where its plan was made, not only from
+where the todo was entered: models on the bench (Qwen, gpt-oss, GLM, Gemma)
+worked a whole plan first and then entered each todo to close it, and the
+work done before entering is the todo's evidence too. Then the small model
+reads what happened in the todo,
 told which files its edits changed and which commands ran, and refuses the
 close when nothing there shows the result: ``not popped: the check of
 `stats/median` found: no edit of stats.go adds Median …``. Nothing of the
@@ -728,8 +732,8 @@ Gnosh's system prompt carries a short recipe, so the model needs no setup:
   condition is a todo ("go test ./... passes"), popped only after its check
   has run, and a task it closes is judged before it counts as done. A todo
   is never popped in the round right after the one that entered it, with
-  nothing in between, nor in the call that entered it: mem refuses, for it
-  was not done; a todo that needs nothing is closed by its name,
+  nothing in between since its plan was made, nor in the call that entered
+  it: mem refuses, for it was not done; a todo that needs nothing is closed by its name,
   `mem.Done("…", "nothing to do: …")`, after the check that shows it. Each
   close is checked against what happened in the todo (above).
 - **What should outlive a pop is a thought**: `mem.Think("…")` on the frame

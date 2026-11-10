@@ -200,7 +200,9 @@ func refusedClose(content string) string {
 }
 
 // closeWindow is what happened in a todo whose close is checked: rows,
-// from the round after the one that entered it up to the call closing it,
+// from where its plan was made (the push at the bottom of the stack), or
+// else from the round after the one that entered it, up to the call
+// closing it,
 // with the calls made before it in its own round and what they returned;
 // start is when the window began, a second after its first row, so the
 // todo before it (rows keep whole seconds) is never taken for its work.
@@ -229,10 +231,13 @@ func (f *frameStacks) closeWindow(ctx context.Context, sessionID string, cl gnov
 	}
 	f.mu.Lock()
 	rec := f.record(ctx, sessionID)
-	var push, top string
-	for _, fr := range rec.stack {
+	var push, top, plan string
+	for i, fr := range rec.stack {
 		if fr.id == cl.Id {
 			push = fr.callID
+		}
+		if i == 0 {
+			plan = fr.callID
 		}
 		top = fr.callID
 	}
@@ -282,6 +287,16 @@ func (f *frameStacks) closeWindow(ctx context.Context, sessionID string, cl gnov
 		if e := lastFrameEvent(msgs[:end], sessionID); e >= first {
 			first = afterRound(msgs, e-1, end)
 		}
+		rows = msgs[first:end]
+	}
+	// The window of a todo under a plan reaches back to where the plan was
+	// made, the push at the bottom of the stack, whatever the case above: a
+	// todo's work done before it was entered (a whole plan worked from its
+	// root, then each todo entered and closed) is its evidence too, and the
+	// review judges the result against all of it (Jae, 2026-11-11, fix A).
+	// The plan's own close, and a lone todo's, keep their window.
+	if p := round(plan); plan != push && p >= 0 && p < first {
+		first = p
 		rows = msgs[first:end]
 	}
 	for _, m := range rows {
@@ -750,7 +765,7 @@ func closePrompt(cl gnovm.MemClose, w closeWindow, workingDir string) string {
 	if transcript == "" {
 		transcript = "(nothing: the agent did nothing in the todo before closing it)"
 	}
-	fmt.Fprintf(&b, "What happened in the todo, from when the agent entered it:\n%s\n\nDoes what happened in the todo show the result?", transcript)
+	fmt.Fprintf(&b, "What happened in the todo, from when its plan was made (its work may have been done before the agent entered it, which is fine):\n%s\n\nDoes what happened in the todo show the result?", transcript)
 	return b.String()
 }
 

@@ -372,6 +372,47 @@ const (
 // push's round is unchanged, the estimate of what went is spent by the
 // next usage report, the stack is derived the same from the rows, and the
 // next prompt tells the model where it stands.
+// A todo under a plan whose work was done before it was entered is not
+// fresh (fix A, Jae 2026-11-11): every model on the bench worked a plan from
+// its root, then entered each todo and popped it in the next round, and was
+// refused for nothing done in it. Work since the plan was made counts, so mem
+// is told of no fresh frame; with nothing done since the plan was made (a
+// Next is no work), the frame is still fresh and its pop refused.
+func TestFrames_FreshCountsWorkSinceThePlan(t *testing.T) {
+	t.Parallel()
+	next := `mem.Next()`
+	replies := map[string]memReply{
+		pushG: {text: inG, events: []gnovm.MemFrame{pushed("g", "fix it")}},
+		next:  {text: inS1, events: []gnovm.MemFrame{pushed("g/s1", "find the cause")}},
+		popS1: {text: doneS1, events: []gnovm.MemFrame{poppedFrame("g/s1", "found it", 0)}},
+	}
+	t.Run("work at the plan's root, then enter and pop", func(t *testing.T) {
+		t.Parallel()
+		file := filepath.Join(t.TempDir(), "tax.go")
+		require.NoError(t, os.WriteFile(file, []byte("package tax\n"), 0o644))
+		s := newFramesScenario(t, replies, [][]fantasy.StreamPart{
+			calling(memCall("c1", pushG)),
+			calling(viewCall("v1", file)),
+			calling(memCall("c2", next)),
+			calling(memCall("c3", popS1)),
+			saying("done"),
+		}, 200_000)
+		s.run("fix the tax rounding")
+		require.Empty(t, s.mem.freshAt("c3"), "the view at the plan's root counts for g/s1")
+	})
+	t.Run("nothing since the plan", func(t *testing.T) {
+		t.Parallel()
+		s := newFramesScenario(t, replies, [][]fantasy.StreamPart{
+			calling(memCall("c1", pushG)),
+			calling(memCall("c2", next)),
+			calling(memCall("c3", popS1)),
+			saying("done"),
+		}, 200_000)
+		s.run("fix the tax rounding")
+		require.Equal(t, "g/s1", s.mem.freshAt("c3"), "a Next is no work: the pop is still refused")
+	})
+}
+
 // With a call that pops, mem is told the frame the model entered in its
 // round before this one with nothing since (frameStacks.fresh), and its
 // Pop refuses it: a todo popped straight after its push was never done.
