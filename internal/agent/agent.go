@@ -1356,11 +1356,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	var loopCalls []fantasy.ToolCallContent
 	var loopSaid []string
 	sanitizedToolCalls := make(map[string]bool)
-	// Full names of tool calls that completed without error this turn.
-	// Written only from the streaming callbacks (which run sequentially)
-	// and read after Stream returns, where sendChannelReply uses it to
-	// tell whether the model already replied on the originating channel.
-	completedToolCalls := make(map[string]struct{})
+	// Full names of tool calls that completed without error this turn,
+	// read after Stream returns, where sendChannelReply uses it to tell
+	// whether the model already replied on the originating channel.
+	// OnToolResult writes it on the goroutine of the tool that finished,
+	// and tools that may run at once can finish together.
+	completedToolCalls := csync.NewMap[string, struct{}]()
 	// Calls that got a reply this turn; the rest are settled when it ends.
 	answeredToolCalls := csync.NewMap[string, struct{}]()
 	// Don't send MaxOutputTokens if 0 — some providers (e.g. LM Studio) reject it
@@ -1571,7 +1572,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				toolResult.IsError = true
 			}
 			if !toolResult.IsError && toolResult.Name != "" {
-				completedToolCalls[toolResult.Name] = struct{}{}
+				completedToolCalls.Set(toolResult.Name, struct{}{})
 			}
 			// Use parent ctx instead of genCtx to ensure the message is created
 			// even if the request is canceled mid-stream
@@ -1767,7 +1768,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		if channelErrorReplyWanted(call.Channel, err) {
 			a.sendChannelReply(ctx, call,
 				"Something went wrong while handling your message. Please try again.",
-				completedToolCalls)
+				completedToolCalls.Copy())
 		}
 		return nil, err
 	}
@@ -1853,7 +1854,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// state is released so a follow-up push queued behind this turn
 	// cannot overtake its reply.
 	if currentAssistant != nil && !continued && (!shouldSummarize || len(currentAssistant.ToolCalls()) == 0) {
-		a.sendChannelReply(ctx, call, currentAssistant.Content().String(), completedToolCalls)
+		a.sendChannelReply(ctx, call, currentAssistant.Content().String(), completedToolCalls.Copy())
 	}
 
 	// Release active request before publishing the notification.
