@@ -55,7 +55,10 @@ func relay(cmd *exec.Cmd, in, out *os.File, setClipboard func(text []byte)) (int
 
 	signals := make(chan os.Signal, 8)
 	signal.Notify(signals, syscall.SIGWINCH, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	// It resizes ptmx, so relay waits for it to end before ptmx is closed.
+	signalsDone := make(chan struct{})
 	go func() {
+		defer close(signalsDone)
 		for sig := range signals {
 			if sig == syscall.SIGWINCH {
 				_ = pty.InheritSize(in, ptmx)
@@ -113,6 +116,7 @@ func relay(cmd *exec.Cmd, in, out *os.File, setClipboard func(text []byte)) (int
 	status, err := exitStatus(cmd.Wait())
 	signal.Stop(signals)
 	close(signals)
+	<-signalsDone
 	// What cmd printed last may still be on its way; it comes out unless
 	// something cmd left running holds the terminal open.
 	select {
