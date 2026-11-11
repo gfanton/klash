@@ -719,12 +719,11 @@ var closeCheckPrompt []byte
 // characters, as goalTranscriptLimit bounds the goal check's.
 const closeTranscriptLimit = 24_000
 
-// closeReviewMaxTokens bounds the review's answer. The answer is a line of
-// JSON, but a model may think before it though told not to, and a review
-// cut off at its limit keeps the close unchecked. Replaying a six-session
-// swarm's closes on Qwen 3.8 27B (bench, 2026-11-11), 9 of 10 reviews of a
-// todo closed with another todo's work stopped in mid-thought at 400
-// tokens; at 1,500 every one finished, and refused it.
+// closeReviewMaxTokens bounds the review's answer, a line of JSON. gnosh
+// asks the judge not to think (setReasoning's enable_thinking), and the 139
+// reviews of a swarm bench on Qwen 3.8 27B (2026-11-11) used 55 tokens at
+// the median and 91 at most; the room is for a server that thinks anyway,
+// where a review cut off at its limit would keep the close unchecked.
 const closeReviewMaxTokens = 1_500
 
 // reviewClose asks the small model, without tools and at temperature 0,

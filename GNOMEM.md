@@ -135,13 +135,11 @@ were closes that recorded another todo's result. In a six-session swarm (the
 bench, 11 November), a session asked `mem.Next()` for its next todo and, in
 the same reply, opened the files of the todo it guessed came next; Next gave
 it another, and it closed that one with the guessed todo's work, which the
-review let through, asked only whether what happened showed the result;
-replayed, the review mostly thought past its 400 tokens and stopped before
-a verdict, which keeps a close unchecked. Now the review is asked first
-whether the result is this todo's, which refused that close in 9 replays
-of 10 at 400 tokens, and has 1,500 to answer in, at which it refused it
-in 5 of 5 and passed the good closes replayed beside it; the hint after a
-pop says to call `mem.Next()` by itself. As the turn ends, a
+review let through, asked only whether what happened showed the result.
+Replayed as gnosh asks it, that question passed the close in 5 replays of
+10; asked first whether the result is this todo's, the review refused it in
+10 of 10, and passed the seven good closes replayed beside it. The hint
+after a pop says to call `mem.Next()` by itself. As the turn ends, a
 separate judge checks each task closed against what mem shows of it and the
 end of the conversation. Met, you are told, in the TUI's status bar and on stderr from
 `gnosh run`, as in a real run in the TUI: `Goal met: create release notes

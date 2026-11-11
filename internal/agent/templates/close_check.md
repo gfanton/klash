@@ -11,7 +11,7 @@ The close holds when the result says what came of this todo, and what happened i
 
 It does not hold when:
 - the result says this todo's work is not done, not done yet, failed, could not be done, or is left for later, however true that is: a todo closed as done must be done (one that is not is left open or dropped instead);
-- the result reports other work, and not what this todo asked for: a package, file or test other than the ones this todo names is other work, however well what happened shows it;
+- the result reports other work, and not what this todo asked for: a package, file or test other than what this todo is about is other work, however well what happened shows it;
 - the result, or the part of it about this todo's work, is not shown: what the agent wrote, in its calls, its results or its words, never shows anything by itself;
 - a thought on the todo asks for something the work misses. A thought that only notes something asks for nothing.
 
