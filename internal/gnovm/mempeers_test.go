@@ -343,9 +343,9 @@ func TestPeersToldOfPeers(t *testing.T) {
 	require.NotContains(t, res.Output, "on this plan now", "a sub-agent is not told of peers")
 
 	res = p1.run(`mem.Pop("pi r squared")`, false)
-	require.Contains(t, res.Output, "next: mem.Next(), which says what is left for you while session sub works on this plan", "no todo named while another works")
+	require.Contains(t, res.Output, "next: mem.Next(), by itself, which says which todo is yours while session sub works on this plan: it may not be the one after this, so read which before you open a file", "no todo named while another works")
 	res = sub(`mem.Pop("2 pi r")`, stack)
-	require.NotContains(t, res.Output, "which says what is left for you", "a sub-agent is not sent on")
+	require.NotContains(t, res.Output, "which says which todo is yours", "a sub-agent is not sent on")
 
 	p.working("p1", "p2")
 	p2 := p.peer("p2")

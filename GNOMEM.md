@@ -123,7 +123,7 @@ worked a whole plan first and then entered each todo to close it, and the
 work done before entering is the todo's evidence too. Then the small model
 reads what happened in the todo,
 told which files its edits changed and which commands ran, and refuses the
-close when nothing there shows the result: ``not popped: the check of
+close when the result is not this todo's or nothing there shows it: ``not popped: the check of
 `stats/median` found: no edit of stats.go adds Median …``. Nothing of the
 refused call is kept, and the agent does what is missing, or shows that it
 is done, and closes it again. That review is one model call per todo
@@ -131,7 +131,17 @@ closed; `"options": {"mem_review_closes": false}` turns it off, and the free
 checks stay. With no thinking, a model wrote a todo's result before its
 work, and one look at a file was enough to let the same claim through (QA,
 4 November); replayed through the review, those closes were refused, and so
-were closes that recorded another todo's result. As the turn ends, a
+were closes that recorded another todo's result. In a six-session swarm (the
+bench, 11 November), a session asked `mem.Next()` for its next todo and, in
+the same reply, opened the files of the todo it guessed came next; Next gave
+it another, and it closed that one with the guessed todo's work, which the
+review let through, asked only whether what happened showed the result;
+replayed, the review mostly thought past its 400 tokens and stopped before
+a verdict, which keeps a close unchecked. Now the review is asked first
+whether the result is this todo's, which refused that close in 9 replays
+of 10 at 400 tokens, and has 1,500 to answer in, at which it refused it
+in 5 of 5 and passed the good closes replayed beside it; the hint after a
+pop says to call `mem.Next()` by itself. As the turn ends, a
 separate judge checks each task closed against what mem shows of it and the
 end of the conversation. Met, you are told, in the TUI's status bar and on stderr from
 `gnosh run`, as in a real run in the TUI: `Goal met: create release notes

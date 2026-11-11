@@ -1111,7 +1111,11 @@ func (m *Mem) NextHint(id string) string {
 			})
 		}
 		if w != "" {
-			return "next: mem.Next(), which says what is left for you while " + w + oneOrMany(w, " works", " work") + " on this plan"
+			// By itself: a model that called it beside views of the todo it
+			// guessed was next worked that todo, which another session held,
+			// and closed the one Next gave it with that work (bench,
+			// 2026-11-11).
+			return "next: mem.Next(), by itself, which says which todo is yours while " + w + oneOrMany(w, " works", " work") + " on this plan: it may not be the one after this, so read which before you open a file"
 		}
 	}
 	if nt := m.nextTodo(parent); nt != nil {

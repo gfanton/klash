@@ -719,6 +719,14 @@ var closeCheckPrompt []byte
 // characters, as goalTranscriptLimit bounds the goal check's.
 const closeTranscriptLimit = 24_000
 
+// closeReviewMaxTokens bounds the review's answer. The answer is a line of
+// JSON, but a model may think before it though told not to, and a review
+// cut off at its limit keeps the close unchecked. Replaying a six-session
+// swarm's closes on Qwen 3.8 27B (bench, 2026-11-11), 9 of 10 reviews of a
+// todo closed with another todo's work stopped in mid-thought at 400
+// tokens; at 1,500 every one finished, and refused it.
+const closeReviewMaxTokens = 1_500
+
 // reviewClose asks the small model, without tools and at temperature 0,
 // whether what happened in the todo shows the result it is closed with.
 // It is told, besides the transcript, which files the tools changed and
@@ -726,7 +734,7 @@ const closeTranscriptLimit = 24_000
 func (a *sessionAgent) reviewClose(ctx context.Context, sessionID string, cl gnovm.MemClose, w closeWindow, workingDir string) (ok bool, reason string, err error) {
 	prompt := closePrompt(cl, w, workingDir)
 	zero := 0.0
-	resp, _, err := a.askJudge(ctx, sessionID, "close check", closeCheckPrompt, prompt, 400, &zero)
+	resp, _, err := a.askJudge(ctx, sessionID, "close check", closeCheckPrompt, prompt, closeReviewMaxTokens, &zero)
 	if err != nil {
 		return false, "", err
 	}
@@ -765,7 +773,11 @@ func closePrompt(cl gnovm.MemClose, w closeWindow, workingDir string) string {
 	if transcript == "" {
 		transcript = "(nothing: the agent did nothing in the todo before closing it)"
 	}
-	fmt.Fprintf(&b, "What happened in the todo, from when its plan was made (its work may have been done before the agent entered it, which is fine):\n%s\n\nDoes what happened in the todo show the result?", transcript)
+	// The question names the todo: asked only whether what happened shows
+	// the result, the review passed a close of "implement intervals" with
+	// a result, and a test run, of another todo's package (a six-session
+	// swarm on the bench, 2026-11-11).
+	fmt.Fprintf(&b, "What happened in the todo, from when its plan was made (its work may have been done before the agent entered it, which is fine):\n%s\n\nIs the result what came of this todo, %q, and not of other work; and does what happened in the todo show it?", transcript, cmp.Or(cl.Title, cl.Id))
 	return b.String()
 }
 

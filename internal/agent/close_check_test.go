@@ -192,7 +192,7 @@ func TestClosePrompt(t *testing.T) {
 		"Commands it ran in the todo: `go test ./...` → exit 0",
 		"The result it is being closed with (the agent's claim): Median added in stats.go",
 		"view failed: no such file",
-		"Does what happened in the todo show the result?",
+		`Is the result what came of this todo, "Median with a test", and not of other work; and does what happened in the todo show it?`,
 	} {
 		require.Contains(t, p, want)
 	}
