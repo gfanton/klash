@@ -374,6 +374,13 @@ func (r *memRealm) call(code string, ctx memContext) (call memCall, err error) {
 		fail(classifyTrip(terr).Error())
 		return call, err
 	}
+	// Apply's Ops are the journal's already, kept whatever they made.
+	if ctx.pending == nil {
+		if msg := parallelSiblings(call.Ops, stackAfter(ctx.stack, call.Frames)); msg != "" {
+			fail(msg)
+			return call, err
+		}
+	}
 	if len(call.Ops) == 0 && ctx.pending == nil {
 		if wc.writes > 0 {
 			return call, fmt.Errorf("gnomem: an input that made no Ops wrote %d keys", wc.writes)
@@ -529,6 +536,79 @@ func memNotKept(ops []memOp) string {
 		return ", so " + names[0] + ", " + verb + " above, is not in mem"
 	}
 	return ", so " + list(names) + ", " + verb + " above, are not in mem"
+}
+
+// parallelSiblings is the refusal of an input that makes several todos side
+// by side and marks each .Parallel() with no todos under it, or "" for any
+// other input. .Parallel() lets the todos under a todo be done at once, by
+// any session; on each of them it does nothing, and a plan meant for many
+// sessions runs in single file. A six-session swarm's plan marked its nine
+// todos so (bench, 2026-11-11): its planner did them one by one while the
+// five other sessions waited twelve minutes in mem.Next(). Passed over: a
+// todo the input leaves its session in, whose todos come from inside it,
+// and one such todo alone, whose todos a later input may make.
+func parallelSiblings(ops []memOp, stack []string) string {
+	added := map[string]bool{}
+	var marked []string
+	for _, op := range ops {
+		switch {
+		case op.Kind == "add":
+			added[op.Name] = true
+		case op.Kind == "unadd":
+			delete(added, op.Name)
+		case op.Kind == "set" && op.Field == "parallel" && op.New == "yes" && added[op.Name]:
+			marked = append(marked, op.Name)
+		}
+	}
+	hasTodos := map[string]bool{}
+	for id := range added {
+		if i := strings.LastIndexByte(id, '/'); i >= 0 {
+			hasTodos[id[:i]] = true
+		}
+	}
+	var parents []string
+	under := map[string][]string{}
+	for _, id := range marked {
+		if !added[id] || hasTodos[id] || slices.Contains(stack, id) {
+			continue
+		}
+		p := ""
+		if i := strings.LastIndexByte(id, '/'); i >= 0 {
+			p = id[:i]
+		}
+		if _, ok := under[p]; !ok {
+			parents = append(parents, p)
+		}
+		under[p] = append(under[p], id)
+	}
+	for _, p := range parents {
+		ids := under[p]
+		if len(ids) < 2 {
+			continue
+		}
+		where, fix := "", `make them under one todo and put .Parallel() on it: mem.Todo("the task", "one part", "another").Parallel()`
+		if p != "" {
+			where = ", made side by side under `" + p + "`,"
+			fix = "put .Parallel() on `" + p + "`, the todo they are under, and not on them"
+		}
+		return someTodos(ids) + where + " are each marked .Parallel() with no todos under them, which does nothing: " +
+			".Parallel() lets the todos under a todo be done at once, by any session. For other sessions to take these at once, " +
+			fix + "; what must follow them, as a last check, is that todo's own work, done before it is popped"
+	}
+	return ""
+}
+
+// someTodos names todos ids, two or more, for a refusal: three or fewer
+// all, more the first two and how many others.
+func someTodos(ids []string) string {
+	var q []string
+	for _, id := range ids[:min(len(ids), 3)] {
+		q = append(q, "`"+id+"`")
+	}
+	if len(ids) > 3 {
+		return q[0] + ", " + q[1] + " and " + strconv.Itoa(len(ids)-2) + " more"
+	}
+	return strings.Join(q[:len(q)-1], ", ") + " and " + q[len(q)-1]
 }
 
 // memPlaceRe is where gno puts a compile error: main.gno:5:1-8: .

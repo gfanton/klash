@@ -638,8 +638,9 @@ func taskOf(id string) string {
 
 // Parallel says the todos under the todo may be done at once, in any order,
 // by any session; what must follow them is the todo's own work, done before
-// it is popped. One session takes them in order either way. It returns the
-// todo, so it chains: mem.Todo("build the shapes").Parallel().
+// it is popped. One session takes them in order either way. It goes on the
+// todo they are under, not on each of them. It returns the todo, so it
+// chains: mem.Todo("build the shapes", "circle", "square").Parallel().
 func (f *Frame) Parallel() *Frame {
 	if f == nil || f.m == nil || f.Id == "" {
 		panic("no todo to make parallel: mem.Todo(task) makes one")

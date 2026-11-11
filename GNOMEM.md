@@ -287,7 +287,10 @@ Todos stay in order: one waits for the ones before it that another session
 is working on. `mem.Todo("build the shapes").Parallel()` says the todos
 under it may be done at once, in any order, by any session; what must
 follow them, the check or the merge, is that todo's own work, done before it
-is popped. Every rule that differs from one session's needs another session
+is popped. The mark goes on the todo they are under: an input that makes
+several todos side by side and marks each of them `.Parallel()`, with no
+todos under any, is refused, since there the mark does nothing and the plan
+would run in single file. Every rule that differs from one session's needs another session
 working now, so one session working alone sees the `mem.Next()` above. The
 one addition it can see: entering a todo, or being told to pop it, lists
 what each of its todos that another session did came to (five at most).

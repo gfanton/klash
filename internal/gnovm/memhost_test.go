@@ -621,6 +621,96 @@ func TestMemNotKept(t *testing.T) {
 	}
 }
 
+// .Parallel() goes on the todo whose todos may be done at once. Marked on
+// each of several todos made side by side, with none under them, it does
+// nothing, and a plan meant for many sessions runs in single file, as a
+// six-session swarm's did (2026-11-11): mem refuses that input, keeps none
+// of it, and names the todo to mark. Marked on the todo they are under, the
+// plan is kept, and so is a parallel todo made alone, whose todos a later
+// input makes, and todos that each get todos of their own.
+func TestMemRefusesParallelOnEachOfSeveralTodos(t *testing.T) {
+	t.Parallel()
+	h := newTestMemHost(t, t.TempDir())
+	run := func(code string) error {
+		_, err := h.call(context.Background(), memRequest{Code: code, Session: "s1"})
+		return err
+	}
+
+	err := run(`mem.Todo("implement the algos").Push()
+mem.Todo("implement stack").Parallel()
+mem.Todo("implement lru").Parallel()
+mem.Todo("implement roman").Parallel()
+mem.Todo("run the tests")`)
+	require.ErrorContains(t, err, "made side by side under `")
+	require.ErrorContains(t, err, "are each marked .Parallel() with no todos under them, which does nothing")
+	require.ErrorContains(t, err, "the todo they are under, and not on them")
+	require.ErrorContains(t, err, "nothing was kept")
+	require.Contains(t, memOK(t, h, `mem.Show()`).Output, "mem is empty")
+
+	err = run(`mem.Todo("fix money").Parallel()
+mem.Todo("fix tax").Parallel()`)
+	require.ErrorContains(t, err, "make them under one todo and put .Parallel() on it")
+	require.Contains(t, memOK(t, h, `mem.Show()`).Output, "mem is empty")
+
+	memOK(t, h, `mem.Todo("implement the algos", "implement stack", "implement lru", "implement roman").Parallel()`)
+	memOK(t, h, `mem.Todo("the demo task").Parallel()`)
+	memOK(t, h, `a := mem.Todo("pack the box").Parallel()
+a.Todo("fold it")
+b := mem.Todo("ship the box").Parallel()
+b.Todo("label it")`)
+	out := memOK(t, h, `mem.Show()`).Output
+	for _, want := range []string{"implement stack", "the demo task", "fold it", "label it"} {
+		require.Contains(t, out, want)
+	}
+}
+
+// parallelSiblings refuses only todos the input made, marked, left with no
+// todos under them and did not enter, two or more side by side.
+func TestParallelSiblings(t *testing.T) {
+	t.Parallel()
+	add := func(id string) memOp { return memOp{Kind: "add", Name: id, New: id} }
+	par := func(id string) memOp { return memOp{Kind: "set", Name: id, Field: "parallel", New: "yes"} }
+	explain := " are each marked .Parallel() with no todos under them, which does nothing: .Parallel() lets the todos under a todo be done at once, by any session. For other sessions to take these at once, "
+	after := "; what must follow them, as a last check, is that todo's own work, done before it is popped"
+	for _, tc := range []struct {
+		name  string
+		ops   []memOp
+		stack []string
+		want  string
+	}{
+		{
+			"on each todo of a plan",
+			[]memOp{add("p"), add("p/a"), par("p/a"), add("p/b"), par("p/b"), add("p/c")},
+			[]string{"p"},
+			"`p/a` and `p/b`, made side by side under `p`," + explain + "put .Parallel() on `p`, the todo they are under, and not on them" + after,
+		},
+		{
+			"on each of three",
+			[]memOp{add("p/a"), par("p/a"), add("p/b"), par("p/b"), add("p/c"), par("p/c")},
+			nil,
+			"`p/a`, `p/b` and `p/c`, made side by side under `p`," + explain + "put .Parallel() on `p`, the todo they are under, and not on them" + after,
+		},
+		{
+			"on each of four at the top",
+			[]memOp{add("a"), par("a"), add("b"), par("b"), add("c"), par("c"), add("d"), par("d")},
+			nil,
+			"`a`, `b` and 2 more" + explain + `make them under one todo and put .Parallel() on it: mem.Todo("the task", "one part", "another").Parallel()` + after,
+		},
+		{"on the plan", []memOp{add("p"), par("p"), add("p/a"), add("p/b")}, nil, ""},
+		{"one alone, its todos to come", []memOp{add("t"), par("t")}, nil, ""},
+		{"each with todos of its own", []memOp{add("a"), par("a"), add("a/x"), add("b"), par("b"), add("b/y")}, nil, ""},
+		{"one of two entered", []memOp{add("a"), par("a"), add("b"), par("b")}, []string{"b"}, ""},
+		{"made before this input", []memOp{par("a"), par("b")}, nil, ""},
+		{"one under each of two plans", []memOp{add("p/a"), par("p/a"), add("q/b"), par("q/b")}, nil, ""},
+		{"one taken back", []memOp{add("a"), par("a"), add("b"), par("b"), {Kind: "unadd", Name: "b"}}, nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, parallelSiblings(tc.ops, tc.stack))
+		})
+	}
+}
+
 // Show lists the newest facts, and the rest by their groups, so a model
 // looking for a deploy command among many facts finds `cmd/` in one look;
 // a Find that matches nothing says exactly that.
