@@ -52,8 +52,8 @@ from a hosted API to one running on your own machine. On top of that:
   one plans the work, the others take its free todos, each once, under
   mem's lock. On a server with memory to spare they run side by side for
   little more than the cost of one: six sessions on one 48 GB GPU did a
-  nine-package job 1.8x faster than Crush and 2.7x faster than one Gnosh
-  session: [the swarm](#a-swarm-on-one-plan).
+  nine-package job 1.6x faster than one Gnosh session, and about as fast
+  as Crush: [the swarm](#a-swarm-on-one-plan).
 - **Thinks in Gno.** The Gno VM runs inside Gnosh, and the agent works an
   answer out in a machine instead of estimating it:
   [the machines underneath](#thinks-in-gno-the-machines-underneath).
@@ -150,8 +150,9 @@ polling.
 To run one, give gnosh the task in one terminal and say others will help:
 
 ```
-Two more gnosh sessions will work on this with you. First plan it in mem,
-with the todos that do not depend on each other under .Parallel().
+Two more gnosh sessions will work on this with you. First plan it in mem
+as one todo marked .Parallel(), with the parts that do not depend on each
+other as its todos.
 ```
 
 Once it has planned, open gnosh in the same project in more terminals and
@@ -162,17 +163,25 @@ are left.` [bench/run.sh](bench/run.sh) does the same unattended
 Measured on that server, each harness alone on it in turn, on a job of nine
 small Go packages with a test suite each (every run passed):
 
-| harness | sessions | time | model requests |
-|---|---|---|---|
-| Gnosh | 6 | **312 s** | 108 |
-| Crush | 1 | 550 s | 13 |
-| Gnosh | 3 | 692 s | 107 |
-| Gnosh | 1 | 850 s | 30 |
-| Codex | 1 | 1,240 s | 21 |
+| harness | sessions | runs | median time | fastest | model requests a run |
+|---|---|---|---|---|---|
+| Gnosh | 6 | 9 | 500 s | **275 s** | 95–129 |
+| Crush | 1 | 4 | **448 s** | 410 s | 11–13 |
+| Gnosh | 3 | 2 | 623 s | 554 s | 105–107 |
+| Gnosh | 1 | 4 | 794 s | 713 s | 23–74 |
+| Codex | 1 | 2 | 934 s | 628 s | 7–21 |
 
-Crush is quick alone because it batches, writing several packages in one
-reply, where a Gnosh session takes a step a reply; three Gnosh sessions did
-not catch it, six did. How it was measured, and the other results:
+Six sessions finished 1.6 times faster than one at the median, and made
+the fastest run of the night. Against Crush they come out about even:
+Crush batches, writing several packages in one reply, where a Gnosh session
+takes a step a reply, so the six make about ten times the requests and
+almost three times the tokens to keep up. On a smaller job, six one-line
+bug fixes, Crush was faster (129 s against the six sessions' 196 s). The
+swarm's two slowest runs each found a flaw in Gnosh, fixed since: a plan
+that marked each of its todos `.Parallel()` instead of the todo they were
+under, which ran in single file and is now refused, and a todo closed with
+another todo's work, which the close review now catches. How it was
+measured, every run, and the other results:
 [bench/RESULTS.md](bench/RESULTS.md).
 
 ## Memory that runs

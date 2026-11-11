@@ -39,6 +39,9 @@ mem.
   `reads.py` and `prefixdiff.py` show where a run's uncached reads come from.
 - `streams.py` measures the server's total speed with 1 to 8 requests at
   once, which is what a swarm runs on.
+- `rounds.py` lists each run's time by round and the median, and
+  `reviewab.py` replays a session's close reviews with two versions of
+  the review's prompt.
 
 ## Running it
 
