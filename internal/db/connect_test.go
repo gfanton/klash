@@ -4,11 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -262,35 +260,35 @@ func TestConnect_RestoresRemovedDataDir(t *testing.T) {
 }
 
 // A data directory removed again after a restore, with no query in
-// between, is restored again.
+// between, is restored again, and what gnosh writes next lands in the
+// restored file.
 func TestConnect_RestoresADataDirRemovedTwice(t *testing.T) {
+	warnings := captureWarnings(t)
 	dataDir := filepath.Join(t.TempDir(), ".gnosh")
 	t.Cleanup(ResetPool)
-	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkOften)
+	// The test runs each check: one the pool ran while RemoveAll walks the
+	// directory would restore into it, and the removal would fail.
+	conn, err := Connect(t.Context(), dataDir, WithRestore(true), checkRarely)
 	require.NoError(t, err)
 	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "kept", Title: "kept"})
 	require.NoError(t, err)
 
 	dbPath := filepath.Join(dataDir, "gnosh.db")
-	want := []string{"kept"}
-	holds := func() bool {
-		ids, err := sessionIDsIn(t.Context(), dbPath)
-		return err == nil && slices.Equal(slices.Sorted(slices.Values(ids)), slices.Sorted(slices.Values(want)))
-	}
+	entry := pool[poolKey(dataDir)]
 	for i := range 2 {
 		require.NoError(t, os.RemoveAll(dataDir))
-		require.Eventually(t, holds, 5*time.Second, 10*time.Millisecond, "removal %d is not restored", i+1)
-		// What gnosh writes next lands in the restored file. Once it is
-		// there the pool holds that file, as it held the removed one, and
-		// the next removal is restored from it. (A removal before the pool
-		// reopens the file finds nothing holding it: that gap is the
-		// restore's, not this test's.)
-		id := fmt.Sprintf("after-%d", i+1)
-		_, err := New(conn).CreateSession(t.Context(), CreateSessionParams{ID: id, Title: id})
-		require.NoError(t, err)
-		want = append(want, id)
-		require.Eventually(t, holds, 5*time.Second, 10*time.Millisecond, "a write after restore %d is not in the restored file", i+1)
+		entry.checkFile(t.Context())
+		ids, err := sessionIDsIn(t.Context(), dbPath)
+		require.NoError(t, err, "removal %d is not restored", i+1)
+		require.Equal(t, []string{"kept"}, ids)
 	}
+	require.Equal(t, 2, strings.Count(warnings(), "restored the database"), warnings())
+
+	_, err = New(conn).CreateSession(t.Context(), CreateSessionParams{ID: "after", Title: "after"})
+	require.NoError(t, err)
+	ids, err := sessionIDsIn(t.Context(), dbPath)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"kept", "after"}, ids)
 }
 
 // A data directory removed again once a restore has put the database
