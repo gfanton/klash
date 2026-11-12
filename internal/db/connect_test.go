@@ -233,7 +233,11 @@ func TestConnect_RestoresRemovedDataDir(t *testing.T) {
 	}
 
 	createSession("before-removal")
-	require.NoError(t, os.RemoveAll(dataDir))
+	// Moved aside, then removed: a check while RemoveAll walks the
+	// directory would restore into it, and the removal would fail.
+	removed := dataDir + ".removed"
+	require.NoError(t, os.Rename(dataDir, removed))
+	require.NoError(t, os.RemoveAll(removed))
 	createSession("after-removal")
 
 	dbPath := filepath.Join(dataDir, "gnosh.db")
@@ -464,17 +468,16 @@ func TestConnect_LocksRestoredDataDir(t *testing.T) {
 				require.NoError(t, os.WriteFile(filepath.Join(dataDir, db), nil, 0o600))
 				lockName = "crush.lock"
 			}
-			_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkOften)
+			// The test runs the check: one the pool ran while RemoveAll
+			// walks the directory would restore into it, and the removal
+			// would fail.
+			_, err := Connect(t.Context(), dataDir, WithDataDirLock(true), WithRestore(true), checkRarely)
 			require.NoError(t, err)
 			require.NoError(t, os.RemoveAll(dataDir))
+			pool[poolKey(dataDir)].checkFile(t.Context())
 
-			// The owner info is written once the lock is held;
-			// trying the lock before then could take it from the
-			// restore.
 			lockPath := filepath.Join(dataDir, lockName)
-			require.Eventually(t, func() bool {
-				return readOwnerInfo(lockPath).PID == os.Getpid()
-			}, 5*time.Second, 10*time.Millisecond, "the restored data directory is not locked")
+			require.Equal(t, os.Getpid(), readOwnerInfo(lockPath).PID, "the restored data directory is not locked")
 			_, err = lock.TryFile(lockPath)
 			require.ErrorIs(t, err, lock.ErrContended)
 		})
